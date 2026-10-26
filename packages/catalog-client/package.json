@@ -1,0 +1,25 @@
+{
+  "name": "@tally/catalog-client",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "clean": "rm -rf dist .turbo",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tally/tsconfig": "workspace:*",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "typescript": "^5.9.3"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
+}

@@ -1,0 +1,24 @@
+{
+  "name": "tally",
+  "private": true,
+  "packageManager": "pnpm@12.3.4",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "dev:console": "turbo run dev --filter=@tally/console",
+    "dev:mp": "turbo run dev --filter=@tally/mp",
+    "db:migrate": "pnpm --filter @tally/db db:migrate",
+    "db:generate": "pnpm --filter @tally/db db:generate",
+    "db:studio": "pnpm --filter @tally/db db:studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.10",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.19.0",
+    "pnpm": ">=10.0.0"
+  }
+}
