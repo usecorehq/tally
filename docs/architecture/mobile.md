@@ -21,7 +21,7 @@ lib/
 - **Use cases are one action each**, `call(Params)`. Params extend `Equatable`; use `NoParams` when there are none.
 - **Bloc vs cubit.** Bloc for app-level, event-driven flows (session: `AuthBloc`). Cubit for screen-local state (forms: `SignInCubit`).
 - **get_it.** External clients, data sources, repositories and use cases are lazy singletons; blocs and cubits are factories so each page gets a fresh instance.
-- **Config** comes from `--dart-define` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `TALLY_API_URL`). Only public values.
+- **Config** comes from `--dart-define` (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` — legacy anon key also accepted, `TALLY_API_URL`). Only public values.
 - **Tests** mirror `lib/` under `test/`, using `mocktail` and `bloc_test`.
 
 ## Built so far
