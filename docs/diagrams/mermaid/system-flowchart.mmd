@@ -1,0 +1,24 @@
+%%{init: {"theme": "neutral"} }%%
+flowchart LR
+    subgraph merchantSide[" Merchant "]
+        signup["Sign in with<br/>Qorelly account"]:::built
+        onboard["Onboard business"]:::planned
+        inv["Inventory:<br/>add / count stock"]:::planned
+        pos["POS: record sale"]:::planned
+    end
+    subgraph vision[" Q Vision "]
+        upload["Console: upload<br/>product images"]:::planned
+        label["Match images to<br/>Qore Catalog products"]:::planned
+        trainJob["Train / distill model<br/>(services/train)"]:::planned
+        ship["Ship model to<br/>mobile app"]:::planned
+    end
+    catalog["Qore Catalog API"]:::ext
+
+    signup --> onboard --> inv --> pos
+    upload --> label --> trainJob --> ship
+    label --> catalog
+    ship -. "camera-assisted<br/>stock capture" .-> inv
+
+    classDef built fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef planned fill:#ffffff,stroke:#1168bd,color:#1168bd,stroke-dasharray: 5 3
+    classDef ext fill:#999999,stroke:#6b6b6b,color:#fff

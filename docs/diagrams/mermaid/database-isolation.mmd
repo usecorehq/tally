@@ -1,0 +1,27 @@
+%%{init: {"theme": "neutral"} }%%
+flowchart LR
+    subgraph pg[" Shared Qorelly Supabase Postgres "]
+        direction TB
+        auth[("auth<br/><i>users — shared identity</i>")]
+        public[("public<br/><i>Qorelly tables</i><br/>ledger: public._qore_migrations")]
+        bookmi[("bookmi<br/><i>Bookmi tables</i>")]
+        drizzle[("drizzle<br/><i>__drizzle_migrations (bookmi)</i>")]
+        tally[("tally<br/><i>Tally tables</i><br/>ledger: tally.__drizzle_migrations")]
+    end
+
+    qorelly["qorelly repo<br/>scripts/db-migrate.mjs"] --> public
+    bookmiRepo["bookmi repo<br/>drizzle-kit migrate"] --> bookmi
+    bookmiRepo --> drizzle
+    tallyRepo["tally repo<br/>pnpm db:migrate<br/>schemaFilter: [tally]"] --> tally
+    tally -. "user_id uuid references" .-> auth
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#999999,stroke:#6b6b6b,color:#fff
+    classDef planned fill:#ffffff,stroke:#1168bd,color:#1168bd,stroke-dasharray: 5 3
+    classDef boundary fill:#ffffff,stroke:#999999,color:#333,stroke-dasharray: 4 3
+    class tally container
+    class auth,public,bookmi,drizzle external
+    class qorelly,bookmiRepo external
+    class tallyRepo container
+    class pg boundary

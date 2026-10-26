@@ -10,4 +10,6 @@ See README.md for layout. Hard rules for this repo:
 - Secrets (QORE_CATALOG_API_KEY, SUPABASE_JWT_SECRET, SUPABASE_DB_URL) are server-only. Never import them into client components or the Flutter app.
 - Mobile (`apps/mobile`): clean architecture — data/domain/presentation per feature, repositories return `Either<Failure, T>`, DI via get_it in `injection_container.dart`, bloc for app-level flows and cubit for screen-local state.
 - Web design: rounded-full buttons, no box shadows, Solar icons (Bold active / Outline inactive).
+- Docs ship with the code: follow docs/guides/documentation.md. New/changed flows, apps, env vars or commands update the matching doc, the Mermaid source in docs/diagrams/mermaid/, and the rendered SVG (`pnpm docs:diagrams`) in the same PR. Mark unbuilt things as planned.
+- Each app keeps its README.md and .env.example current.
 - Commits: conventional, lowercase — `feat(api): ...`, `fix(mp): ...`, `chore: ...`. No Claude/AI co-author trailers.
