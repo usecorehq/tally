@@ -23,5 +23,5 @@ flutter create --org ng.qorelly --project-name qore_tally --platforms=android,io
 Run:
 
 ```bash
-flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=... --dart-define=TALLY_API_URL=http://localhost:4100/api
+flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_PUBLISHABLE_KEY=... --dart-define=TALLY_API_URL=http://localhost:4100/api
 ```
