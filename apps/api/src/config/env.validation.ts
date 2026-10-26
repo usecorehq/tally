@@ -1,0 +1,78 @@
+import { plainToInstance, Transform } from "class-transformer";
+import {
+  IsArray,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  validateSync,
+} from "class-validator";
+
+enum NodeEnv {
+  Development = "development",
+  Production = "production",
+  Test = "test",
+}
+
+class EnvVars {
+  @IsEnum(NodeEnv)
+  @IsOptional()
+  NODE_ENV: NodeEnv = NodeEnv.Development;
+
+  @IsInt()
+  @Min(0)
+  @Max(65535)
+  @IsOptional()
+  PORT: number = 4100;
+
+  // ── Supabase (shared Qorelly project) ──
+  @IsString()
+  SUPABASE_URL!: string;
+
+  /** HS256 secret from Supabase → Project Settings → API → JWT Settings. */
+  @IsString()
+  SUPABASE_JWT_SECRET!: string;
+
+  /** Postgres connection string for the shared Supabase project. */
+  @IsString()
+  SUPABASE_DB_URL!: string;
+
+  // ── Qore Catalog ──
+  @IsString()
+  @IsOptional()
+  QORE_CATALOG_BASE_URL: string = "http://localhost:3100";
+
+  /** Sent as x-api-key on every Catalog request. */
+  @IsString()
+  QORE_CATALOG_API_KEY!: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== "string" || !value.trim()) return [];
+    return value
+      .split(",")
+      .map((v: string) => v.trim())
+      .filter((v: string) => v.length > 0);
+  })
+  CORS_ORIGINS: string[] = [];
+}
+
+export function validateEnv(config: Record<string, unknown>): EnvVars {
+  const parsed = plainToInstance(EnvVars, config, {
+    enableImplicitConversion: true,
+  });
+  const errors = validateSync(parsed, { skipMissingProperties: false });
+  if (errors.length > 0) {
+    throw new Error(
+      `Invalid environment configuration:\n${errors
+        .map((e) => `  - ${e.property}: ${Object.values(e.constraints ?? {}).join(", ")}`)
+        .join("\n")}`,
+    );
+  }
+  return parsed;
+}

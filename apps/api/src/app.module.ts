@@ -1,0 +1,29 @@
+import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
+import { ConfigModule } from "@nestjs/config";
+import { HealthModule } from "./modules/health/health.module";
+import { CatalogModule } from "./modules/catalog/catalog.module";
+import { DrizzleModule } from "./drizzle/drizzle.module";
+import { SupabaseJwtGuard } from "./common/guards/supabase-jwt.guard";
+import { validateEnv } from "./config/env.validation";
+import configuration from "./config/configuration";
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+      load: [configuration],
+      validate: validateEnv,
+    }),
+    DrizzleModule,
+    CatalogModule,
+    HealthModule,
+  ],
+  providers: [
+    // Global auth: every route requires a valid Supabase JWT (shared Qorelly
+    // auth) unless the controller or handler is decorated with @Public().
+    { provide: APP_GUARD, useClass: SupabaseJwtGuard },
+  ],
+})
+export class AppModule {}
