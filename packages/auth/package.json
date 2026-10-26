@@ -1,0 +1,31 @@
+{
+  "name": "@tally/auth",
+  "version": "0.0.1",
+  "private": true,
+  "description": "NextAuth (Auth.js v5) over the shared Qorelly Supabase Auth — used by console and mp.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo"
+  },
+  "dependencies": {
+    "@auth/core": "0.41.3",
+    "@supabase/supabase-js": "^2.118.0",
+    "next-auth": "5.0.0-beta.32"
+  },
+  "devDependencies": {
+    "@tally/tsconfig": "workspace:*",
+    "@types/node": "^26.6.5",
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "next": "^16.4.3",
+    "react": "^19.3.1"
+  }
+}
