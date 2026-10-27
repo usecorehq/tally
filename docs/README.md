@@ -31,3 +31,4 @@ Deploy guides are not written yet — hosting targets for api, console, mp and t
 - Commit messages: conventional, lowercase (`feat(api): …`, `docs: …`), bulleted body for larger changes, no AI co-author.
 - Money in reporting reads only paid amounts — never order totals.
 - Feature configuration lives in DB columns, not env vars.
+- Secrets never enter git: `pnpm install` turns on a pre-commit hook (`scripts/check-secrets.sh`) and CI runs the same check. Real values go in gitignored `.env` files, never in a `.env.example`. If a key is ever exposed, revoke it.

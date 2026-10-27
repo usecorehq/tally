@@ -6,6 +6,18 @@ on:
     branches: [staging]
 
 jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan tracked files
+        run: bash scripts/check-secrets.sh --tree
+      - name: Scan this PR's changes
+        if: github.event_name == 'pull_request'
+        run: bash scripts/check-secrets.sh --range "origin/${{ github.base_ref }}...HEAD"
+
   web:
     runs-on: ubuntu-latest
     steps:

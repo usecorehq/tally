@@ -9,6 +9,8 @@ pnpm install
 cp .env.example .env
 ```
 
+`pnpm install` also enables the secret-scanning pre-commit hook (`git config core.hooksPath .githooks`). Run `pnpm check:secrets` to scan every tracked file.
+
 ## 2. Fill `.env`
 
 The repo-root `.env` is read by every app. An app may also have its own `apps/<app>/.env` (template: `apps/<app>/.env.example`); its keys win, anything missing falls back to the root.

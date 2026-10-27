@@ -7,6 +7,7 @@ See README.md for layout. Hard rules for this repo:
 - Grants and tightenings never share a migration.
 - Money: revenue/reporting reads only paid amounts (paid_amount, payments tables, amount_paid) — never order totals.
 - Feature configuration lives in DB columns, not env vars.
+- A pre-commit hook (`.githooks/pre-commit` → `scripts/check-secrets.sh`, installed by `pnpm install`) and the CI `secrets` job block Qore Catalog keys, Supabase secret keys, private keys and AWS keys. Never bypass it with `--no-verify` for a real value. Stage files by explicit path, not `git add -A`.
 - Secrets (QORE_CATALOG_API_KEY, SUPABASE_JWT_SECRET, SUPABASE_DB_URL) are server-only. Never import them into client components or the Flutter app.
 - Mobile (`apps/mobile`): clean architecture — data/domain/presentation per feature, repositories return `Either<Failure, T>`, DI via get_it in `injection_container.dart`, bloc for app-level flows and cubit for screen-local state.
 - Mobile flavors (`dev`, `staging`, `prod`) are defined in three places that must agree: `android/app/build.gradle.kts` productFlavors, `FLAVORS` in `apps/mobile/tool/setup_ios_flavors.rb` (re-run it after changes), and `lib/main_<flavor>.dart`. Always run with a matching `--flavor` / `-t` pair. Mobile env lives in gitignored `apps/mobile/.env.<flavor>` — public values only.

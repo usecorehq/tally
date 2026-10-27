@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@12.3.4",
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
@@ -12,7 +13,8 @@
     "db:migrate": "pnpm --filter @tally/db db:migrate",
     "db:generate": "pnpm --filter @tally/db db:generate",
     "db:studio": "pnpm --filter @tally/db db:studio",
-    "docs:diagrams": "bash scripts/render-diagrams.sh"
+    "docs:diagrams": "bash scripts/render-diagrams.sh",
+    "check:secrets": "bash scripts/check-secrets.sh --tree"
   },
   "devDependencies": {
     "turbo": "^2.11.10",
