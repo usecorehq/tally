@@ -4,7 +4,8 @@ class Env {
   const Env._();
 
   static const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-  static const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+  /// Supabase publishable key (a legacy anon key also works here).
+  static const supabasePublishableKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
   static const apiBaseUrl = String.fromEnvironment(
     'TALLY_API_URL',
     defaultValue: 'http://localhost:4100/api',

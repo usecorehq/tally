@@ -1,0 +1,33 @@
+%%{init: {"theme": "neutral"} }%%
+flowchart TB
+    subgraph presentation[" presentation "]
+        page["Pages / widgets"]
+        bloc["Bloc (app-level flows)<br/>Cubit (screen-local state)"]
+    end
+    subgraph domain[" domain — pure Dart "]
+        uc["Use cases<br/>call(Params) → Future&lt;Either&lt;Failure, T&gt;&gt;"]
+        repoC["Repository contracts"]
+        ent["Entities"]
+    end
+    subgraph data[" data "]
+        repoI["Repository impls<br/>catch Exception → Left(Failure)"]
+        ds["Data sources<br/>supabase_flutter, Dio → apps/api"]
+        model["Models (extend entities)"]
+    end
+    di["injection_container.dart<br/>get_it: singletons; blocs/cubits as factories"]
+
+    page --> bloc --> uc --> repoC
+    repoI -. implements .-> repoC
+    repoI --> ds --> model
+    uc --> ent
+    di -. wires .-> bloc
+    di -. wires .-> repoI
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#999999,stroke:#6b6b6b,color:#fff
+    classDef planned fill:#ffffff,stroke:#1168bd,color:#1168bd,stroke-dasharray: 5 3
+    classDef boundary fill:#ffffff,stroke:#999999,color:#333,stroke-dasharray: 4 3
+    class page,bloc,uc,repoC,ent,repoI,ds,model container
+    class di external
+    class presentation,domain,data boundary

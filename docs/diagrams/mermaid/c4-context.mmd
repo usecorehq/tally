@@ -1,0 +1,23 @@
+%%{init: {"theme": "neutral"} }%%
+flowchart TB
+    merchant["<b>Merchant</b><br/><i>[Person]</i><br/>Runs a Nigerian SME: sells,<br/>tracks stock"]
+    operator["<b>Q Vision operator</b><br/><i>[Person]</i><br/>Core Technologies staff who<br/>curate images and run training"]
+
+    tally["<b>Tally</b><br/><i>[Software System]</i><br/>POS + inventory for merchants (web + mobile)<br/>and the Q Vision distillation console"]
+
+    qorellyAuth["<b>Qorelly Supabase</b><br/><i>[External System]</i><br/>Shared project: auth.users (identity)<br/>+ Postgres hosting the tally schema"]
+    catalog["<b>Qore Catalog API</b><br/><i>[External System]</i><br/>Nigerian commerce product dataset<br/>(/v1, x-api-key)"]
+
+    merchant -- "Signs in, sells, manages stock<br/>[HTTPS: mp web, mobile app]" --> tally
+    operator -- "Uploads images, runs training<br/>[HTTPS: console]" --> tally
+    tally -- "Signs users in, verifies JWTs,<br/>stores tally data" --> qorellyAuth
+    tally -- "Reads products to label/train against<br/>[HTTPS, x-api-key]" --> catalog
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#999999,stroke:#6b6b6b,color:#fff
+    classDef planned fill:#ffffff,stroke:#1168bd,color:#1168bd,stroke-dasharray: 5 3
+    classDef boundary fill:#ffffff,stroke:#999999,color:#333,stroke-dasharray: 4 3
+    class merchant,operator person
+    class tally container
+    class qorellyAuth,catalog external

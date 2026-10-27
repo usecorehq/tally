@@ -19,7 +19,10 @@ final sl = GetIt.instance;
 /// Blocs/cubits are factories (fresh per page); everything else is a lazy singleton.
 Future<void> initDependencies() async {
   // External
-  await Supabase.initialize(url: Env.supabaseUrl, anonKey: Env.supabaseAnonKey);
+  await Supabase.initialize(
+    url: Env.supabaseUrl,
+    publishableKey: Env.supabasePublishableKey,
+  );
   sl.registerLazySingleton<SupabaseClient>(() => Supabase.instance.client);
   sl.registerLazySingleton<Dio>(
     () => buildApiClient(baseUrl: Env.apiBaseUrl, supabase: sl()),
