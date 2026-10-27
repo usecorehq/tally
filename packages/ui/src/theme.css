@@ -1,0 +1,66 @@
+/*
+ * Tally design tokens — Qorelly's merchant-portal system for Tailwind 4.
+ * Qorelly V1 rules (rounded-full buttons, no box shadows, Solar Bold/Outline)
+ * with V2's neutral grey palette and the #7856FF primary. Light only for now.
+ *
+ * Import once per app:  @import "@tally/ui/theme.css";
+ */
+@theme {
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(0 0% 9%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(0 0% 9%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(0 0% 9%);
+
+  --color-primary: #7856ff;
+  --color-primary-foreground: hsl(210 40% 98%);
+  --color-primary-hover: #6b4de6;
+  --color-primary-light: #f0ecff;
+  --color-primary-dark: #5a3fd9;
+
+  --color-secondary: hsl(0 0% 96.1%);
+  --color-secondary-foreground: hsl(0 0% 9%);
+  --color-muted: hsl(0 0% 96.1%);
+  --color-muted-foreground: hsl(0 0% 45.1%);
+  --color-accent: hsl(0 0% 96.1%);
+  --color-accent-foreground: hsl(0 0% 9%);
+  --color-destructive: hsl(0 84.2% 60.2%);
+  --color-destructive-foreground: hsl(210 40% 98%);
+
+  --color-border: hsl(0 0% 89.8%);
+  --color-input: hsl(0 0% 89.8%);
+  --color-ring: hsl(0 0% 63.9%);
+
+  /* Neutral greys (Qorelly V2 palette) */
+  --color-gray-50: rgb(250 250 250);
+  --color-gray-100: rgb(245 245 245);
+  --color-gray-200: rgb(229 229 229);
+  --color-gray-300: rgb(212 212 212);
+  --color-gray-400: rgb(163 163 163);
+  --color-gray-500: rgb(115 115 115);
+  --color-gray-600: rgb(82 82 82);
+  --color-gray-700: rgb(64 64 64);
+  --color-gray-800: rgb(38 38 38);
+  --color-gray-900: rgb(23 23 23);
+  --color-gray-950: rgb(10 10 10);
+
+  /* Allowed radii: pills and cards. */
+  --radius-button: 9999px;
+  --radius-card: 24px;
+
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-gray-50);
+    color: var(--color-gray-900);
+    -webkit-font-smoothing: antialiased;
+  }
+}
