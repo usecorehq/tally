@@ -1,11 +1,64 @@
 name: ci
 
+# secrets always runs. web / train / mobile run only when their code changed,
+# or when started by hand: Actions → ci → Run workflow (pick the jobs), or
+#   gh workflow run ci.yml --ref <branch> -f web=true -f train=true -f mobile=true
 on:
   pull_request:
   push:
     branches: [staging]
+  workflow_dispatch:
+    inputs:
+      web:
+        description: "web: typecheck, test, db:check, build"
+        type: boolean
+        default: true
+      train:
+        description: "train: ruff + pytest"
+        type: boolean
+        default: false
+      mobile:
+        description: "mobile: analyze, test, dev APK (~5 min)"
+        type: boolean
+        default: false
+
+# A newer push to the same branch cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      train: ${{ steps.filter.outputs.train }}
+      mobile: ${{ steps.filter.outputs.mobile }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'apps/api/**'
+              - 'apps/mp/**'
+              - 'apps/console/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'scripts/check-db-drift.sh'
+              - '.github/workflows/**'
+            train:
+              - 'services/train/**'
+              - '.github/workflows/**'
+            mobile:
+              - 'apps/mobile/**'
+              - '.github/workflows/**'
+
   secrets:
     runs-on: ubuntu-latest
     steps:
@@ -19,6 +72,8 @@ jobs:
         run: bash scripts/check-secrets.sh --range "origin/${{ github.base_ref }}...HEAD"
 
   web:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' && inputs.web || github.event_name != 'workflow_dispatch' && needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +90,8 @@ jobs:
       - run: pnpm build
 
   train:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' && inputs.train || github.event_name != 'workflow_dispatch' && needs.changes.outputs.train == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,6 +104,8 @@ jobs:
       - run: uv run pytest -q
 
   mobile:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' && inputs.mobile || github.event_name != 'workflow_dispatch' && needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
