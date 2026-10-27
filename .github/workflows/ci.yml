@@ -29,6 +29,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm test
+      # schema.ts must match packages/db/migrations (offline, no database).
+      - run: pnpm db:check
       - run: pnpm build
 
   train:
