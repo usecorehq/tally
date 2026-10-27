@@ -13,10 +13,12 @@ import {
   Matches,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from "class-validator";
 import { QID_PATTERN } from "@tally/catalog-client";
 import { SUBTYPE_CODE_PATTERN } from "../catalog/catalog.dto";
+import { BARCODE_PATTERN } from "./barcode";
 
 /** Naira with up to 2 decimals, as a string so it never passes through a float. */
 export const NAIRA_PATTERN = /^\d{1,10}(\.\d{1,2})?$/;
@@ -37,6 +39,25 @@ export class BusinessParams {
   @ApiProperty()
   @IsUUID()
   businessId!: string;
+}
+
+export class BarcodeParams extends BusinessParams {
+  @ApiProperty({ example: "6156000024013" })
+  @Matches(BARCODE_PATTERN, { message: "code must be 4-64 letters, digits, dots or dashes" })
+  code!: string;
+}
+
+export class ItemParams extends BusinessParams {
+  @ApiProperty()
+  @IsUUID()
+  itemId!: string;
+}
+
+export class SetBarcodeBody {
+  @ApiProperty({ nullable: true, example: "6156000024013", description: "null unlinks the barcode" })
+  @ValidateIf((_, v) => v !== null)
+  @Matches(BARCODE_PATTERN, { message: "barcode must be 4-64 letters, digits, dots or dashes" })
+  barcode!: string | null;
 }
 
 export const STARTER_OUTCOMES = ["accepted", "corrected", "new_item", "removed"] as const;

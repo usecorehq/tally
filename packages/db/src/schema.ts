@@ -132,9 +132,10 @@ export const inventoryItems = tally.table(
       .on(t.businessId, t.coreQid)
       .where(sql`core_qid is not null and archived_at is null`),
     index("inventory_items_business_name_idx").on(t.businessId, t.name),
-    index("inventory_items_business_barcode_idx")
+    // One active item per barcode per business, so a scan resolves to exactly one item.
+    uniqueIndex("inventory_items_business_barcode_key")
       .on(t.businessId, t.barcode)
-      .where(sql`barcode is not null`),
+      .where(sql`barcode is not null and archived_at is null`),
   ],
 );
 

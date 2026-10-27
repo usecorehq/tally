@@ -15,6 +15,7 @@ const USER = "00000000-0000-4000-8000-0000000000aa";
 const BIZ = "00000000-0000-4000-8000-000000000001";
 const token = jwt.sign({ sub: USER, role: "authenticated", aud: "authenticated" }, SECRET, { algorithm: "HS256", expiresIn: 60 });
 const auth = { Authorization: `Bearer ${token}` };
+const ITEM = "00000000-0000-4000-8000-0000000000b1";
 const starterItem = { clientRef: "c1", templateItemName: "Rice (Bag)", outcome: "accepted", suggestedQid: "QC-7K2M-9XQ4-R", name: "Rice", price: "45000" };
 
 describe("BusinessesController (HTTP)", () => {
@@ -25,6 +26,8 @@ describe("BusinessesController (HTTP)", () => {
     getForMember: jest.fn(async () => ({ id: BIZ, role: "owner" })),
     listInventory: jest.fn(async () => []),
     addStarterInventory: jest.fn(async () => ({ created: 1 })),
+    findByBarcode: jest.fn(async () => ({ id: "item-1" })),
+    setBarcode: jest.fn(async () => ({ id: "item-1" })),
   };
 
   beforeAll(async () => {
@@ -52,6 +55,8 @@ describe("BusinessesController (HTTP)", () => {
     ["get", `/api/businesses/${BIZ}`],
     ["get", `/api/businesses/${BIZ}/inventory`],
     ["post", `/api/businesses/${BIZ}/inventory/starter`],
+    ["get", `/api/businesses/${BIZ}/inventory/barcode/6156000024013`],
+    ["put", `/api/businesses/${BIZ}/inventory/${ITEM}/barcode`],
   ] as const)("%s %s needs a Supabase JWT", async (method, path) => {
     await http()[method](path).expect(401);
   });
@@ -108,5 +113,35 @@ describe("BusinessesController (HTTP)", () => {
   ])("starter rejects %s", async (_label, body) => {
     await http().post(`/api/businesses/${BIZ}/inventory/starter`).set(auth).send(body).expect(400);
     expect(service.addStarterInventory).not.toHaveBeenCalled();
+  });
+
+  describe("barcode", () => {
+    it("lookup passes business, caller and code", async () => {
+      await http().get(`/api/businesses/${BIZ}/inventory/barcode/6156000024013`).set(auth).expect(200);
+      expect(service.findByBarcode).toHaveBeenCalledWith(BIZ, USER, "6156000024013");
+    });
+
+    it.each(["123", "has%20space", "semi%3Bcolon"])("lookup rejects code %s", async (code) => {
+      await http().get(`/api/businesses/${BIZ}/inventory/barcode/${code}`).set(auth).expect(400);
+      expect(service.findByBarcode).not.toHaveBeenCalled();
+    });
+
+    it("link passes the barcode; null unlinks", async () => {
+      await http().put(`/api/businesses/${BIZ}/inventory/${ITEM}/barcode`).set(auth).send({ barcode: "6156000024013" }).expect(200);
+      await http().put(`/api/businesses/${BIZ}/inventory/${ITEM}/barcode`).set(auth).send({ barcode: null }).expect(200);
+      expect(service.setBarcode.mock.calls).toEqual([
+        [BIZ, USER, ITEM, "6156000024013"],
+        [BIZ, USER, ITEM, null],
+      ]);
+    });
+
+    it.each([[{}], [{ barcode: "12" }], [{ barcode: 6156000024013 }]])("link rejects %j", async (body) => {
+      await http().put(`/api/businesses/${BIZ}/inventory/${ITEM}/barcode`).set(auth).send(body).expect(400);
+      expect(service.setBarcode).not.toHaveBeenCalled();
+    });
+
+    it("link rejects a non-uuid item id", async () => {
+      await http().put(`/api/businesses/${BIZ}/inventory/not-a-uuid/barcode`).set(auth).send({ barcode: "6156000024013" }).expect(400);
+    });
   });
 });

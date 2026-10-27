@@ -10,7 +10,7 @@ Tally stores its data in the **`tally` schema of the shared Qorelly Supabase Pos
 |---|---|
 | Drizzle schema | `packages/db/src/schema.ts` — `export const tally = pgSchema("tally")` |
 | Client | `packages/db/src/client.ts` — `buildTallyDb(url)` on `postgres.js`; `prepare: false` on the Supabase pooler |
-| Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`) |
+| Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business |
 | Config | `packages/db/drizzle.config.ts`, reads `SUPABASE_DB_URL` from the root `.env`, falling back to `apps/api/.env` |
 | API access | `DrizzleModule` provides the client as `TALLY_DB` |
 
@@ -39,6 +39,7 @@ Child tables carry `business_id` and use composite foreign keys (`(business_id, 
 | Stock history can't be rewritten | `stock_movements` rejects UPDATE and DELETE; corrections are new `adjustment` rows |
 | A sale's stock is deducted once | `tally.deduct_sale_stock(sale_id, user_id)` is a no-op if `stock_deducted_at` is set |
 | Voiding returns stock once | `tally.void_sale(sale_id, user_id, reason)`; raises if already voided |
+| One item per barcode | Unique `(business_id, barcode)` among active items (`0003`); 12-digit UPC-A stored as 13-digit EAN |
 | Retries don't duplicate | Optional `client_sale_id`, `client_payment_id`, `client_movement_id`, unique per business |
 | Negative stock | Allowed (shops sell before they count), raised as a NOTICE |
 
