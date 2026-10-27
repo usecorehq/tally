@@ -108,6 +108,7 @@ pnpm dev                              # every app (packages built first)
 pnpm --filter @tally/api dev
 pnpm --filter @tally/mp dev
 pnpm --filter @tally/console dev
+(cd apps/mobile && flutter run --flavor dev -t lib/main_dev.dart --dart-define-from-file=config/dev.json)   # flavors: apps/mobile/README.md
 
 # Quality
 pnpm typecheck
