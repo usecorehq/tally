@@ -15,6 +15,9 @@ import configuration from "./config/configuration";
       cache: true,
       load: [configuration],
       validate: validateEnv,
+      // turbo runs dev/start with cwd = apps/api. An app-local .env wins key by
+      // key; anything missing falls back to the single root .env.
+      envFilePath: [".env", "../../.env"],
     }),
     DrizzleModule,
     CatalogModule,

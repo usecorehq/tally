@@ -11,7 +11,8 @@
     "dev:mp": "turbo run dev --filter=@tally/mp",
     "db:migrate": "pnpm --filter @tally/db db:migrate",
     "db:generate": "pnpm --filter @tally/db db:generate",
-    "db:studio": "pnpm --filter @tally/db db:studio"
+    "db:studio": "pnpm --filter @tally/db db:studio",
+    "docs:diagrams": "bash scripts/render-diagrams.sh"
   },
   "devDependencies": {
     "turbo": "^2.11.10",
