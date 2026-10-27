@@ -5,7 +5,8 @@ Tally reads product data from the **Qore Catalog API** (`QORE_CATALOG_BASE_URL`,
 | Caller | How |
 |---|---|
 | apps/api | `CatalogModule` → `CatalogService.client` (`@tally/catalog-client`), key from validated config `catalog.apiKey` |
-| mp, console | `catalogClient()` in **server components only**; reads `QORE_CATALOG_BASE_URL` / `QORE_CATALOG_API_KEY` |
+| mp | Never directly; calls Tally's `/api/catalog/*` |
+| console | Never directly; calls Tally's `/api/catalog/*` |
 | services/train | `catalog_client()` (httpx) with the same header |
 | mobile | Never directly. Goes through apps/api. |
 
