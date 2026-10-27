@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-export const metadata: Metadata = { title: "Tally Merchant Portal", description: "Merchant signup, onboarding, point of sale and inventory." };
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+
+export const metadata: Metadata = {
+  title: "Tally",
+  description: "Inventory and point of sale for Qorelly merchants.",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-white text-neutral-900 antialiased">{children}</body>
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen font-sans">{children}</body>
     </html>
   );
 }
