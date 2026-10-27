@@ -1,8 +1,63 @@
-export type HealthResponse = { status: string; db: string };
+import type {
+  ApiKeyInfo,
+  Brand,
+  BrandSearchParams,
+  BusinessVertical,
+  Category,
+  FeedbackItem,
+  FeedbackResponse,
+  FeedbackStats,
+  HealthResponse,
+  MatchRequest,
+  MatchResponse,
+  MergedProduct,
+  Page,
+  ProductDetail,
+  ProductSearchParams,
+  ProductSearchResult,
+  SubtypeTemplates,
+} from "./types";
+
+export * from "./types";
 
 // Qore Catalog's global ApiKeyGuard reads this header. Server-side only — the
 // key must never reach a browser bundle.
 const API_KEY_HEADER = "x-api-key";
+
+const DEFAULT_TIMEOUT_MS = 10_000;
+// Template suggestions run a match per item; the first uncached call takes ~4s.
+const SUGGESTIONS_TIMEOUT_MS = 20_000;
+
+const MAX_MATCH_ITEMS = 50;
+const MAX_FEEDBACK_ITEMS = 100;
+
+// Crockford base32 (no I, L, O, U).
+export const QID_PATTERN = /^QC-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]$/;
+
+type Query = Record<string, string | number | undefined>;
+
+type RequestOptions = {
+  query?: Query;
+  body?: unknown;
+  init?: RequestInit;
+  timeoutMs?: number;
+  /** false for routes outside the ApiKeyGuard (health). */
+  auth?: boolean;
+};
+
+/** Thrown on any non-2xx response, and by client-side guards (status 400) before a request is sent. */
+export class CatalogError extends Error {
+  constructor(
+    readonly status: number,
+    readonly path: string,
+    /** Parsed JSON error body when the response had one, else the raw text. */
+    readonly body: unknown,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CatalogError";
+  }
+}
 
 export class CatalogClient {
   constructor(
@@ -10,17 +65,123 @@ export class CatalogClient {
     private readonly apiKey?: string,
   ) {}
 
-  private async get<T>(path: string, init?: RequestInit): Promise<T> {
+  private async request<T>(method: "GET" | "POST", path: string, opts: RequestOptions = {}): Promise<T> {
+    const { query, body, init, timeoutMs = DEFAULT_TIMEOUT_MS, auth = true } = opts;
+
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query ?? {})) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const qs = params.toString();
+    const fullPath = qs ? `${path}?${qs}` : path;
+
     const headers = new Headers(init?.headers);
-    if (this.apiKey) headers.set(API_KEY_HEADER, this.apiKey);
-    const res = await fetch(`${this.baseUrl.replace(/\/$/, "")}${path}`, { ...init, headers });
-    if (!res.ok) throw new Error(`Catalog ${path} failed: ${res.status}`);
+    if (auth && this.apiKey) headers.set(API_KEY_HEADER, this.apiKey);
+    if (body !== undefined) headers.set("content-type", "application/json");
+
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+
+    const res = await fetch(`${this.baseUrl.replace(/\/$/, "")}${fullPath}`, {
+      ...init,
+      method,
+      headers,
+      signal,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      let parsed: unknown = text;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // not JSON; keep the text
+      }
+      const detail = (parsed as { message?: unknown } | null)?.message;
+      const suffix = typeof detail === "string" ? ` ${detail}` : Array.isArray(detail) ? ` ${detail.join("; ")}` : "";
+      throw new CatalogError(
+        res.status,
+        fullPath,
+        parsed,
+        this.redact(`Catalog ${method} ${fullPath} failed: ${res.status}${suffix}`),
+      );
+    }
     return res.json() as Promise<T>;
   }
 
-  health() {
-    return this.get<HealthResponse>("/v1/health", { cache: "no-store" });
+  private redact(message: string) {
+    return this.apiKey ? message.split(this.apiKey).join("[redacted]") : message;
   }
+
+  /** No key needed. */
+  health(init?: RequestInit) {
+    return this.request<HealthResponse>("GET", "/v1/health", { init: { cache: "no-store", ...init }, auth: false });
+  }
+
+  searchProducts(params: ProductSearchParams = {}, init?: RequestInit) {
+    return this.request<ProductSearchResult>("GET", "/v1/products", { query: params, init });
+  }
+
+  /** A merged qid returns a pointer to the surviving product instead of the detail. */
+  async getProduct(qid: string, init?: RequestInit) {
+    const path = `/v1/products/${encodeURIComponent(qid)}`;
+    if (!QID_PATTERN.test(qid)) throw guardError(path, `invalid qid ${qid}`);
+    return this.request<ProductDetail | MergedProduct>("GET", path, { init });
+  }
+
+  /** Results come back in request order; empty candidates means unidentified. */
+  async match(request: MatchRequest, init?: RequestInit) {
+    const n = request.items.length;
+    if (n < 1 || n > MAX_MATCH_ITEMS) {
+      throw guardError("/v1/match", `match takes 1-${MAX_MATCH_ITEMS} items, got ${n}`);
+    }
+    return this.request<MatchResponse>("POST", "/v1/match", { body: request, init });
+  }
+
+  businessTaxonomy(init?: RequestInit) {
+    return this.request<BusinessVertical[]>("GET", "/v1/business-taxonomy", { init });
+  }
+
+  /** suggestions (0-5) adds match candidates to template items; cached server-side for an hour. */
+  subtypeTemplates(code: string, suggestions?: number, init?: RequestInit) {
+    const path = `/v1/business-taxonomy/subtypes/${encodeURIComponent(code)}/templates`;
+    return this.request<SubtypeTemplates>("GET", path, {
+      query: { suggestions },
+      init,
+      timeoutMs: suggestions ? SUGGESTIONS_TIMEOUT_MS : DEFAULT_TIMEOUT_MS,
+    });
+  }
+
+  brands(params: BrandSearchParams = {}, init?: RequestInit) {
+    return this.request<Page<Brand>>("GET", "/v1/brands", { query: params, init });
+  }
+
+  categories(init?: RequestInit) {
+    return this.request<Category[]>("GET", "/v1/categories", { init });
+  }
+
+  /** Needs the feedback:write scope. Idempotent per clientRef, so retries are safe. */
+  async sendFeedback(items: FeedbackItem[], init?: RequestInit) {
+    const n = items.length;
+    if (n < 1 || n > MAX_FEEDBACK_ITEMS) {
+      throw guardError("/v1/feedback", `feedback takes 1-${MAX_FEEDBACK_ITEMS} items, got ${n}`);
+    }
+    return this.request<FeedbackResponse>("POST", "/v1/feedback", { body: { items }, init });
+  }
+
+  /** since: ISO date. */
+  feedbackStats(since?: string, init?: RequestInit) {
+    return this.request<FeedbackStats>("GET", "/v1/feedback/stats", { query: { since }, init });
+  }
+
+  whoAmI(init?: RequestInit) {
+    return this.request<ApiKeyInfo>("GET", "/v1/keys/me", { init });
+  }
+}
+
+function guardError(path: string, message: string) {
+  return new CatalogError(400, path, { statusCode: 400, path, message }, `Catalog ${path} rejected: ${message}`);
 }
 
 export function catalogClient(
