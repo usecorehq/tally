@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@tally/auth": "workspace:*",
-    "@tally/catalog-client": "workspace:*",
     "@tally/ui": "workspace:*",
     "dotenv": "^18.0.9",
     "next": "^16.4.3",
