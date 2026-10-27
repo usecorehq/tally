@@ -26,6 +26,14 @@ See [`architecture/auth.md`](../architecture/auth.md).
 | [`auth-web-sequence.svg`](images/auth-web-sequence.svg) ([source](mermaid/auth-web-sequence.mmd)) | mp / console: proxy redirect → NextAuth Credentials → Supabase → JWT cookie → token refresh → Bearer call to the API. |
 | [`auth-mobile-sequence.svg`](images/auth-mobile-sequence.svg) ([source](mermaid/auth-mobile-sequence.mmd)) | Mobile: AuthBloc session restore, SignInCubit → use case → repository → Supabase, Dio bearer interceptor. |
 
+## Onboarding
+
+See [`architecture/onboarding.md`](../architecture/onboarding.md).
+
+| Diagram | Description |
+|---|---|
+| [`onboarding-sequence.svg`](images/onboarding-sequence.svg) ([source](mermaid/onboarding-sequence.mmd)) | Business creation → template → starter inventory + opening stock → catalogue feedback, including retry safety and best-effort feedback. |
+
 ## Database
 
 See [`architecture/database.md`](../architecture/database.md) and [`guides/database-migrations.md`](../guides/database-migrations.md).

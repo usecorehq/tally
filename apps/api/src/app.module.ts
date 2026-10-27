@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { HealthModule } from "./modules/health/health.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
+import { BusinessesModule } from "./modules/businesses/businesses.module";
 import { DrizzleModule } from "./drizzle/drizzle.module";
 import { SupabaseJwtGuard } from "./common/guards/supabase-jwt.guard";
 import { validateEnv } from "./config/env.validation";
@@ -22,6 +23,7 @@ import configuration from "./config/configuration";
     DrizzleModule,
     CatalogModule,
     HealthModule,
+    BusinessesModule,
   ],
   providers: [
     // Global auth: every route requires a valid Supabase JWT (shared Qorelly
