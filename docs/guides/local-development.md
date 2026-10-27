@@ -66,3 +66,20 @@ pnpm typecheck && pnpm test && pnpm db:check && pnpm build
 (cd services/train && uv run ruff check . && uv run pytest -q)
 (cd apps/mobile && flutter analyze && flutter test && flutter build apk --debug --flavor dev -t lib/main_dev.dart)
 ```
+
+### What CI runs, and when
+
+| Job | Runs automatically when | Does |
+|---|---|---|
+| `secrets` | every PR and push to `staging` | secret scan (~5 s) |
+| `web` | `apps/api`, `apps/mp`, `apps/console`, `packages/**`, root workspace/lockfile files change | typecheck, test, db:check, build |
+| `train` | `services/train/**` changes | ruff + pytest |
+| `mobile` | `apps/mobile/**` changes | analyze, test, dev APK (~5 min) |
+
+Any change to `.github/workflows/**` runs all of them. A newer push to the same branch cancels the older run.
+
+Run any job on demand (e.g. `mobile` before a release): **Actions → ci → Run workflow**, pick the branch and jobs, or:
+
+```bash
+gh workflow run ci.yml --ref staging -f web=true -f train=true -f mobile=true
+```
