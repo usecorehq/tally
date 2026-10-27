@@ -18,7 +18,7 @@ The repo-root `.env` is read by every app. An app may also have its own `apps/<a
 | Var | Used by | Where to get it |
 |---|---|---|
 | `QORE_CATALOG_BASE_URL` | api, train | `http://localhost:3100` locally |
-| `QORE_CATALOG_API_KEY` | api, train | Qore Catalog `api_keys` (server-only) |
+| `QORE_CATALOG_API_KEY` | api, train | Qore Catalog `api_keys` (server-only; mp and console never need it) |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | mp, console (NextAuth), api | Qorelly Supabase project |
 | `SUPABASE_JWT_SECRET` | api | Qorelly Supabase → API → JWT settings |
 | `SUPABASE_DB_URL` | api, drizzle-kit | Staging Postgres connection string |
