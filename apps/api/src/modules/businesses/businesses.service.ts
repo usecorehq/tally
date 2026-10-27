@@ -1,9 +1,18 @@
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnprocessableEntityException,
+} from "@nestjs/common";
 import type { FeedbackItem } from "@tally/catalog-client";
 import { and, asc, eq, isNull, schema, sql } from "@tally/db";
 import { TALLY_DB, type TallyDb } from "../../drizzle/drizzle.module";
 import { CatalogService } from "../catalog/catalog.service";
 import type { StarterItem } from "./businesses.dto";
+import { isUniqueViolation, normalizeBarcode } from "./barcode";
 import { planStarterInventory } from "./starter-inventory";
 
 const { businesses, businessMembers, inventoryItems, stockMovements } = schema;
@@ -87,6 +96,41 @@ export class BusinessesService {
       .from(inventoryItems)
       .where(and(eq(inventoryItems.businessId, businessId), isNull(inventoryItems.archivedAt)))
       .orderBy(asc(inventoryItems.name));
+  }
+
+  /** The active item with this barcode, for scan-to-find at the till or while counting. */
+  async findByBarcode(businessId: string, userId: string, code: string): Promise<schema.InventoryItem> {
+    await this.getForMember(businessId, userId);
+    const barcode = normalizeBarcode(code);
+    const [item] = await this.db
+      .select()
+      .from(inventoryItems)
+      .where(
+        and(eq(inventoryItems.businessId, businessId), eq(inventoryItems.barcode, barcode), isNull(inventoryItems.archivedAt)),
+      )
+      .limit(1);
+    if (!item) throw new NotFoundException(`No item with barcode ${barcode}`);
+    return item;
+  }
+
+  /** Link a barcode to an item (null unlinks). One active item per barcode per business. */
+  async setBarcode(businessId: string, userId: string, itemId: string, code: string | null): Promise<schema.InventoryItem> {
+    await this.getForMember(businessId, userId);
+    const barcode = code === null ? null : normalizeBarcode(code);
+    try {
+      const [item] = await this.db
+        .update(inventoryItems)
+        .set({ barcode, updatedAt: new Date() })
+        .where(and(eq(inventoryItems.businessId, businessId), eq(inventoryItems.id, itemId), isNull(inventoryItems.archivedAt)))
+        .returning();
+      if (!item) throw new NotFoundException(`No item ${itemId}`);
+      return item;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException(`Barcode ${barcode} is already linked to another item`);
+      }
+      throw err;
+    }
   }
 
   /**

@@ -12,6 +12,7 @@ Why we made the choices we made. Read these before changing something load-beari
 - **[Mobile app](architecture/mobile.md)** — `qore_tally` clean architecture: layers, `Either<Failure, T>`, get_it, bloc vs cubit.
 - **[Mobile flavors](architecture/mobile-flavors.md)** — `dev` / `staging` / `prod`: app IDs, per-environment `.env` files, how `--flavor` and `-t` resolve, gotchas.
 - **[Onboarding](architecture/onboarding.md)** — Create a business from a Qore Catalog sub-type, turn its template into a starter inventory, send every decision back as feedback. Safe to retry.
+- **[Barcode scan](architecture/barcode-scan.md)** — Scan to find an item in the merchant's inventory; link unknown barcodes once. One item per barcode, UPC-A = EAN-13.
 - **[Q Vision distillation](architecture/qvision-distillation.md)** — *Planned.* Console → API → train service against Qore Catalog, plus the open questions.
 
 ### Diagrams
