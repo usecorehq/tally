@@ -11,7 +11,7 @@
 4. Open a PR into `staging` with the migration and the doc update.
 5. Apply to staging:
    ```bash
-   pnpm db:migrate        # uses SUPABASE_DB_URL from the root .env
+   pnpm db:migrate        # SUPABASE_DB_URL from the root .env, else apps/api/.env
    ```
 6. From now on the file is frozen. Fix mistakes with a new migration.
 7. Production is applied by the CTO.
