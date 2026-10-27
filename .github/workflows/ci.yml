@@ -38,9 +38,15 @@ jobs:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
+      # Catches Gradle/flavor config errors that analyze and test never see.
+      - run: flutter build apk --debug --flavor dev -t lib/main_dev.dart

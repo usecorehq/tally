@@ -24,6 +24,11 @@ android {
         versionName = flutter.versionName
     }
 
+    // AGP 9 disables resValue by default; productFlavors use it for app_name.
+    buildFeatures {
+        resValues = true
+    }
+
     // Keep in sync with ios/ (tool/setup_ios_flavors.rb) and lib/main_<flavor>.dart.
     // Each flavor installs side by side: its own application ID and launcher name.
     flavorDimensions += "env"
