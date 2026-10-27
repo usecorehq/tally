@@ -1,7 +1,7 @@
 import 'package:flutter_flavor/flutter_flavor.dart';
 
 /// Runtime config. The flavor (set in `lib/main_<flavor>.dart`) supplies the
-/// API URL; Supabase values come from `--dart-define-from-file=config/<flavor>.json`.
+/// API URL; Supabase values come from `--dart-define-from-file=.env.<flavor>`.
 /// Only public values belong here — never a service-role key or catalog key.
 class Env {
   const Env._();

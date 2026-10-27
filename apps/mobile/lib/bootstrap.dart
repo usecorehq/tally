@@ -13,7 +13,7 @@ Future<void> bootstrap() async {
   if (missing.isNotEmpty) {
     throw StateError(
       'Missing ${missing.join(', ')} for flavor ${Env.flavor}. '
-      'Run with --dart-define-from-file=config/<flavor>.json (see README).',
+      'Run with --dart-define-from-file=.env.<flavor> (see README).',
     );
   }
 

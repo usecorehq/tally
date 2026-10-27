@@ -44,6 +44,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Per-flavor dart-define files (copy config/example.json)
-config/*.json
-!config/example.json
+# Per-flavor env files (copy .env.example); the repo-root .gitignore also covers these
+.env.*
+!.env.example
