@@ -23,6 +23,8 @@ The repo-root `.env` is read by every app. An app may also have its own `apps/<a
 | `AUTH_SECRET` | mp, console | `openssl rand -base64 32` |
 | `PORT`, `CORS_ORIGINS` | api | defaults in `.env.example` |
 
+The mobile app does not read this file — it has its own per-flavor `apps/mobile/.env.<flavor>` (see below).
+
 ## 3. Run
 
 ```bash
@@ -44,12 +46,21 @@ Train service:
 cd services/train && uv sync && uv run uvicorn train.main:app --reload --port 4200
 ```
 
-Mobile: see [`apps/mobile/README.md`](../../apps/mobile/README.md).
+Mobile (Flutter stable; Android: JDK 17 + Android SDK; iOS: Xcode + CocoaPods):
+
+```bash
+cd apps/mobile
+cp .env.example .env.dev        # fill SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY; TALLY_API_URL optional for dev
+flutter pub get
+flutter run --flavor dev -t lib/main_dev.dart --dart-define-from-file=.env.dev
+```
+
+With the API running locally, the dev flavor reaches it at `10.0.2.2:4100` (Android emulator) or `127.0.0.1:4100` (iOS simulator). Staging/prod and everything else: [`apps/mobile/README.md`](../../apps/mobile/README.md#flavors) and [mobile flavors](../architecture/mobile-flavors.md).
 
 ## 4. Checks (same as CI)
 
 ```bash
 pnpm typecheck && pnpm build
 (cd services/train && uv run ruff check . && uv run pytest -q)
-(cd apps/mobile && flutter analyze && flutter test)
+(cd apps/mobile && flutter analyze && flutter test && flutter build apk --debug --flavor dev -t lib/main_dev.dart)
 ```

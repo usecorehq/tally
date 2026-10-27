@@ -39,6 +39,7 @@ See [`architecture/database.md`](../architecture/database.md) and [`guides/datab
 
 | Diagram | Description |
 |---|---|
+| [`mobile-flavors.svg`](images/mobile-flavors.svg) ([source](mermaid/mobile-flavors.mmd)) | One `flutter run --flavor … -t … --dart-define-from-file …` split into native identity (Android productFlavor / iOS scheme → build config → xcconfig) and Dart runtime config (`.env` → FlavorConfig → bootstrap). See [`architecture/mobile-flavors.md`](../architecture/mobile-flavors.md). |
 | [`mobile-clean-architecture.svg`](images/mobile-clean-architecture.svg) ([source](mermaid/mobile-clean-architecture.mmd)) | presentation → domain ← data, with get_it wiring. |
 
 ## Q Vision (planned)
