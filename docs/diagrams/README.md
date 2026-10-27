@@ -32,6 +32,7 @@ See [`architecture/database.md`](../architecture/database.md) and [`guides/datab
 
 | Diagram | Description |
 |---|---|
+| [`tally-erd.svg`](images/tally-erd.svg) ([source](mermaid/tally-erd.mmd)) | The `tally` tables and how they relate: businesses, members, inventory, stock movements, sales, sale items, payments. Which columns triggers maintain. |
 | [`database-isolation.svg`](images/database-isolation.svg) ([source](mermaid/database-isolation.mmd)) | Schemas in the shared Qorelly database, which repo migrates which, and where each ledger lives. |
 | [`migration-flow.svg`](images/migration-flow.svg) ([source](mermaid/migration-flow.mmd)) | schema.ts → generate → review → PR → staging → frozen → CTO applies production. |
 
