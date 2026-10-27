@@ -6,7 +6,7 @@ Tally reads product data from the **Qore Catalog API** (`QORE_CATALOG_BASE_URL`,
 |---|---|
 | apps/api | `CatalogModule` → `CatalogService.client` (`@tally/catalog-client`), key from validated config `catalog.apiKey`. The only Tally app that holds the key. |
 | mp | Never directly. Calls Tally's `/api/catalog/*` (below) with the user's Supabase token. |
-| console | Still calls `catalogClient()` in server components (`QORE_CATALOG_*`); to be moved behind apps/api like mp. |
+| console | Never directly. Calls Tally's `/api/catalog/*` (below) with the user's Supabase token. |
 | services/train | `catalog_client()` (httpx) with the same header |
 | mobile | Never directly. Goes through apps/api. |
 
@@ -16,7 +16,7 @@ Tally reads product data from the **Qore Catalog API** (`QORE_CATALOG_BASE_URL`,
 browser → mp (Next.js) → Tally apps/api (holds QORE_CATALOG_API_KEY) → Qore Catalog
 ```
 
-mp and mobile call these routes on Tally's API. Responses are the catalogue's v1 shapes unchanged (types from `@tally/catalog-client`).
+mp, console and mobile call these routes on Tally's API. Responses are the catalogue's v1 shapes unchanged (types from `@tally/catalog-client`).
 
 | Route | Auth | Calls | Notes |
 |---|---|---|---|

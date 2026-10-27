@@ -203,9 +203,6 @@ importers:
       '@tally/auth':
         specifier: workspace:*
         version: link:../../packages/auth
-      '@tally/catalog-client':
-        specifier: workspace:*
-        version: link:../../packages/catalog-client
       '@tally/ui':
         specifier: workspace:*
         version: link:../../packages/ui
