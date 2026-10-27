@@ -88,6 +88,8 @@ Everything lives under [`docs/`](docs/README.md). Docs ship in the same PR as th
 
 More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (web + mobile), database isolation, migration flow, mobile layers and flavors, system flowchart, Q Vision flow, merchant journey.
 
+**Hackathon:** [Meta hackathon checklist](docs/planning/hackathon-checklist.md). The submission is due 3 Nov 2026.
+
 ### Architecture
 
 - **[Auth](docs/architecture/auth.md)** — One identity (Qorelly `auth.users`), three session holders, one API guard.

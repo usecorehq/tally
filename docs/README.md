@@ -2,6 +2,10 @@
 
 Everything about how Tally is built and how to run it. Docs ship with the code: a PR that changes behaviour updates the doc and diagram that describe it (see [Keeping docs current](guides/documentation.md)).
 
+## Planning
+
+- **[Meta hackathon checklist](planning/hackathon-checklist.md)** — end goal, demo story, blocking decisions and the day-by-day plan to the 3 Nov 2026 submission.
+
 ## Architecture
 
 Why we made the choices we made. Read these before changing something load-bearing.
