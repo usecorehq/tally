@@ -54,7 +54,7 @@ apps/
   api/               NestJS + Drizzle. Global SupabaseJwtGuard, health, catalog.   README + .env.example
   console/           Next.js. Q Vision distillation console.                       README + .env.example
   mp/                Next.js. Merchant portal: signup, onboarding, POS, inventory.  README + .env.example
-  mobile/            Flutter app qore_tally (clean architecture, bloc/cubit).       README
+  mobile/            Flutter app qore_tally: android + ios, dev/staging/prod flavors. README + .env.example
 services/
   train/             FastAPI + uv. Q Vision training / distillation.                README
 packages/
@@ -82,7 +82,7 @@ Everything lives under [`docs/`](docs/README.md). Docs ship in the same PR as th
 </tr>
 </table>
 
-More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (web + mobile), database isolation, migration flow, mobile layers, system flowchart, Q Vision flow, merchant journey.
+More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (web + mobile), database isolation, migration flow, mobile layers and flavors, system flowchart, Q Vision flow, merchant journey.
 
 ### Architecture
 
@@ -90,6 +90,7 @@ More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (we
 - **[Database](docs/architecture/database.md)** — `tally` schema in a shared database, and why our ledger isn't Drizzle's default.
 - **[Qore Catalog integration](docs/architecture/catalog.md)** — Where the API key may and may not go.
 - **[Mobile app](docs/architecture/mobile.md)** — Layers, `Either<Failure, T>`, get_it, bloc vs cubit.
+- **[Mobile flavors](docs/architecture/mobile-flavors.md)** — `dev` / `staging` / `prod`, per-environment `.env`, gotchas.
 - **[Q Vision distillation](docs/architecture/qvision-distillation.md)** — Planned flow and the open questions.
 
 ### Guides
