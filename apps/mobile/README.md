@@ -19,7 +19,7 @@ tool/setup_ios_flavors.rb    wires iOS build configs, xcconfigs, schemes and Pod
 
 ## Flavors
 
-Three flavors, each with its own bundle / application ID and launcher name so they install side by side:
+Three flavors, each with its own bundle / application ID and launcher name so they install side by side. Why it's built this way, the diagram, and troubleshooting: [docs/architecture/mobile-flavors.md](../../docs/architecture/mobile-flavors.md).
 
 | Flavor | Entrypoint | Android application ID | iOS bundle ID | Launcher name | Banner | API |
 |---|---|---|---|---|---|---|
@@ -47,7 +47,7 @@ cp .env.example .env.prod
 
 ### 2. Run
 
-Pass `--flavor`, the matching `-t` entrypoint, and the config file. The same commands work for Android and iOS — Flutter picks the platform from the selected device.
+Pass `--flavor`, the matching `-t` entrypoint, and the matching `.env.<flavor>` file. Flutter does not check that `--flavor` and `-t` agree, so always use the pair below. The same commands work for Android and iOS — Flutter picks the platform from the selected device.
 
 ```bash
 flutter run --flavor dev     -t lib/main_dev.dart     --dart-define-from-file=.env.dev
@@ -57,7 +57,25 @@ flutter run --flavor prod    -t lib/main_prod.dart    --dart-define-from-file=.e
 
 For `dev`, start apps/api first (`pnpm --filter @tally/api dev` from the repo root, port 4100). On a physical device, set `TALLY_API_URL` in `.env.dev` to your machine's LAN IP.
 
-VS Code / Android Studio: add a launch config per flavor with the same `--flavor`, `program` (`-t`) and `--dart-define-from-file` args.
+VS Code — `.vscode/launch.json` at the repo root (not committed; add the other flavors the same way):
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "mobile: dev",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "apps/mobile",
+      "program": "lib/main_dev.dart",
+      "args": ["--flavor", "dev", "--dart-define-from-file=.env.dev"]
+    }
+  ]
+}
+```
+
+Android Studio: Run → Edit Configurations → Flutter, set *Dart entrypoint* to `lib/main_<flavor>.dart`, *Build flavor* to `<flavor>`, and *Additional run args* to `--dart-define-from-file=.env.<flavor>`.
 
 ### 3. Build
 
@@ -82,7 +100,7 @@ Release signing is not configured yet: Android release builds use the debug key,
 | Platform | Files |
 |---|---|
 | Dart | `lib/main_<flavor>.dart` (FlavorConfig: name, banner, `apiBaseUrl`), `lib/core/config/env.dart` |
-| Android | `android/app/build.gradle.kts` — `productFlavors` (ID suffix, `app_name`, cleartext only for dev); manifest uses `@string/app_name` |
+| Android | `android/app/build.gradle.kts` — `productFlavors` (ID suffix, `app_name`, cleartext only for dev) and `buildFeatures.resValues = true` (AGP 9 turns it off); manifest uses `@string/app_name` |
 | iOS | Build configurations `Debug/Profile/Release-<flavor>`, `ios/Flutter/<Config>-<flavor>.xcconfig`, shared schemes `ios/Runner.xcodeproj/xcshareddata/xcschemes/<flavor>.xcscheme`, `APP_DISPLAY_NAME` → `CFBundleDisplayName`, Podfile config map |
 
 ### Adding or renaming a flavor
@@ -90,11 +108,20 @@ Release signing is not configured yet: Android release builds use the debug key,
 1. Add it to `productFlavors` in `android/app/build.gradle.kts`.
 2. Add it to `FLAVORS` in `tool/setup_ios_flavors.rb`, then run `ruby tool/setup_ios_flavors.rb` (idempotent) and `cd ios && pod install`.
 3. Add `lib/main_<flavor>.dart`.
-4. Update the table above.
+4. Update the table above, [docs/architecture/mobile-flavors.md](../../docs/architecture/mobile-flavors.md) and the diagram (`docs/diagrams/mermaid/mobile-flavors.mmd`, then `pnpm docs:diagrams mobile-flavors`).
 
 ## Checks
+
+Same as CI:
 
 ```bash
 flutter analyze
 flutter test
+flutter build apk --debug --flavor dev -t lib/main_dev.dart   # catches Gradle / flavor config errors
+```
+
+iOS is not built in CI yet; before merging iOS changes run:
+
+```bash
+flutter build ios --simulator --debug --flavor dev -t lib/main_dev.dart
 ```

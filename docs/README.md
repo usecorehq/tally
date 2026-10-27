@@ -10,11 +10,12 @@ Why we made the choices we made. Read these before changing something load-beari
 - **[Database](architecture/database.md)** — The `tally` schema inside the shared Qorelly database, Drizzle, and why our migration ledger is `tally.__drizzle_migrations`.
 - **[Qore Catalog integration](architecture/catalog.md)** — The `x-api-key` client, where the key may and may not go.
 - **[Mobile app](architecture/mobile.md)** — `qore_tally` clean architecture: layers, `Either<Failure, T>`, get_it, bloc vs cubit.
+- **[Mobile flavors](architecture/mobile-flavors.md)** — `dev` / `staging` / `prod`: app IDs, per-environment `.env` files, how `--flavor` and `-t` resolve, gotchas.
 - **[Q Vision distillation](architecture/qvision-distillation.md)** — *Planned.* Console → API → train service against Qore Catalog, plus the open questions.
 
 ### Diagrams
 
-- **[Architecture diagrams](diagrams/README.md)** — C4 model, auth sequences, database isolation, migration flow, mobile layers, system flowchart and journeys.
+- **[Architecture diagrams](diagrams/README.md)** — C4 model, auth sequences, database isolation, migration flow, mobile layers and flavors, system flowchart and journeys.
 
 ## Guides
 
