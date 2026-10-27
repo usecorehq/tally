@@ -115,8 +115,10 @@ pnpm --filter @tally/mp dev
 pnpm --filter @tally/console dev
 (cd apps/mobile && flutter run --flavor dev -t lib/main_dev.dart --dart-define-from-file=.env.dev)   # flavors: apps/mobile/README.md
 
-# Quality
+# Quality (same as CI)
 pnpm typecheck
+pnpm test                             # every package's tests (turbo)
+pnpm db:check                         # schema.ts matches the committed migrations
 pnpm build
 (cd services/train && uv run ruff check . && uv run pytest -q)
 (cd apps/mobile && flutter analyze && flutter test)

@@ -62,7 +62,7 @@ With the API running locally, the dev flavor reaches it at `10.0.2.2:4100` (Andr
 ## 4. Checks (same as CI)
 
 ```bash
-pnpm typecheck && pnpm build
+pnpm typecheck && pnpm test && pnpm db:check && pnpm build
 (cd services/train && uv run ruff check . && uv run pytest -q)
 (cd apps/mobile && flutter analyze && flutter test && flutter build apk --debug --flavor dev -t lib/main_dev.dart)
 ```
