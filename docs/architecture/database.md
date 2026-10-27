@@ -11,7 +11,7 @@ Tally stores its data in the **`tally` schema of the shared Qorelly Supabase Pos
 | Drizzle schema | `packages/db/src/schema.ts` — `export const tally = pgSchema("tally")` |
 | Client | `packages/db/src/client.ts` — `buildTallyDb(url)` on `postgres.js`; `prepare: false` on the Supabase pooler |
 | Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`) |
-| Config | `packages/db/drizzle.config.ts`, reads `SUPABASE_DB_URL` from the root `.env` |
+| Config | `packages/db/drizzle.config.ts`, reads `SUPABASE_DB_URL` from the root `.env`, falling back to `apps/api/.env` |
 | API access | `DrizzleModule` provides the client as `TALLY_DB` |
 
 ## Tables
