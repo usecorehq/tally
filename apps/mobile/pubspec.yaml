@@ -26,6 +26,7 @@ dependencies:
   # Shared Qorelly auth (same Supabase project) + tally API
   supabase_flutter: ^2.9.0
   dio: ^5.8.0
+  mobile_scanner: ^7.2.0
 
 dev_dependencies:
   flutter_test:

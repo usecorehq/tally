@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Release builds need this too; flutter create only adds it to debug/profile. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Barcode scanning (mobile_scanner). -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="@string/app_name"
         android:usesCleartextTraffic="${usesCleartextTraffic}"

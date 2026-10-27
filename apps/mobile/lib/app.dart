@@ -15,7 +15,8 @@ class TallyApp extends StatelessWidget {
       create: (_) => sl<AuthBloc>()..add(const AuthStarted()),
       child: MaterialApp(
         title: 'Tally',
-        theme: ThemeData(colorSchemeSeed: Colors.black, useMaterial3: true),
+        // Qorelly primary; Material 3 filled buttons are already pill-shaped.
+        theme: ThemeData(colorSchemeSeed: const Color(0xFF7856FF), useMaterial3: true),
         home: BlocBuilder<AuthBloc, AuthState>(
           builder: (context, state) => switch (state) {
             AuthUnknown() => const Scaffold(body: Center(child: CircularProgressIndicator())),
