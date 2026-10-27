@@ -40,6 +40,7 @@ src/
   common/guards/              SupabaseJwtGuard (HS256 + JWKS, aud=authenticated)
   common/decorators/          @Public(), @CurrentUser()
   drizzle/drizzle.module.ts   TALLY_DB provider from @tally/db
+  modules/businesses/         businesses, membership, inventory, onboarding starter inventory
   modules/catalog/            CatalogService wrapping @tally/catalog-client
   modules/health/             GET /api/health
 ```
@@ -47,7 +48,7 @@ src/
 ## Adding a module
 
 1. `src/modules/<name>/` with `<name>.module.ts`, controller, service.
-2. Inject the DB with `@Inject(TALLY_DB) private readonly db: TallyDb`; tables come from `@tally/db/schema`.
+2. Inject the DB with `@Inject(TALLY_DB) private readonly db: TallyDb`; tables come from `schema` and query helpers (`eq`, `and`, `sql`, …) from `@tally/db`.
 3. Register the module in `app.module.ts`.
 4. Routes are protected by default; get the user with `@CurrentUser() user: AuthenticatedUser` (`user.sub` = `auth.users.id`).
 5. Update [docs](../../docs/guides/documentation.md) in the same PR.
