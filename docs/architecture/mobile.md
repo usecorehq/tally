@@ -28,8 +28,16 @@ lib/
 
 ## Built so far
 
-Auth only: session restore, sign in, sign out, home placeholder. See the [mobile auth sequence](../diagrams/images/auth-mobile-sequence.svg).
+- **Auth**: session restore, sign in, sign out. See the [mobile auth sequence](../diagrams/images/auth-mobile-sequence.svg).
+- **Business** (`features/business`): loads the user's businesses; `BusinessCubit` holds the selected one. No business yet → points to web onboarding. A failed read shows retry, never "no businesses".
+- **Barcode scan** (`features/inventory`), API side in [barcode-scan.md](barcode-scan.md):
+  1. On open, `ScanCubit` caches the business's inventory on the device (`GET …/inventory`).
+  2. Each scan is normalised (12-digit UPC-A → 13-digit EAN, same rule as the API) and resolved **from the cache first** — instant and offline. A miss asks the API (another device may have linked it) and caches the hit.
+  3. Unknown barcode → pick the item it belongs to (items without a barcode, searchable) → `PUT …/barcode` → cached, so the next scan is instant. A 409 shows the API's message.
+  4. If the inventory can't be loaded, scanning still works through the API.
+
+  `ScanCubit` is a per-business factory (`sl<ScanCubit>(param1: businessId)`). Camera: `mobile_scanner`, product formats only (EAN-13/8, UPC-A/E, Code 128/39); stops while a result shows and when the app goes to the background (qore-inventory's pattern). Permissions: iOS `NSCameraUsageDescription`, Android `CAMERA`. The cache isn't refreshed while the scanner is open.
 
 ## Not yet
 
-Release signing (Android keystore, iOS team/profiles). Routing (go_router) once there is more than one authenticated screen. Offline inventory sync.
+Release signing (Android keystore, iOS team/profiles). Routing (go_router) now that there are several screens. Persisting the inventory cache between sessions (offline sync). Selling from a scan (POS).
