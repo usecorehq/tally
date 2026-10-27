@@ -4,10 +4,38 @@ Tally reads product data from the **Qore Catalog API** (`QORE_CATALOG_BASE_URL`,
 
 | Caller | How |
 |---|---|
-| apps/api | `CatalogModule` → `CatalogService.client` (`@tally/catalog-client`), key from validated config `catalog.apiKey` |
-| mp, console | `catalogClient()` in **server components only**; reads `QORE_CATALOG_BASE_URL` / `QORE_CATALOG_API_KEY` |
+| apps/api | `CatalogModule` → `CatalogService.client` (`@tally/catalog-client`), key from validated config `catalog.apiKey`. The only Tally app that holds the key. |
+| mp | Never directly. Calls Tally's `/api/catalog/*` (below) with the user's Supabase token. |
+| console | Still calls `catalogClient()` in server components (`QORE_CATALOG_*`); to be moved behind apps/api like mp. |
 | services/train | `catalog_client()` (httpx) with the same header |
 | mobile | Never directly. Goes through apps/api. |
+
+## Data flow
+
+```
+browser → mp (Next.js) → Tally apps/api (holds QORE_CATALOG_API_KEY) → Qore Catalog
+```
+
+mp and mobile call these routes on Tally's API. Responses are the catalogue's v1 shapes unchanged (types from `@tally/catalog-client`).
+
+| Route | Auth | Calls | Notes |
+|---|---|---|---|
+| `GET /api/catalog/verticals` | public | `businessTaxonomy()` | Business types + sub-types, needed before signup. Cached 10 min. |
+| `GET /api/catalog/subtypes/:code/templates?suggestions=0-5` | Supabase JWT | `subtypeTemplates(code, suggestions)` | `code` matches `^[a-z0-9_]{2,60}$`; default 0 suggestions. Cached 10 min per (code, suggestions). |
+| `GET /api/catalog/products?q=&brand=&category=&limit=&offset=` | Supabase JWT | `searchProducts(...)` | `q` 2-200 chars, `limit` 1-100 (default 20), `offset` 0-10000. Not cached. |
+| `GET /api/catalog/products/:qid` | Supabase JWT | `getProduct(qid)` | `qid` must be a Qore ID; a merged product returns `{ qid, status: "merged", mergedInto }`. |
+
+Errors from the catalogue are mapped in one place (`apps/api/src/modules/catalog/catalog-errors.ts`):
+
+| Catalogue | Tally returns |
+|---|---|
+| 400 | 400 with the catalogue's validation message |
+| 404 | 404 (`No business sub-type <code>` / `No product with Qore ID <qid>`) |
+| 401 / 403 | 502 `Catalogue access misconfigured`, logged as an error (Tally's key is wrong or revoked) |
+| 429 | 503 with `Retry-After: 30` |
+| timeout, network, 5xx | 502 `Catalogue unavailable` |
+
+Responses and logs never contain the catalogue key, the upstream URL or the raw upstream body. The cache is in memory (one API instance) and has no invalidation.
 
 ## The key is server-only
 
