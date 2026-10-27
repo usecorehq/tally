@@ -29,7 +29,7 @@ Status: scaffold. Sign-in works on every surface; onboarding, inventory, POS and
 **Prerequisites:** Node ≥ 20.19, pnpm ≥ 10, Python 3.12 + uv, Flutter (for mobile), a running Qore Catalog API, and access to the Qorelly Supabase staging project.
 
 ```bash
-pnpm install
+pnpm install                  # also turns on the secret-scanning pre-commit hook
 cp .env.example .env          # one root env; apps may also have their own .env (see each app's .env.example)
 # fill Supabase + Qore Catalog values — docs/guides/local-development.md
 pnpm dev                      # builds packages, then api + mp + console
@@ -67,6 +67,10 @@ docs/
   architecture/      Why we built it this way.
   guides/            How to run, migrate, and keep docs current.
   diagrams/          C4 model, sequences, flows, journeys (mermaid/ source, images/ SVG).
+scripts/
+  check-secrets.sh   Secret guard (pre-commit hook + CI). See "Secret guard" below.
+  render-diagrams.sh pnpm docs:diagrams.
+.githooks/           pre-commit → scripts/check-secrets.sh --staged.
 ```
 
 ---
@@ -125,9 +129,33 @@ pnpm db:studio
 # Docs
 pnpm docs:diagrams                    # re-render every Mermaid diagram
 pnpm docs:diagrams c4-container       # just one
+
+# Secrets
+pnpm check:secrets                    # scan every tracked file for keys
 ```
 
 ---
+
+## Secret guard
+
+Real keys never enter git. One script, [`scripts/check-secrets.sh`](scripts/check-secrets.sh), runs in two places:
+
+| Where | When | What it scans |
+|---|---|---|
+| Pre-commit hook (`.githooks/pre-commit`) | every `git commit` | staged changes |
+| CI job `secrets` | every PR and push to `staging` | all tracked files + the PR's diff |
+
+It blocks Qore Catalog keys (`qcat_live_…` / `qcat_test_…`), Supabase secret keys (`sb_secret_…`), private keys (`-----BEGIN … PRIVATE KEY-----`) and AWS access key IDs, and prints `file:line` with the value redacted.
+
+**Setup:** automatic. `pnpm install` runs `prepare`, which sets `git config core.hooksPath .githooks`. To turn it on by hand (e.g. a fresh clone before installing):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+**If it blocks you:** move the value into a gitignored `.env` (never a `.env.example`), restage, commit. If a real key was ever pushed, revoke it — removing it from the repo is not enough. Use `git commit --no-verify` only for a confirmed false positive; CI checks anyway.
+
+**Adding a pattern:** append an extended regex to `PATTERNS` in `scripts/check-secrets.sh` (and to `redact()` so it stays hidden in output). Keep patterns specific — a noisy guard gets bypassed.
 
 ## Contributing
 
