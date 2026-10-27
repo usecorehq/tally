@@ -13,7 +13,7 @@ lib/
     data/                    datasources, models, repository impls (catch exceptions → Left(Failure))
     domain/                  entities, repository contracts, use cases (Either<Failure, T>)
     presentation/            bloc (app-level flows), cubit (screen-local state), pages
-config/example.json          template for per-flavor --dart-define files (real ones are gitignored)
+.env.example                 template for .env.dev / .env.staging / .env.prod (gitignored)
 tool/setup_ios_flavors.rb    wires iOS build configs, xcconfigs, schemes and Podfile for every flavor
 ```
 
@@ -27,10 +27,14 @@ Three flavors, each with its own bundle / application ID and launcher name so th
 | `staging` | `lib/main_staging.dart` | `com.qorelly.tally.staging` | `com.qorelly.tally.staging` | Tally Staging | orange STAGING | `TALLY_API_URL` (required) |
 | `prod` | `lib/main_prod.dart` | `com.qorelly.tally` | `com.qorelly.tally` | Tally | none | `TALLY_API_URL` (required) |
 
-### 1. Create the flavor's config file (once)
+### 1. Create each environment's env file (once)
+
+Same layout as qore-mobile: one gitignored `.env.<flavor>` per environment at the app root.
 
 ```bash
-cp config/example.json config/dev.json       # also staging.json, prod.json
+cp .env.example .env.dev
+cp .env.example .env.staging
+cp .env.example .env.prod
 ```
 
 | Key | Required | Notes |
@@ -39,19 +43,19 @@ cp config/example.json config/dev.json       # also staging.json, prod.json
 | `SUPABASE_PUBLISHABLE_KEY` | yes | Publishable key (a legacy anon key also works). Public values only |
 | `TALLY_API_URL` | staging, prod | e.g. `https://<host>/api`. Optional for dev |
 
-`config/*.json` is gitignored. The app refuses to start and names the missing keys if any are empty.
+`.env.*` (except `.env.example`) is gitignored. The app refuses to start and names the missing keys if any are empty.
 
 ### 2. Run
 
 Pass `--flavor`, the matching `-t` entrypoint, and the config file. The same commands work for Android and iOS — Flutter picks the platform from the selected device.
 
 ```bash
-flutter run --flavor dev     -t lib/main_dev.dart     --dart-define-from-file=config/dev.json
-flutter run --flavor staging -t lib/main_staging.dart --dart-define-from-file=config/staging.json
-flutter run --flavor prod    -t lib/main_prod.dart    --dart-define-from-file=config/prod.json
+flutter run --flavor dev     -t lib/main_dev.dart     --dart-define-from-file=.env.dev
+flutter run --flavor staging -t lib/main_staging.dart --dart-define-from-file=.env.staging
+flutter run --flavor prod    -t lib/main_prod.dart    --dart-define-from-file=.env.prod
 ```
 
-For `dev`, start apps/api first (`pnpm --filter @tally/api dev` from the repo root, port 4100). On a physical device, set `TALLY_API_URL` in `config/dev.json` to your machine's LAN IP.
+For `dev`, start apps/api first (`pnpm --filter @tally/api dev` from the repo root, port 4100). On a physical device, set `TALLY_API_URL` in `.env.dev` to your machine's LAN IP.
 
 VS Code / Android Studio: add a launch config per flavor with the same `--flavor`, `program` (`-t`) and `--dart-define-from-file` args.
 
@@ -61,14 +65,14 @@ Replace `<flavor>` with `dev`, `staging` or `prod`.
 
 **Android**
 ```bash
-flutter build apk       --release --flavor <flavor> -t lib/main_<flavor>.dart --dart-define-from-file=config/<flavor>.json
-flutter build appbundle --release --flavor <flavor> -t lib/main_<flavor>.dart --dart-define-from-file=config/<flavor>.json
+flutter build apk       --release --flavor <flavor> -t lib/main_<flavor>.dart --dart-define-from-file=.env.<flavor>
+flutter build appbundle --release --flavor <flavor> -t lib/main_<flavor>.dart --dart-define-from-file=.env.<flavor>
 ```
 
 **iOS**
 ```bash
-flutter build ios --release --flavor <flavor> -t lib/main_<flavor>.dart --dart-define-from-file=config/<flavor>.json
-flutter build ipa --release --flavor <flavor> -t lib/main_<flavor>.dart --dart-define-from-file=config/<flavor>.json
+flutter build ios --release --flavor <flavor> -t lib/main_<flavor>.dart --dart-define-from-file=.env.<flavor>
+flutter build ipa --release --flavor <flavor> -t lib/main_<flavor>.dart --dart-define-from-file=.env.<flavor>
 ```
 
 Release signing is not configured yet: Android release builds use the debug key, and iOS needs a team + profiles per bundle ID in Xcode.
