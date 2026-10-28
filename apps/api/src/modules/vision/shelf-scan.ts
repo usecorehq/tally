@@ -58,6 +58,12 @@ export type Detection = {
   inventoryMatch: InventoryMatch | null;
   /** The match is an item the merchant removed: offer to restore it rather than add a duplicate. */
   inventoryItemArchived: boolean;
+  /**
+   * Ask "Is this your X?" before treating it as in stock: a name match, or a
+   * catalogue match whose size doesn't agree with the label (or the label
+   * showed no size). false only for a remembered reading or a size-agreeing match.
+   */
+  inventoryNeedsConfirm: boolean;
 };
 
 /** One /v1/match item per product, ref = its index, so results map back without relying on order. */
@@ -85,8 +91,8 @@ export function buildDetections(
 ): Detection[] {
   const byRef = new Map(matches.map((m) => [m.ref, m]));
   return products.map((p, i) => {
-    const candidates = (byRef.get(String(i))?.candidates ?? [])
-      .filter((c) => plausible(p, c))
+    const plausibleCandidates = (byRef.get(String(i))?.candidates ?? []).filter((c) => plausible(p, c));
+    const candidates = plausibleCandidates
       .slice(0, MATCH_CANDIDATES)
       .map((c): DetectionCandidate => ({
         qid: c.qid,
@@ -108,7 +114,8 @@ export function buildDetections(
       ...counted(p, samBoxes.get(i)),
       confidence: p.confidence,
       candidates,
-      ...stocked(matchInventory(p, candidates.map((c) => c.qid), inventory)),
+      // All plausible candidates, not just the 3 shown: the merchant's size may rank lower.
+      ...stocked(matchInventory(p, plausibleCandidates.map((c) => ({ qid: c.qid, sizeAgrees: c.signals.size === 1 })), inventory)),
     };
   });
 }
@@ -121,8 +128,10 @@ function counted(p: ShelfProduct, sam: Box[] | undefined): Pick<Detection, "coun
     : { count: p.count, countSource: "spark", sparkCount: p.count, samCount, boxes: p.boxes };
 }
 
-function stocked(m: StockedMatch | null): Pick<Detection, "inventoryItemId" | "inventoryMatch" | "inventoryItemArchived"> {
+function stocked(
+  m: StockedMatch | null,
+): Pick<Detection, "inventoryItemId" | "inventoryMatch" | "inventoryItemArchived" | "inventoryNeedsConfirm"> {
   return m
-    ? { inventoryItemId: m.itemId, inventoryMatch: m.match, inventoryItemArchived: m.archived }
-    : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false };
+    ? { inventoryItemId: m.itemId, inventoryMatch: m.match, inventoryItemArchived: m.archived, inventoryNeedsConfirm: !m.sure }
+    : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false, inventoryNeedsConfirm: false };
 }

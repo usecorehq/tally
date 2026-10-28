@@ -139,6 +139,8 @@ describe("VisionController shelf-scans (HTTP)", () => {
           inventoryItemId: "item-a",
           inventoryMatch: "catalogue",
           inventoryItemArchived: false,
+          // The mocked candidate's signals.size is 0.5 (no size agreement): ask first.
+          inventoryNeedsConfirm: true,
           candidates: [{ qid: "QC-A", inventoryItemId: "item-a" }],
         },
       ],

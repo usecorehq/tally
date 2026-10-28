@@ -7,12 +7,19 @@
  *               it as this item (inventory_item_readings). Works for products
  *               the catalogue doesn't know.
  *   catalogue → an active item is linked to one of the plausible candidates'
- *               Qore IDs (best candidate first): "in stock", never a duplicate.
+ *               Qore IDs: "in stock", never a duplicate. Sure only when that
+ *               candidate also agrees on size (/v1/match signals.size = 1);
+ *               otherwise "is this your X?" — Peak 900g on the shelf must not
+ *               restock the merchant's Peak 400g.
  *   catalogue + archived → only an archived item has that Qore ID: "you
  *               removed X, restore?" (restoring keeps its name, price, history).
+ *               Same size rule.
  *   name      → a hand-typed item (no Qore ID) whose name holds the brand and
- *               name read off the pack: "is this your X?". Conservative: needs a
+ *               name read off the pack: "is this your X?". Never sure. Needs a
  *               legible brand, exactly one such item and no conflicting size.
+ *
+ * Within each step, a size-agreeing candidate beats a better-scored one that
+ * doesn't; otherwise candidates keep /v1/match's order.
  */
 
 export type InventoryMatch = "reading" | "catalogue" | "name";
@@ -29,7 +36,11 @@ export type InventoryIndex = {
 
 export type Reading = { brand: string; name: string; pack: string };
 
-export type StockedMatch = { itemId: string; match: InventoryMatch; archived: boolean };
+/** sure = false: ask the merchant to confirm before treating it as in stock. */
+export type StockedMatch = { itemId: string; match: InventoryMatch; archived: boolean; sure: boolean };
+
+/** A plausible catalogue candidate, best first; sizeAgrees = /v1/match signals.size === 1. */
+export type CandidateRef = { qid: string; sizeAgrees: boolean };
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}.]+/gu, " ").replace(/\s+/g, " ").trim();
 
@@ -55,22 +66,21 @@ export function indexInventory(
   };
 }
 
-/** candidateQids: the plausible catalogue candidates, best first. */
-export function matchInventory(reading: Reading, candidateQids: string[], index: InventoryIndex): StockedMatch | null {
+export function matchInventory(reading: Reading, candidates: CandidateRef[], index: InventoryIndex): StockedMatch | null {
   const byReading = index.byReading.get(readingKey(reading));
-  if (byReading) return { itemId: byReading, match: "reading", archived: false };
+  if (byReading) return { itemId: byReading, match: "reading", archived: false, sure: true };
 
-  for (const qid of candidateQids) {
-    const itemId = index.byQid.get(qid);
-    if (itemId) return { itemId, match: "catalogue", archived: false };
-  }
-  for (const qid of candidateQids) {
-    const itemId = index.archivedByQid.get(qid);
-    if (itemId) return { itemId, match: "catalogue", archived: true };
+  // Size-agreeing candidates first (stable, so /v1/match order holds within each group).
+  const ordered = [...candidates.filter((c) => c.sizeAgrees), ...candidates.filter((c) => !c.sizeAgrees)];
+  for (const [items, archived] of [[index.byQid, false], [index.archivedByQid, true]] as const) {
+    for (const c of ordered) {
+      const itemId = items.get(c.qid);
+      if (itemId) return { itemId, match: "catalogue", archived, sure: c.sizeAgrees };
+    }
   }
 
   const byName = matchByName(reading, index.unlinked);
-  return byName ? { itemId: byName, match: "name", archived: false } : null;
+  return byName ? { itemId: byName, match: "name", archived: false, sure: false } : null;
 }
 
 const SIZE = /^\d+(?:\.\d+)?(?:g|kg|mg|ml|cl|l|ltr|oz|lb|pcs|pc|x)?$/;

@@ -68,7 +68,15 @@ describe("buildDetections", () => {
     ];
     const [first, second] = buildDetections([peak, loose], matches, stockedA, new Map(), id);
 
-    expect(first).toMatchObject({ id: "d1", name: "Full Cream Milk Powder", count: 2, inventoryItemId: "item-a", inventoryMatch: "catalogue" });
+    expect(first).toMatchObject({
+      id: "d1",
+      name: "Full Cream Milk Powder",
+      count: 2,
+      inventoryItemId: "item-a",
+      inventoryMatch: "catalogue",
+      // candidate() sets signals.size = 1
+      inventoryNeedsConfirm: false,
+    });
     expect(first!.candidates.map((c) => [c.qid, c.inventoryItemId])).toEqual([
       ["QC-A", "item-a"],
       ["QC-B", null],

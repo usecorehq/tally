@@ -16,6 +16,8 @@ const archived = [
   { id: "old-peak", name: "Peak old", variantLabel: null, coreQid: "QC-AAAA-AAAA-A" },
 ];
 const reading = (brand: string, name: string, pack = "") => ({ brand, name, pack });
+const sized = (...qids: string[]) => qids.map((qid) => ({ qid, sizeAgrees: true }));
+const unsized = (...qids: string[]) => qids.map((qid) => ({ qid, sizeAgrees: false }));
 
 describe("readingKey", () => {
   it("folds case, punctuation and spacing", () => {
@@ -27,23 +29,52 @@ describe("matchInventory", () => {
   const index = indexInventory(items, [{ itemId: "ladyb", readingKey: "lady b|custard powder|2kg" }], archived);
 
   it("a remembered reading wins, even for a product the catalogue doesn't know", () => {
-    expect(matchInventory(reading("Lady B", "Custard Powder", "2kg"), [], index)).toEqual({ itemId: "ladyb", match: "reading", archived: false });
+    expect(matchInventory(reading("Lady B", "Custard Powder", "2kg"), [], index)).toEqual({ itemId: "ladyb", match: "reading", archived: false, sure: true });
   });
 
   it("then any plausible candidate's Qore ID on an active item, best candidate first", () => {
-    expect(matchInventory(reading("Peak", "Milk", "400g"), ["QC-ZZZZ-ZZZZ-Z", "QC-AAAA-AAAA-A"], index)).toEqual({
+    expect(matchInventory(reading("Peak", "Milk", "400g"), sized("QC-ZZZZ-ZZZZ-Z", "QC-AAAA-AAAA-A"), index)).toEqual({
       itemId: "peak-400",
       match: "catalogue",
       archived: false,
+      sure: true,
     });
   });
 
   it("offers to restore an item the merchant removed rather than adding a duplicate", () => {
-    expect(matchInventory(reading("Milo", "Milo"), ["QC-MMMM-MMMM-M"], index)).toEqual({ itemId: "old-milo", match: "catalogue", archived: true });
+    expect(matchInventory(reading("Milo", "Milo", "400g"), sized("QC-MMMM-MMMM-M"), index)).toEqual({
+      itemId: "old-milo",
+      match: "catalogue",
+      archived: true,
+      sure: true,
+    });
+    expect(matchInventory(reading("Milo", "Milo", "1kg"), unsized("QC-MMMM-MMMM-M"), index)).toMatchObject({ itemId: "old-milo", archived: true, sure: false });
   });
 
   it("an active item beats an archived copy of the same product", () => {
-    expect(matchInventory(reading("Peak", "x"), ["QC-AAAA-AAAA-A"], index)).toMatchObject({ itemId: "peak-400", archived: false });
+    expect(matchInventory(reading("Peak", "x"), sized("QC-AAAA-AAAA-A"), index)).toMatchObject({ itemId: "peak-400", archived: false });
+  });
+
+  it("Peak 900g on the shelf is only a suggestion for the merchant's Peak 400g", () => {
+    // /v1/match offers the 400g as a plausible same-brand candidate with signals.size = 0.
+    expect(matchInventory(reading("Peak", "Full Cream Milk Powder", "900g"), unsized("QC-AAAA-AAAA-A"), index)).toEqual({
+      itemId: "peak-400",
+      match: "catalogue",
+      archived: false,
+      sure: false,
+    });
+  });
+
+  it("a size-agreeing candidate beats a better-scored one that doesn't", () => {
+    const two = indexInventory(
+      [
+        { id: "p400", name: "Peak 400g", variantLabel: null, coreQid: "QC-AAAA-AAAA-A" },
+        { id: "p900", name: "Peak 900g", variantLabel: null, coreQid: "QC-BBBB-BBBB-B" },
+      ],
+      [],
+    );
+    const candidates = [...unsized("QC-AAAA-AAAA-A"), ...sized("QC-BBBB-BBBB-B")];
+    expect(matchInventory(reading("Peak", "Milk", "900g"), candidates, two)).toMatchObject({ itemId: "p900", sure: true });
   });
 
   it("ambiguous names don't match", () => {
@@ -58,8 +89,8 @@ describe("matchInventory", () => {
   });
 
   it("then brand + name in exactly one hand-typed (unlinked) item's name, with a compatible size", () => {
-    expect(matchInventory(reading("Pepsodent", "Toothpaste"), [], index)).toEqual({ itemId: "pepsodent", match: "name", archived: false });
-    expect(matchInventory(reading("Peak", "Full Cream Milk Powder", "900g"), [], index)).toEqual({ itemId: "peak-900", match: "name", archived: false });
+    expect(matchInventory(reading("Pepsodent", "Toothpaste"), [], index)).toEqual({ itemId: "pepsodent", match: "name", archived: false, sure: false });
+    expect(matchInventory(reading("Peak", "Full Cream Milk Powder", "900g"), [], index)).toEqual({ itemId: "peak-900", match: "name", archived: false, sure: false });
   });
 
   it.each([
