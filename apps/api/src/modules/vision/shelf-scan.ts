@@ -8,13 +8,15 @@ export const MATCH_CANDIDATES = 3;
 export const MATCH_LIMIT = 10;
 
 /**
- * Without a legible brand, the name must match well on meaning: /v1/match's
- * text signal (trigram + embedding similarity since semantic search). On 30
- * unbranded shelf reads (Oct 2026) right-type matches scored text >= 0.54
- * (one at 0.49) and wrong ones <= 0.51 ("RED" → a red wine). Text, not score:
- * an agreeing size inflates the score of an unbranded match.
+ * Without a legible brand, the name must match on meaning: /v1/match's text
+ * signal (trigram + embedding similarity since semantic search). On 92
+ * unbranded reads (Oct 2026), text >= 0.50 kept 58 of 61 right-type matches
+ * and 1 of 31 wrong ones ("RED" → a red wine, 0.51); 0.52 kept 52 right, 0.48
+ * let "Palm oil" → a body oil through. Text, not score: an agreeing size
+ * inflates the score of an unbranded match. Unbranded matches are only ever
+ * suggestions the merchant confirms (see inventory-match.ts).
  */
-export const MIN_UNBRANDED_TEXT = 0.52;
+export const MIN_UNBRANDED_TEXT = 0.5;
 
 /**
  * Drop catalogue candidates the merchant shouldn't be offered. /v1/match always
@@ -121,7 +123,10 @@ export function buildDetections(
       confidence: p.confidence,
       candidates,
       // All plausible candidates, not just the 3 shown: the merchant's size may rank lower.
-      ...stocked(matchInventory(p, plausibleCandidates.map((c) => ({ qid: c.qid, sizeAgrees: c.signals.size === 1 })), inventory)),
+      // Sure only when the label's brand and size both agree; an unbranded read always asks.
+      ...stocked(
+        matchInventory(p, plausibleCandidates.map((c) => ({ qid: c.qid, sizeAgrees: c.signals.brand === 1 && c.signals.size === 1 })), inventory),
+      ),
     };
   });
 }

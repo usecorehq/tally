@@ -39,7 +39,11 @@ export type Reading = { brand: string; name: string; pack: string };
 /** sure = false: ask the merchant to confirm before treating it as in stock. */
 export type StockedMatch = { itemId: string; match: InventoryMatch; archived: boolean; sure: boolean };
 
-/** A plausible catalogue candidate, best first; sizeAgrees = /v1/match signals.size === 1. */
+/**
+ * A plausible catalogue candidate, best first. sizeAgrees: /v1/match says both
+ * brand and size agree with the label (signals.brand === 1 && signals.size === 1),
+ * so an unbranded read never counts as sure.
+ */
 export type CandidateRef = { qid: string; sizeAgrees: boolean };
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}.]+/gu, " ").replace(/\s+/g, " ").trim();
