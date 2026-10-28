@@ -6,7 +6,31 @@
 - **Q Vision operators** upload product images in the `console`, link them to Qore Catalog products, and run distillation in `services/train`.
 - **Tally** lives in the `tally` schema of the shared Qorelly Supabase project and reuses Qorelly's `auth.users`.
 
-Status: scaffold. Sign-in works on every surface; onboarding, inventory, POS and Q Vision flows are planned (see the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
+Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile. Photo → inventory, POS and Q Vision are planned (see the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
+
+---
+
+## Built during the Meta hackathon
+
+This repository was created for the **Meta Global AI Developer Hackathon**. The first commit ([`1406a71`](https://github.com/usecorehq/tally/commit/1406a71), the monorepo scaffold) was made on **26 Oct 2026** after kickoff; **all code in this repository was written during the hackathon.**
+
+**New in this repo**
+
+| Area | What | PRs |
+|---|---|---|
+| Platform | pnpm + turbo monorepo (api, mp, console, mobile, train), CI (path-filtered jobs, tests, schema-drift check), secret-scanning guard, architecture docs and diagrams | [#1](https://github.com/usecorehq/tally/pull/1), [#6](https://github.com/usecorehq/tally/pull/6), [#11](https://github.com/usecorehq/tally/pull/11), [#14](https://github.com/usecorehq/tally/pull/14) |
+| Database | `tally` schema: businesses, inventory, append-only stock movements, sales and payments, with triggers that keep stock and paid amounts consistent | [#9](https://github.com/usecorehq/tally/pull/9), [#10](https://github.com/usecorehq/tally/pull/10) |
+| Catalogue integration | Typed client for the Qore Catalog v1 API; Tally's API is the only place holding the catalogue key | [#3](https://github.com/usecorehq/tally/pull/3), [#12](https://github.com/usecorehq/tally/pull/12), [#13](https://github.com/usecorehq/tally/pull/13) |
+| Onboarding | Create a business from a catalogue business type; turn its template into a starter inventory; every keep/swap/remove decision is sent back to the catalogue as feedback | [#15](https://github.com/usecorehq/tally/pull/15), [#16](https://github.com/usecorehq/tally/pull/16) |
+| Barcode scan | Scan to find an item in the merchant's stock; on-device cache, link unknown barcodes once | [#17](https://github.com/usecorehq/tally/pull/17), [#18](https://github.com/usecorehq/tally/pull/18) |
+| Mobile | Flutter app for Android and iOS with dev / staging / prod builds | [#2](https://github.com/usecorehq/tally/pull/2), [#4](https://github.com/usecorehq/tally/pull/4), [#5](https://github.com/usecorehq/tally/pull/5) |
+
+**Existing before the hackathon (used, not built here)**
+
+| | Role in Tally |
+|---|---|
+| **Qore Catalog** (Core Technologies) | Separate product and repository: the Nigerian product catalogue Tally calls for business types, templates, product search, matching and feedback |
+| **Qorelly** (Core Technologies) | Merchants' existing accounts (shared Supabase Auth), and the design system: Tally's `@tally/ui` components and icons are ported from Qorelly's |
 
 ---
 
@@ -160,6 +184,11 @@ git config core.hooksPath .githooks
 **If it blocks you:** move the value into a gitignored `.env` (never a `.env.example`), restage, commit. If a real key was ever pushed, revoke it — removing it from the repo is not enough. Use `git commit --no-verify` only for a confirmed false positive; CI checks anyway.
 
 **Adding a pattern:** append an extended regex to `PATTERNS` in `scripts/check-secrets.sh` (and to `redact()` so it stays hidden in output). Keep patterns specific — a noisy guard gets bypassed.
+
+## Credits
+
+- **Icons:** [Solar Icon Set](https://www.figma.com/community/file/1166831539721848736) by [480 Design](https://github.com/480-Design/Solar-Icon-Set), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Converted from SVG to React components; no other changes. See [`packages/ui/src/icons/LICENSE.md`](packages/ui/src/icons/LICENSE.md).
+- **Font:** [Inter](https://rsms.me/inter/) by Rasmus Andersson, [SIL Open Font License 1.1](https://openfontlicense.org), loaded with `next/font`.
 
 ## Contributing
 
