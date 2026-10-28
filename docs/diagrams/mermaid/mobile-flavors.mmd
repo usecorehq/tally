@@ -1,0 +1,35 @@
+%%{init: {"theme": "neutral"} }%%
+flowchart LR
+    cmd["<b>flutter run / build</b><br/>--flavor staging<br/>-t lib/main_staging.dart<br/>--dart-define-from-file=.env.staging"]
+
+    subgraph native[" Native build — app identity "]
+        direction TB
+        android["<b>Android</b><br/>build.gradle.kts productFlavors.staging<br/>applicationIdSuffix .staging<br/>resValue app_name, cleartext off"]
+        ios["<b>iOS</b><br/>scheme staging.xcscheme<br/>→ build config Debug/Release-staging<br/>→ Flutter/&lt;Config&gt;-staging.xcconfig<br/>PRODUCT_BUNDLE_IDENTIFIER, APP_DISPLAY_NAME"]
+        id["<b>Installed app</b><br/>com.qorelly.tally.staging<br/>&quot;Tally Staging&quot;"]
+        android --> id
+        ios --> id
+    end
+
+    subgraph dart[" Dart — runtime config "]
+        direction TB
+        env[".env.staging (gitignored)<br/>SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,<br/>TALLY_API_URL → compile-time defines"]
+        main["<b>main_staging.dart</b><br/>FlavorConfig(name STAGING, orange banner,<br/>apiBaseUrl = TALLY_API_URL)"]
+        boot["<b>bootstrap()</b><br/>Env.missing() → StateError if empty<br/>initDependencies() (get_it, Supabase, Dio)<br/>runApp(FlavorBanner(TallyApp))"]
+        env --> main --> boot
+    end
+
+    cmd -- "--flavor" --> android
+    cmd -- "--flavor" --> ios
+    cmd -- "-t" --> main
+    cmd -- "--dart-define-from-file" --> env
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#999999,stroke:#6b6b6b,color:#fff
+    classDef boundary fill:#ffffff,stroke:#999999,color:#333,stroke-dasharray: 4 3
+
+    class cmd person
+    class android,ios,main,boot container
+    class env,id external
+    class native,dart boundary

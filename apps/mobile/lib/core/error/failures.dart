@@ -16,3 +16,13 @@ class ServerFailure extends Failure {
 class AuthFailure extends Failure {
   const AuthFailure(super.message);
 }
+
+/// The API answered 404: the thing asked for doesn't exist (e.g. an unknown barcode).
+class NotFoundFailure extends Failure {
+  const NotFoundFailure(super.message);
+}
+
+/// The API answered 409: the change conflicts with existing data (e.g. a barcode already linked).
+class ConflictFailure extends Failure {
+  const ConflictFailure(super.message);
+}

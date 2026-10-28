@@ -1,0 +1,2 @@
+DROP INDEX "tally"."inventory_items_business_barcode_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "inventory_items_business_barcode_key" ON "tally"."inventory_items" USING btree ("business_id","barcode") WHERE barcode is not null and archived_at is null;

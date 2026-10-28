@@ -1,0 +1,28 @@
+%%{init: {"theme": "neutral"} }%%
+sequenceDiagram
+    autonumber
+    actor U as Merchant
+    participant P as SignInPage<br/>SignInCubit
+    participant B as AuthBloc
+    participant R as AuthRepository<br/>(Either<Failure, T>)
+    participant S as Qorelly Supabase Auth
+    participant A as apps/api
+
+    Note over B: App start: AuthStarted
+    B->>R: currentUser() (restored supabase_flutter session)
+    R-->>B: Right(null) → Unauthenticated / Right(user) → Authenticated
+    U->>P: email + password, tap Sign in
+    P->>R: SignIn use case
+    R->>S: signInWithPassword
+    alt failure
+        S-->>R: AuthException
+        R-->>P: Left(AuthFailure)
+        P-->>U: inline error
+    else success
+        S-->>R: session
+        R-->>P: Right(MerchantUser)
+        P->>B: AuthUserChanged(user)
+        B-->>U: HomePage
+    end
+    U->>A: any API call via Dio
+    Note right of U: interceptor adds Bearer currentSession.accessToken

@@ -1,0 +1,16 @@
+%%{init: {"theme": "neutral"} }%%
+flowchart LR
+    edit["Edit<br/>packages/db/src/schema.ts"] --> gen["pnpm db:generate<br/>--name=&lt;semantic&gt;"]
+    gen --> review["Review generated SQL<br/>(tally schema only;<br/>grants ≠ tightenings)"]
+    review --> pr["PR into staging"]
+    pr --> stg["pnpm db:migrate<br/>against staging"]
+    stg --> frozen["Migration file frozen"]
+    frozen --> prod["Production applied<br/>by the CTO"]
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#999999,stroke:#6b6b6b,color:#fff
+    classDef planned fill:#ffffff,stroke:#1168bd,color:#1168bd,stroke-dasharray: 5 3
+    classDef boundary fill:#ffffff,stroke:#999999,color:#333,stroke-dasharray: 4 3
+    class edit,gen,review,pr,stg,frozen container
+    class prod person

@@ -8,6 +8,27 @@
       "when": 1793039727187,
       "tag": "0000_tally_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793115169490,
+      "tag": "0001_tally_core_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793115194726,
+      "tag": "0002_tally_stock_and_payment_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793123779596,
+      "tag": "0003_inventory_barcode_unique",
+      "breakpoints": true
     }
   ]
 }

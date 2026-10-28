@@ -10,8 +10,306 @@
  * Always pass --name; migrations are named semantically after what they do
  * (e.g. tally_setup, add_vision_datasets) — never drizzle's random codenames.
  * Applied migration files are frozen.
+ *
+ * Invariants (enforced in SQL, see migrations/*_tally_stock_and_payment_functions.sql):
+ *   - Money is numeric(12,2) Naira. Drizzle reads numeric as string — never parse to float.
+ *   - inventory_items.quantity_on_hand moves only through stock_movements (trigger).
+ *   - sales.paid_amount is the sum of sale_payments (trigger). No app code writes it.
+ *   - Reporting reads sale_payments / sales.paid_amount, never total or subtotal.
+ *   - Child rows carry business_id and use composite FKs (business_id, x_id), so a
+ *     row can never point at another business's data.
  */
 
-import { pgSchema } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  check,
+  foreignKey,
+  index,
+  integer,
+  numeric,
+  pgSchema,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 export const tally = pgSchema("tally");
+
+const money = (name: string) => numeric(name, { precision: 12, scale: 2 });
+const qty = (name: string) => numeric(name, { precision: 12, scale: 3 });
+const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+
+// Qore Catalog product id, e.g. QC-7K2M-9XQ4-R (Crockford base32, no I L O U).
+const QID_REGEX = "^QC-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]$";
+
+// ─── Business ────────────────────────────────────────────────────────────
+
+export const businesses = tally.table(
+  "businesses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // FK to auth.users(id) is added in the custom SQL migration (cross-schema).
+    ownerUserId: uuid("owner_user_id").notNull(),
+    name: text("name").notNull(),
+    // Codes from Qore Catalog GET /v1/business-taxonomy.
+    verticalCode: text("vertical_code").notNull(),
+    subtypeCode: text("subtype_code").notNull(),
+    currency: text("currency").notNull().default("NGN"),
+    // Incremented by tally.next_sale_number(); the row lock serialises sales.
+    saleCounter: integer("sale_counter").notNull().default(0),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check("businesses_name_length", sql`char_length(name) between 1 and 120`),
+    check("businesses_currency_ngn", sql`currency = 'NGN'`),
+    check("businesses_sale_counter_nonneg", sql`sale_counter >= 0`),
+    index("businesses_owner_idx").on(t.ownerUserId),
+  ],
+);
+
+export const businessMembers = tally.table(
+  "business_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    // FK to auth.users(id) is added in the custom SQL migration (cross-schema).
+    userId: uuid("user_id").notNull(),
+    role: text("role").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("business_members_business_user_key").on(t.businessId, t.userId),
+    check("business_members_role", sql`role in ('owner', 'staff')`),
+    index("business_members_user_idx").on(t.userId),
+  ],
+);
+
+// ─── Inventory ───────────────────────────────────────────────────────────
+
+export const inventoryItems = tally.table(
+  "inventory_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    // Linked Qore Catalog product; null for items the catalogue doesn't know.
+    coreQid: text("core_qid"),
+    name: text("name").notNull(),
+    variantLabel: text("variant_label"),
+    sizeValue: numeric("size_value", { precision: 12, scale: 3 }),
+    sizeUnit: text("size_unit"),
+    packQty: integer("pack_qty").notNull().default(1),
+    categoryPath: text("category_path"),
+    barcode: text("barcode"),
+    price: money("price").notNull(),
+    cost: money("cost"),
+    // Maintained by the stock_movements trigger. Never write it directly.
+    quantityOnHand: qty("quantity_on_hand").notNull().default("0"),
+    reorderPoint: qty("reorder_point"),
+    source: text("source").notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("inventory_items_business_id_key").on(t.businessId, t.id),
+    check("inventory_items_core_qid_format", sql.raw(`core_qid is null or core_qid ~ '${QID_REGEX}'`)),
+    check("inventory_items_pack_qty_positive", sql`pack_qty > 0`),
+    check("inventory_items_price_nonneg", sql`price >= 0`),
+    check("inventory_items_cost_nonneg", sql`cost is null or cost >= 0`),
+    check("inventory_items_source", sql`source in ('template', 'photo', 'manual')`),
+    check("inventory_items_name_length", sql`char_length(name) between 1 and 200`),
+    uniqueIndex("inventory_items_business_core_qid_key")
+      .on(t.businessId, t.coreQid)
+      .where(sql`core_qid is not null and archived_at is null`),
+    index("inventory_items_business_name_idx").on(t.businessId, t.name),
+    // One active item per barcode per business, so a scan resolves to exactly one item.
+    uniqueIndex("inventory_items_business_barcode_key")
+      .on(t.businessId, t.barcode)
+      .where(sql`barcode is not null and archived_at is null`),
+  ],
+);
+
+// ─── Sales ───────────────────────────────────────────────────────────────
+
+export const sales = tally.table(
+  "sales",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    // From tally.next_sale_number(business_id).
+    saleNumber: integer("sale_number").notNull(),
+    status: text("status").notNull().default("completed"),
+    subtotal: money("subtotal").notNull(),
+    discount: money("discount").notNull().default("0"),
+    total: money("total").notNull(),
+    // Sum of sale_payments.amount, maintained by trigger. Never write it directly.
+    paidAmount: money("paid_amount").notNull().default("0"),
+    // Idempotency stamp for tally.deduct_sale_stock().
+    stockDeductedAt: timestamp("stock_deducted_at", { withTimezone: true }),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidReason: text("void_reason"),
+    // Client-generated id so a retried request (e.g. from mobile) can't double-record.
+    clientSaleId: text("client_sale_id"),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("sales_business_id_key").on(t.businessId, t.id),
+    unique("sales_business_sale_number_key").on(t.businessId, t.saleNumber),
+    uniqueIndex("sales_business_client_sale_id_key")
+      .on(t.businessId, t.clientSaleId)
+      .where(sql`client_sale_id is not null`),
+    check("sales_status", sql`status in ('completed', 'voided')`),
+    check("sales_amounts_nonneg", sql`subtotal >= 0 and discount >= 0 and total >= 0`),
+    check("sales_total_formula", sql`total = subtotal - discount`),
+    check("sales_paid_nonneg", sql`paid_amount >= 0`),
+    check(
+      "sales_void_consistent",
+      sql`(status = 'voided') = (voided_at is not null)`,
+    ),
+    index("sales_business_created_idx").on(t.businessId, t.createdAt.desc()),
+  ],
+);
+
+export const saleItems = tally.table(
+  "sale_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    saleId: uuid("sale_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    // Copied at the time of sale so later product edits never change receipts.
+    itemName: text("item_name").notNull(),
+    coreQid: text("core_qid"),
+    unitPrice: money("unit_price").notNull(),
+    quantity: qty("quantity").notNull(),
+    lineTotal: money("line_total").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "sale_items_sale_fk",
+      columns: [t.businessId, t.saleId],
+      foreignColumns: [sales.businessId, sales.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "sale_items_item_fk",
+      columns: [t.businessId, t.itemId],
+      foreignColumns: [inventoryItems.businessId, inventoryItems.id],
+    }),
+    check("sale_items_unit_price_nonneg", sql`unit_price >= 0`),
+    check("sale_items_quantity_positive", sql`quantity > 0`),
+    check("sale_items_line_total", sql`line_total = round(unit_price * quantity, 2)`),
+    index("sale_items_sale_idx").on(t.saleId),
+    index("sale_items_item_idx").on(t.businessId, t.itemId),
+  ],
+);
+
+export const salePayments = tally.table(
+  "sale_payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    saleId: uuid("sale_id").notNull(),
+    amount: money("amount").notNull(),
+    // Recorded, not processed: Tally does not move money in the MVP.
+    method: text("method").notNull(),
+    reference: text("reference"),
+    receivedBy: uuid("received_by").notNull(),
+    clientPaymentId: text("client_payment_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "sale_payments_sale_fk",
+      columns: [t.businessId, t.saleId],
+      foreignColumns: [sales.businessId, sales.id],
+    }).onDelete("cascade"),
+    check("sale_payments_amount_positive", sql`amount > 0`),
+    check("sale_payments_method", sql`method in ('cash', 'transfer', 'card', 'other')`),
+    uniqueIndex("sale_payments_business_client_payment_id_key")
+      .on(t.businessId, t.clientPaymentId)
+      .where(sql`client_payment_id is not null`),
+    index("sale_payments_sale_idx").on(t.saleId),
+    index("sale_payments_business_created_idx").on(t.businessId, t.createdAt.desc()),
+  ],
+);
+
+// ─── Stock ───────────────────────────────────────────────────────────────
+
+export const stockMovements = tally.table(
+  "stock_movements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    type: text("type").notNull(),
+    quantityDelta: qty("quantity_delta").notNull(),
+    // Overwritten by the BEFORE INSERT trigger from the item's locked quantity;
+    // the default only spares callers from supplying a value they can't know.
+    quantityAfter: qty("quantity_after").notNull().default("0"),
+    saleId: uuid("sale_id"),
+    unitCost: money("unit_cost"),
+    note: text("note"),
+    performedBy: uuid("performed_by"),
+    clientMovementId: text("client_movement_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "stock_movements_item_fk",
+      columns: [t.businessId, t.itemId],
+      foreignColumns: [inventoryItems.businessId, inventoryItems.id],
+    }),
+    foreignKey({
+      name: "stock_movements_sale_fk",
+      columns: [t.businessId, t.saleId],
+      foreignColumns: [sales.businessId, sales.id],
+    }),
+    check(
+      "stock_movements_type",
+      sql`type in ('opening', 'restock', 'sale', 'adjustment', 'void')`,
+    ),
+    check("stock_movements_delta_nonzero", sql`quantity_delta <> 0`),
+    check("stock_movements_unit_cost_nonneg", sql`unit_cost is null or unit_cost >= 0`),
+    check(
+      "stock_movements_sale_link",
+      sql`(type in ('sale', 'void')) = (sale_id is not null)`,
+    ),
+    uniqueIndex("stock_movements_business_client_movement_id_key")
+      .on(t.businessId, t.clientMovementId)
+      .where(sql`client_movement_id is not null`),
+    index("stock_movements_item_created_idx").on(t.businessId, t.itemId, t.createdAt.desc()),
+    index("stock_movements_sale_idx").on(t.saleId).where(sql`sale_id is not null`),
+  ],
+);
+
+// ─── Types ───────────────────────────────────────────────────────────────
+
+export type Business = typeof businesses.$inferSelect;
+export type NewBusiness = typeof businesses.$inferInsert;
+export type BusinessMember = typeof businessMembers.$inferSelect;
+export type NewBusinessMember = typeof businessMembers.$inferInsert;
+export type InventoryItem = typeof inventoryItems.$inferSelect;
+export type NewInventoryItem = typeof inventoryItems.$inferInsert;
+export type StockMovement = typeof stockMovements.$inferSelect;
+export type NewStockMovement = typeof stockMovements.$inferInsert;
+export type Sale = typeof sales.$inferSelect;
+export type NewSale = typeof sales.$inferInsert;
+export type SaleItem = typeof saleItems.$inferSelect;
+export type NewSaleItem = typeof saleItems.$inferInsert;
+export type SalePayment = typeof salePayments.$inferSelect;
+export type NewSalePayment = typeof salePayments.$inferInsert;
