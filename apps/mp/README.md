@@ -27,7 +27,8 @@ proxy.ts                         redirects to /login without a session
 app/login/page.tsx               email + password server action
 app/api/auth/[...nextauth]/      NextAuth route handlers
 app/page.tsx                     home: the user's businesses, each with a Stock-take link
-app/onboarding/                  create a business, then pick starter items
+app/onboarding/                  setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish
+  [businessId]/items/            starter items for a business that already exists
 app/stocktake/                   shelf photo → review → confirm (?business=<id>)
   actions.ts                     server actions: start/poll the stock-take agent, quick scan, confirm
   image.ts                       browser-side resize (1600 px JPEG) and per-product thumbnails
