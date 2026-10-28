@@ -1,24 +1,39 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { BusinessVertical } from "@tally/catalog-client";
-import { Button, Card, FormMessage, Input, Label, NativeSelect, SolarIcon, cn } from "@tally/ui";
+import { Button, ChoiceCard, FieldLabel, FormMessage, IconTile, Input, SolarIcon, StepSection, cn } from "@tally/ui";
 import { finishSetup, loadStarterRows, type FinishInput } from "../actions";
 import { initialStates, invalidRowKeys, toStarterItem, type RowState, type StarterResult, type TemplateRow } from "../_lib/starter";
 import { verticalIcon } from "../_lib/vertical-icons";
-import { BackButton, OnboardingShell, SavingScreen, StepHeading } from "./onboarding-shell";
-import { PICK_HEADING, StartFreshCard, StarterDone, StarterList, StarterLoading, StarterReview } from "./starter-items";
+import { BackButton, ContinueButton, FooterSpacer, LoadFailed, OnboardingShell, SavingScreen, StepHeading } from "./onboarding-shell";
+import { PICK_HEADING, StartFreshCard, StarterDone, StarterList, StarterLoading, StarterReview, keptSummary } from "./starter-items";
 
 type Starter =
   | { subtypeCode: string; status: "loading" }
   | { subtypeCode: string; status: "error"; error: string }
   | { subtypeCode: string; status: "ready"; rows: TemplateRow[] };
 
+/** The server actions the wizard calls. Swappable so /design/onboarding can preview it with fixtures. */
+export type SetupActions = { loadStarterRows: typeof loadStarterRows; finishSetup: typeof finishSetup };
+const SERVER_ACTIONS: SetupActions = { loadStarterRows, finishSetup };
+
+const TYPE_HEADING = { title: "What type of business do you have?", subtitle: "Pick your industry so Tally can suggest the right products." };
+
 /**
  * Port of Qorelly's /setup wizard (RestaurantSetupPage): business type → details → starter items.
  * Business types come from Qore Catalog; nothing is saved until "Finish setup" or "Skip & finish".
  */
-export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVertical[]; closeHref?: string }) {
+export function SetupWizard({
+  verticals,
+  closeHref,
+  actions = SERVER_ACTIONS,
+}: {
+  verticals: BusinessVertical[];
+  closeHref?: string;
+  actions?: SetupActions;
+}) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [verticalCode, setVerticalCode] = useState("");
   const [subtypeCode, setSubtypeCode] = useState("");
@@ -65,7 +80,7 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
     setStarter({ subtypeCode: code, status: "loading" });
     setTried((t) => ({ ...t, items: false }));
     setReview(false);
-    const res = await loadStarterRows(code);
+    const res = await actions.loadStarterRows(code);
     if (loadingCode.current !== code) return; // the merchant changed sub-type meanwhile
     if (!res.ok) return setStarter({ subtypeCode: code, status: "error", error: res.error });
     setRowState(initialStates(res.rows));
@@ -75,7 +90,7 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
   function finish(items: FinishInput["items"]) {
     setError(null);
     startSaving(async () => {
-      const res = await finishSetup({ businessId, name, subtypeCode, items });
+      const res = await actions.finishSetup({ businessId, name, subtypeCode, items });
       if (res.ok) {
         setResult(res.result);
         return;
@@ -88,7 +103,7 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
 
   if (result) {
     return (
-      <OnboardingShell step={3}>
+      <OnboardingShell step={3} view="done">
         <StarterDone businessName={name.trim()} result={result} />
       </OnboardingShell>
     );
@@ -96,13 +111,15 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
   if (saving) return <SavingScreen message="Setting up your business…" />;
 
   if (step === 1) {
+    const typeMissing = tried.type && !vertical;
+    const subtypeMissing = tried.type && Boolean(vertical) && missingType;
     return (
       <OnboardingShell
         step={1}
         closeHref={closeHref}
         footer={
           <>
-            <span />
+            <FooterSpacer />
             <ContinueButton
               onClick={() => {
                 // Qorelly rule: Continue stays enabled; pressing it flags what's missing.
@@ -114,85 +131,76 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
           </>
         }
       >
-        <StepHeading title="What type of business do you have?" subtitle="Select your industry to get a customized experience" />
+        <StepHeading {...TYPE_HEADING} />
 
-        {tried.type && !vertical && <FormMessage message="Choose your industry." className="mb-4" />}
         <div
           role="radiogroup"
           aria-label="Industry"
-          aria-invalid={tried.type && !vertical}
-          className="flex scroll-mt-40 flex-col gap-2"
+          aria-invalid={typeMissing}
+          tabIndex={-1}
+          className="scroll-mt-24 outline-none"
         >
-          {verticals.map((v) => {
-            const selected = v.code === verticalCode;
-            return (
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                key={v.code}
-                onClick={() => {
-                  if (selected) return;
-                  setVerticalCode(v.code);
-                  setSubtypeCode(v.subtypes.length === 1 ? v.subtypes[0]!.code : "");
-                }}
-                className={cn(
-                  "flex w-full items-center gap-4 rounded-card border px-4 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                  selected ? "border-primary bg-primary/5" : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50",
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors",
-                    selected ? "bg-primary/10 text-primary" : "bg-gray-100 text-gray-500",
-                  )}
-                >
-                  <SolarIcon name={verticalIcon(v.code)} iconStyle={selected ? "Bold" : "Outline"} size={22} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className={cn("block text-sm font-semibold leading-tight", selected ? "text-primary" : "text-gray-900")}>
-                    {v.label}
-                  </span>
-                  {v.description && <span className="mt-0.5 block text-xs leading-snug text-gray-500">{v.description}</span>}
-                </span>
-                {selected && <SolarIcon name="Check-Circle" iconStyle="Bold" size={20} className="shrink-0 text-primary" />}
-              </button>
-            );
-          })}
+          {typeMissing && <FormMessage message="Choose your industry." className="mb-3" />}
+          <div className="q-stagger flex flex-col gap-2">
+            {verticals.map((v) => {
+              const selected = v.code === verticalCode;
+              return (
+                <ChoiceCard
+                  key={v.code}
+                  selected={selected}
+                  onClick={() => {
+                    if (selected) return;
+                    setVerticalCode(v.code);
+                    setSubtypeCode(v.subtypes.length === 1 ? v.subtypes[0]!.code : "");
+                  }}
+                  media={<IconTile icon={verticalIcon(v.code)} active={selected} />}
+                  title={v.label}
+                  description={v.description ?? undefined}
+                  className={cn("min-h-[68px]", typeMissing && "border-red-200")}
+                />
+              );
+            })}
+          </div>
         </div>
 
         {/* Qorelly shows a sub-type picker for hospitality only; Tally needs one for every vertical. */}
         {vertical && (
-          <Card className="mt-6 p-5">
-            <label htmlFor="subtypeCode" className="mb-1 block text-sm font-semibold text-gray-900">
-              What kind of business is it?
-            </label>
-            <p className="mb-3 text-xs text-gray-500">We use this to suggest the products shops like yours stock.</p>
-            <NativeSelect
-              id="subtypeCode"
-              value={subtypeCode}
-              onChange={(e) => setSubtypeCode(e.target.value)}
-              aria-invalid={tried.type && missingType}
-            >
-              <option value="" disabled>
-                Choose one
-              </option>
-              {vertical.subtypes.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.label}
-                </option>
-              ))}
-            </NativeSelect>
-          </Card>
-        )}
-        {tried.type && vertical && missingType && (
-          <p className="mt-3 text-sm text-destructive">Choose what kind of business it is.</p>
+          <div key={vertical.code} className="q-rise mt-8">
+            <StepSection title="What kind of business is it?">
+              <p className="-mt-1 mb-3 text-[13px] text-gray-500">We use this to suggest the products shops like yours stock.</p>
+              <div
+                role="radiogroup"
+                aria-label="Kind of business"
+                aria-invalid={subtypeMissing}
+                tabIndex={-1}
+                className="scroll-mt-24 outline-none"
+              >
+                {subtypeMissing && <FormMessage message="Choose what kind of business it is." className="mb-3" />}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {vertical.subtypes.map((s) => {
+                    const selected = s.code === subtypeCode;
+                    return (
+                      <ChoiceCard
+                        key={s.code}
+                        selected={selected}
+                        onClick={() => setSubtypeCode(s.code)}
+                        media={<IconTile icon={verticalIcon(vertical.code)} active={selected} className="h-9 w-9 [&_svg]:size-[18px]" />}
+                        title={s.label}
+                        className={cn("min-h-14", subtypeMissing && "border-red-200")}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            </StepSection>
+          </div>
         )}
       </OnboardingShell>
     );
   }
 
   if (step === 2) {
+    const nameMissing = tried.details && missingName;
     return (
       <OnboardingShell
         step={2}
@@ -211,43 +219,39 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
           </>
         }
       >
-        <StepHeading title="Set up your business" subtitle="Enter your business details to get started" />
+        <StepHeading title="What's your business called?" subtitle="This is the name you'll see across Tally." />
 
-        {/* Business type summary card */}
-        <div className="mb-8 flex items-start gap-4 rounded-card border border-gray-100 bg-gray-50 px-5 py-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white">
-            <SolarIcon name={verticalIcon(vertical?.code)} iconStyle="Outline" size={20} className="text-gray-500" />
-          </div>
+        {/* The type picked on step 1, with a way back to it. */}
+        <div className="mb-8 flex items-center gap-3 rounded-[18px] bg-gray-100 p-3 pr-2">
+          <IconTile icon={verticalIcon(vertical?.code)} active />
           <div className="min-w-0 flex-1">
-            <p className="mb-1 text-sm font-semibold text-gray-900">{vertical?.label}</p>
-            <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs font-medium text-gray-600">
-              <SolarIcon name="Check-Circle" iconStyle="Bold" size={11} className="text-primary" />
-              {subtype?.label}
-            </span>
+            <p className="truncate text-[15px] font-medium text-gray-900">{subtype?.label}</p>
+            <p className="truncate text-[13px] text-gray-500">{vertical?.label}</p>
           </div>
-          <Button type="button" variant="link" size="sm" className="h-auto shrink-0 p-0" onClick={() => goTo(1)}>
+          <Button type="button" variant="quiet" size="lg" onClick={() => goTo(1)}>
             Change
           </Button>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="name">
-            Business name <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.preventDefault();
-            }}
-            placeholder="e.g., My Business"
-            maxLength={120}
-            autoComplete="organization"
-            aria-invalid={tried.details && missingName}
-          />
-          {tried.details && missingName && <p className="text-sm text-destructive">Enter your business name.</p>}
-        </div>
+        <FieldLabel htmlFor="name">Business name</FieldLabel>
+        <Input
+          id="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.preventDefault();
+          }}
+          placeholder="e.g. Mama Nkechi Supermarket"
+          maxLength={120}
+          autoComplete="organization"
+          aria-invalid={nameMissing}
+          aria-describedby={nameMissing ? "name-error" : undefined}
+        />
+        {nameMissing && (
+          <p id="name-error" role="alert" className="mt-2 text-[13px] text-red-600">
+            Enter your business name.
+          </p>
+        )}
       </OnboardingShell>
     );
   }
@@ -260,13 +264,16 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
   return (
     <OnboardingShell
       step={3}
+      view={review && ready ? "review" : "pick"}
       closeHref={businessId ? undefined : closeHref}
+      summary={ready && !review ? keptSummary(rows, rowState) : undefined}
       footer={
         <>
-          {back ? <BackButton onClick={back} /> : <span />}
+          {back ? <BackButton onClick={back} /> : <FooterSpacer />}
           {review || !ready ? (
             <Button
-              size="cta"
+              size="lg"
+              className="max-sm:flex-1 sm:min-w-36"
               disabled={starter?.status === "loading"}
               onClick={() => finish(ready ? rows.map((r) => toStarterItem(r, rowState[r.key]!)) : [])}
             >
@@ -301,13 +308,11 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
           {starter?.status === "loading" && <StarterLoading />}
           {starter?.status === "error" && (
             // A failed read shows an error with a retry, never an empty template.
-            <div>
-              <FormMessage message={`We couldn't load suggested products. ${starter.error}`} />
-              <Button className="mt-4" variant="outline" onClick={() => void loadStarter(subtypeCode)}>
-                <SolarIcon name="Refresh" iconStyle="Outline" size={16} />
-                Try again
-              </Button>
-            </div>
+            <LoadFailed
+              title="We couldn't load suggested products"
+              body={starter.error}
+              onRetry={() => void loadStarter(subtypeCode)}
+            />
           )}
           {starter?.status === "ready" && rows.length === 0 && (
             <FormMessage
@@ -332,11 +337,19 @@ export function SetupWizard({ verticals, closeHref }: { verticals: BusinessVerti
   );
 }
 
-function ContinueButton({ onClick }: { onClick: () => void }) {
+/** /onboarding when the business types couldn't be read: an error with a retry, never an empty list. */
+export function SetupLoadFailed({ closeHref }: { closeHref?: string }) {
+  const router = useRouter();
+  const [retrying, startRetry] = useTransition();
   return (
-    <Button type="button" size="cta" onClick={onClick}>
-      Continue
-      <SolarIcon name="Alt-Arrow-Right" iconStyle="Bold" size={16} />
-    </Button>
+    <OnboardingShell step={1} closeHref={closeHref}>
+      <StepHeading {...TYPE_HEADING} />
+      <LoadFailed
+        title="We couldn't load business types"
+        body="Check your connection and try again."
+        retrying={retrying}
+        onRetry={() => startRetry(() => router.refresh())}
+      />
+    </OnboardingShell>
   );
 }

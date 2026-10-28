@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
-import { FormMessage } from "@tally/ui";
+import { FormMessage, PageHeader } from "@tally/ui";
 import { api } from "@/lib/api";
+import { AppShell } from "../_components/app-shell";
 import { StocktakeFlow } from "./stocktake-flow";
 
 export const dynamic = "force-dynamic";
@@ -19,13 +20,18 @@ export default async function StocktakePage({ searchParams }: { searchParams: Pr
   if (businesses && businesses.length === 0) redirect("/onboarding");
   if (businesses === null) {
     return (
-      <main className="mx-auto max-w-[680px] px-6 py-10">
+      <AppShell width="wide">
+        <PageHeader title="Count a shelf from a photo" />
         {/* A failed read is an error, never an empty list. */}
-        <FormMessage message="We couldn't load your businesses. Refresh the page to try again." />
-      </main>
+        <FormMessage className="max-w-[760px]" message="We couldn't load your businesses. Refresh the page to try again." />
+      </AppShell>
     );
   }
 
   const initial = businesses.find((b) => b.id === business)?.id ?? businesses[0]!.id;
-  return <StocktakeFlow businesses={businesses.map(({ id, name }) => ({ id, name }))} initialBusinessId={initial} />;
+  return (
+    <AppShell width="wide">
+      <StocktakeFlow businesses={businesses.map(({ id, name }) => ({ id, name }))} initialBusinessId={initial} />
+    </AppShell>
+  );
 }

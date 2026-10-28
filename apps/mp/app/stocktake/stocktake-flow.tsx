@@ -1,17 +1,32 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { Button, FormMessage, Label, NativeSelect, QorellyLoader, SolarIcon, cn } from "@tally/ui";
+import {
+  Button,
+  FieldLabel,
+  FormMessage,
+  IconTile,
+  NativeSelect,
+  Notice,
+  PageHeader,
+  QorellyLoader,
+  SolarIcon,
+  Tray,
+  TrayFooter,
+  TraySheet,
+  WellHeader,
+  cn,
+  type SolarIconName,
+} from "@tally/ui";
 import { pollStocktake, quickScan, startStocktake } from "./actions";
 import { resizeForScan } from "./image";
 import { ReviewTable } from "./review-table";
 import type { AgentStep, ShelfScanResult } from "./types";
 
-type Business = { id: string; name: string };
-type Photo = { blob: Blob; url: string; width: number; height: number };
+export type Business = { id: string; name: string };
+export type Photo = { blob: Blob; url: string; width: number; height: number };
 
-type Phase =
+export type Phase =
   | { name: "pick" }
   | { name: "working"; mode: "agent" | "quick"; steps: AgentStep[]; startedAt: number }
   | { name: "review"; result: ShelfScanResult; fallback: boolean };
@@ -19,29 +34,6 @@ type Phase =
 const POLL_MS = 1500;
 // The agent's budget is 150 s after a ~20–30 s first pass; stop polling well after that.
 const POLL_GIVE_UP_MS = 6 * 60 * 1000;
-
-/** Page frame: logo, title and a way back, like the onboarding shell but wider for the review table. */
-export function Shell({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
-  return (
-    <div className="flex min-h-screen flex-col bg-white">
-      <header className="sticky top-0 z-10 border-b border-gray-100 bg-white/95 backdrop-blur-sm">
-        <div className={cn("mx-auto flex items-center gap-4 px-6 py-4", wide ? "max-w-[1120px]" : "max-w-[880px]")}>
-          <div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-primary text-sm font-bold text-white" aria-hidden>
-            T
-          </div>
-          <p className="flex-1 text-[15px] font-medium text-gray-900">Stock-take</p>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/">
-              <SolarIcon name="Alt-Arrow-Left" iconStyle="Outline" size={16} />
-              Businesses
-            </Link>
-          </Button>
-        </div>
-      </header>
-      <main className={cn("mx-auto w-full flex-1 px-6 pb-32 pt-8", wide ? "max-w-[1120px]" : "max-w-[880px]")}>{children}</main>
-    </div>
-  );
-}
 
 export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: Business[]; initialBusinessId: string }) {
   const [businessId, setBusinessId] = useState(initialBusinessId);
@@ -146,43 +138,76 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
   }
 
   if (phase.name === "working") {
-    return (
-      <Shell>
-        <Working photo={photo!} phase={phase} businessName={business.name} />
-      </Shell>
-    );
+    return <Working photo={photo!} phase={phase} businessName={business.name} />;
   }
 
   if (phase.name === "review") {
     return (
-      <Shell wide>
-        <ReviewTable
-          businessId={businessId}
-          businessName={business.name}
-          result={phase.result}
-          fallback={phase.fallback}
-          photo={photo!.blob}
-          onRestart={reset}
-        />
-      </Shell>
+      <ReviewTable
+        businessId={businessId}
+        businessName={business.name}
+        result={phase.result}
+        fallback={phase.fallback}
+        photo={photo!.blob}
+        photoUrl={photo!.url}
+        onRestart={reset}
+      />
     );
   }
 
   return (
-    <Shell>
-      <h1 className="text-3xl font-bold tracking-tight text-gray-900">Count a shelf from a photo</h1>
-      <p className="mt-2 text-base text-gray-500">
-        Tally reads every product in the photo, counts the units and matches them to the catalogue. You check the
-        results before anything changes in your stock.
-      </p>
+    <PickView
+      businesses={businesses}
+      businessId={businessId}
+      onBusiness={setBusinessId}
+      error={error}
+      preparing={preparing}
+      photo={photo}
+      fileRef={fileRef}
+      onFile={onFile}
+      onAgent={runAgent}
+      onQuick={runQuick}
+    />
+  );
+}
 
-      <div className="mt-8 space-y-6">
+/** Choose the business and the photo, then the kind of run. Presentational, so /design can render it with fixtures. */
+export function PickView({
+  businesses,
+  businessId,
+  onBusiness,
+  error,
+  preparing,
+  photo,
+  fileRef,
+  onFile,
+  onAgent,
+  onQuick,
+}: {
+  businesses: Business[];
+  businessId: string;
+  onBusiness: (id: string) => void;
+  error: string | null;
+  preparing: boolean;
+  photo: Photo | null;
+  fileRef: React.RefObject<HTMLInputElement | null>;
+  onFile: (file: File | undefined) => void;
+  onAgent: () => void;
+  onQuick: () => void;
+}) {
+  return (
+    <div className="q-rise max-w-[760px]">
+      <PageHeader
+        title="Count a shelf from a photo"
+        subtitle="Tally reads every product in the photo, counts the units and matches them to the catalogue. You check the results before anything changes in your stock."
+        className="[&_h1]:whitespace-normal"
+      />
+
+      <div className="space-y-5">
         {businesses.length > 1 && (
-          <div className="max-w-sm space-y-1.5">
-            <Label htmlFor="business" className="text-xs text-gray-500">
-              Business
-            </Label>
-            <NativeSelect id="business" value={businessId} onChange={(e) => setBusinessId(e.target.value)}>
+          <div className="max-w-sm">
+            <FieldLabel htmlFor="business">Business</FieldLabel>
+            <NativeSelect id="business" value={businessId} onChange={(e) => onBusiness(e.target.value)}>
               {businesses.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -206,55 +231,74 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
         />
 
         {photo ? (
-          <div className="space-y-4">
-            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-            <img
-              src={photo.url}
-              alt="Shelf photo to scan"
-              className="max-h-[420px] w-full rounded-2xl border border-gray-200 bg-gray-50 object-contain"
-            />
-            <p className="text-[13px] text-gray-500">
-              {photo.width}×{photo.height} JPEG · {Math.round(photo.blob.size / 1024)} KB ·{" "}
-              <button type="button" className="font-medium text-primary hover:underline" onClick={() => fileRef.current?.click()}>
-                Use another photo
-              </button>
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button size="cta" onClick={runAgent}>
+          <div className="q-fade-in space-y-5">
+            <Tray>
+              <TraySheet className="flex justify-center bg-gray-50 p-2">
+                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+                <img src={photo.url} alt="Shelf photo to scan" className="max-h-[420px] w-auto max-w-full rounded-[10px] object-contain" />
+              </TraySheet>
+              <TrayFooter>
+                <span className="tabular-nums">
+                  {photo.width}×{photo.height} JPEG · {Math.round(photo.blob.size / 1024)} KB
+                </span>
+                <Button variant="ghost" size="sm" className="-my-1 -mr-2" onClick={() => fileRef.current?.click()}>
+                  <SolarIcon name="Refresh" iconStyle="Outline" size={16} />
+                  Use another photo
+                </Button>
+              </TrayFooter>
+            </Tray>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button size="xl" onClick={onAgent}>
                 <SolarIcon name="Stars" iconStyle="Bold" size={18} />
                 Start stock-take
               </Button>
-              <Button size="cta" variant="outline" onClick={runQuick}>
+              <Button size="xl" variant="soft" onClick={onQuick}>
                 Quick scan
               </Button>
             </div>
-            <p className="text-[13px] text-gray-500">
-              Stock-take takes about a minute: an agent zooms into unclear labels and searches the catalogue again.
-              Quick scan takes 15–30 seconds.
-            </p>
+            <Notice icon="Clock-Circle">
+              Stock-take takes about a minute: an agent zooms into unclear labels and searches the catalogue again. Quick scan
+              takes 15–30 seconds.
+            </Notice>
           </div>
         ) : (
-          <label
-            htmlFor="photo"
-            className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-300 px-6 py-16 text-center transition hover:border-primary hover:bg-primary-light/40"
-          >
-            {preparing ? (
-              <QorellyLoader className="h-8 w-8" />
-            ) : (
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-light text-primary">
-                <SolarIcon name="Gallery-Add" iconStyle="Bold" size={28} />
-              </span>
-            )}
-            <span className="text-[15px] font-medium text-gray-900">{preparing ? "Preparing photo…" : "Upload or take a shelf photo"}</span>
-            <span className="text-[13px] text-gray-500">JPEG, PNG or WebP. One shelf or a pile of stock, labels facing the camera.</span>
-          </label>
+          <Tray size="lg">
+            <label htmlFor="photo" className="block cursor-pointer">
+              <TraySheet size="lg" className="flex flex-col items-center px-6 py-12 text-center sm:py-14">
+                {preparing ? (
+                  <span className="flex h-14 w-14 items-center justify-center">
+                    <QorellyLoader className="h-9 w-9" />
+                  </span>
+                ) : (
+                  <IconTile icon="Gallery-Add" active className="h-14 w-14" />
+                )}
+                <h2 className="mt-5 text-lg font-medium tracking-tight text-gray-900" aria-live="polite">
+                  {preparing ? "Preparing photo…" : "Upload or take a shelf photo"}
+                </h2>
+                <p className="mt-1.5 max-w-sm text-sm text-gray-500">
+                  JPEG, PNG or WebP. One shelf or a pile of stock, labels facing the camera.
+                </p>
+                {!preparing && (
+                  <Button asChild size="lg" className="mt-6">
+                    <span>
+                      <SolarIcon name="Upload-Minimalistic" iconStyle="Outline" size={18} />
+                      Choose a photo
+                    </span>
+                  </Button>
+                )}
+              </TraySheet>
+            </label>
+            <TrayFooter className="justify-center text-center">Nothing changes in your stock until you confirm.</TrayFooter>
+          </Tray>
         )}
       </div>
-    </Shell>
+    </div>
   );
 }
 
-function Working({ photo, phase, businessName }: { photo: Photo; phase: Extract<Phase, { name: "working" }>; businessName: string }) {
+/** The run in progress: the photo under a soft pulse, the headline and the agent's trace. */
+export function Working({ photo, phase, businessName }: { photo: Photo; phase: Extract<Phase, { name: "working" }>; businessName: string }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -270,50 +314,97 @@ function Working({ photo, phase, businessName }: { photo: Photo; phase: Extract<
         : "First pass: reading the shelf…";
 
   return (
-    <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-      <img src={photo.url} alt="Shelf being scanned" className="w-full rounded-2xl border border-gray-200 bg-gray-50 object-contain" />
-      <div>
-        <div className="flex items-center gap-3">
-          <QorellyLoader className="h-6 w-6" />
-          <h1 className="text-xl font-semibold tracking-tight text-gray-900" aria-live="polite">
+    <div className="q-rise grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-8">
+      <Tray className="self-start">
+        <TraySheet className="relative flex justify-center overflow-hidden bg-gray-50 p-2">
+          {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+          <img src={photo.url} alt="Shelf being scanned" className="max-h-[480px] w-auto max-w-full rounded-[10px] object-contain" />
+          <span aria-hidden className="pointer-events-none absolute inset-2 animate-pulse rounded-[10px] bg-white/35" />
+        </TraySheet>
+        <TrayFooter>
+          <span>{phase.mode === "quick" ? "Quick scan" : "Stock-take agent"}</span>
+          <span className="tabular-nums">{photo.width}×{photo.height}</span>
+        </TrayFooter>
+      </Tray>
+
+      <div className="min-w-0">
+        <div className="flex items-start gap-3">
+          <QorellyLoader className="mt-0.5 h-7 w-7" />
+          <h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight text-gray-900" aria-live="polite">
             {headline}
           </h1>
         </div>
-        <p className="mt-2 text-[13px] text-gray-500">
-          {phase.mode === "quick" ? "Quick scan" : "Stock-take agent"} for {businessName} · {elapsed}s
+        <p className="mt-2 text-sm text-gray-500">
+          {phase.mode === "quick" ? "Quick scan" : "Stock-take agent"} for {businessName} ·{" "}
+          <span className="tabular-nums">{elapsed}s</span>
         </p>
 
         {phase.mode === "quick" ? (
-          <p className="mt-6 text-sm text-gray-600">
-            Muse Spark reads every product, SAM counts the units and Qore Catalog matches them. This takes 15–30 seconds.
-          </p>
+          <Tray className="mt-6">
+            <WellHeader title="What happens now" caption="15–30 seconds" />
+            <TraySheet className="p-0">
+              <ul className="divide-y divide-gray-100">
+                {QUICK_STAGES.map(([icon, title, detail]) => (
+                  <li key={title} className="flex items-center gap-3 px-4 py-3.5">
+                    <IconTile icon={icon} className="h-10 w-10" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{title}</p>
+                      <p className="text-[13px] text-gray-500">{detail}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </TraySheet>
+          </Tray>
         ) : (
-          <ol className="mt-6 space-y-3 border-l border-gray-200 pl-5">
-            {phase.steps.length === 0 && (
-              <li className="text-sm text-gray-500">Reading every product, counting units and matching the catalogue (about 20–30 s).</li>
-            )}
-            {phase.steps.map((s, i) => {
-              const d = describe(s);
-              const last = i === phase.steps.length - 1;
-              return (
-                <li key={i} className="relative">
-                  <span
-                    className={cn(
-                      "absolute -left-[26px] top-1.5 h-2.5 w-2.5 rounded-full",
-                      last ? "bg-primary" : "bg-gray-300",
-                    )}
-                    aria-hidden
-                  />
-                  <p className={cn("text-sm", s.kind === "thought" ? "italic text-gray-600" : "font-medium text-gray-900")}>{d.title}</p>
-                  {d.detail && <p className="mt-0.5 break-words text-[13px] text-gray-500">{d.detail}</p>}
-                </li>
-              );
-            })}
-          </ol>
+          <Tray className="mt-6">
+            <WellHeader title="What the agent is doing" count={phase.steps.length || undefined} />
+            <TraySheet>
+              <ol className="relative space-y-4 before:absolute before:bottom-1.5 before:left-[5px] before:top-1.5 before:w-px before:bg-gray-200">
+                {phase.steps.length === 0 && (
+                  <TraceItem current title="Reading every product, counting units and matching the catalogue" detail="About 20–30 s" />
+                )}
+                {phase.steps.map((s, i) => {
+                  const d = describe(s);
+                  return (
+                    <TraceItem
+                      key={i}
+                      current={i === phase.steps.length - 1}
+                      thought={s.kind === "thought"}
+                      title={d.title}
+                      detail={d.detail}
+                    />
+                  );
+                })}
+              </ol>
+            </TraySheet>
+          </Tray>
         )}
       </div>
     </div>
+  );
+}
+
+const QUICK_STAGES: [SolarIconName, string, string][] = [
+  ["Gallery-Add", "Read every product", "Muse Spark reads the labels in the photo"],
+  ["Layers", "Count the units", "SAM outlines and counts each pack"],
+  ["Magnifer", "Match the catalogue", "Qore Catalog finds the products and typical prices"],
+];
+
+function TraceItem({ title, detail, current, thought = false }: { title: string; detail?: string; current: boolean; thought?: boolean }) {
+  return (
+    <li className="q-fade-in relative pl-6">
+      <span
+        aria-hidden
+        className={cn(
+          "absolute left-0 top-1.5 h-[11px] w-[11px] rounded-full ring-4 ring-white",
+          current ? "bg-primary" : "bg-gray-300",
+        )}
+      />
+      {current && <span aria-hidden className="absolute left-0 top-1.5 h-[11px] w-[11px] animate-ping rounded-full bg-primary/40" />}
+      <p className={cn("break-words text-sm", thought ? "italic text-gray-600" : "font-medium text-gray-900")}>{title}</p>
+      {detail && <p className="mt-0.5 break-words text-[13px] text-gray-500">{detail}</p>}
+    </li>
   );
 }
 
