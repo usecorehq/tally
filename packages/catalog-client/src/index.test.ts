@@ -206,3 +206,48 @@ describe("guards (no request sent)", () => {
     },
   );
 });
+
+describe("uploadImage", () => {
+  const client = new CatalogClient(BASE, KEY);
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+
+  it("POSTs multipart /v1/images with the key and lets fetch set the boundary", async () => {
+    nextResponse = () => json({ sha256: "ab".repeat(32), qid: "QC-0A1B-2C3D-4", view: "on_shelf", status: "pending", width: 200, height: 300 });
+    const res = await client.uploadImage({ file: jpeg, filename: "crop.webp", qid: "QC-0A1B-2C3D-4", view: "on_shelf", feedbackClientRef: "scan:0" });
+    expect(res.status).toBe("pending");
+    expect(last().url).toBe("https://catalog.test/v1/images");
+    expect(last().init.method).toBe("POST");
+    expect(last().init.headers.get("x-api-key")).toBe(KEY);
+    expect(last().init.headers.get("content-type")).toBeNull();
+    const form = last().init.body as FormData;
+    expect(form.get("qid")).toBe("QC-0A1B-2C3D-4");
+    expect(form.get("view")).toBe("on_shelf");
+    expect(form.get("feedbackClientRef")).toBe("scan:0");
+    expect((form.get("file") as File).name).toBe("crop.webp");
+    expect((form.get("file") as File).size).toBe(jpeg.byteLength);
+  });
+
+  it("omits the optional fields", async () => {
+    await client.uploadImage({ file: jpeg, filename: "c.jpg", qid: "QC-0A1B-2C3D-4" });
+    const form = last().init.body as FormData;
+    expect(form.has("view")).toBe(false);
+    expect(form.has("feedbackClientRef")).toBe(false);
+  });
+
+  it.each([
+    ["an empty file", { file: new Uint8Array(), filename: "x", qid: "QC-0A1B-2C3D-4" }],
+    ["a file over 8 MB", { file: new Uint8Array(8 * 1024 * 1024 + 1), filename: "x", qid: "QC-0A1B-2C3D-4" }],
+    ["a bad qid", { file: jpeg, filename: "x", qid: "QC-BAD" }],
+  ])("rejects %s before any request", async (_label, upload) => {
+    await expect(client.uploadImage(upload)).rejects.toMatchObject({ status: 400 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("surfaces a 404 (unknown qid) as CatalogError without the key", async () => {
+    nextResponse = () => json({ statusCode: 404, message: "Unknown qid" }, 404);
+    const err = await client.uploadImage({ file: jpeg, filename: "x", qid: "QC-0A1B-2C3D-4" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CatalogError);
+    expect(err).toMatchObject({ status: 404 });
+    expect(String((err as Error).message)).not.toContain(KEY);
+  });
+});

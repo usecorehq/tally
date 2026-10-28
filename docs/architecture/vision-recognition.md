@@ -2,7 +2,7 @@
 
 > Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg).
 >
-> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, and point-to-sell identify (tier 1). **Planned:** crops in R2 and their upload to Qore Catalog, and an on-device model. Planned endpoint shapes may change before they ship.
+> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, point-to-sell identify (tier 1), and product crops (R2) sent to Qore Catalog as pictures. **Planned:** an on-device model. Planned endpoint shapes may change before they ship.
 
 The merchant points the phone camera at products and Tally recognises them. There are two flows:
 
@@ -57,7 +57,7 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
    - `restock` adds a `restock` movement. With a `qid`, a hand-typed item is linked to that product so later scans match exactly.
    - `restore` un-archives the item (keeping its name, price and history), then restocks it.
    - Every non-skip decision remembers the reading for that item (`inventory_item_readings`).
-   - Then every decided line goes to Qore Catalog as `source: "photo"` feedback, clientRef `<scanId>:<position>`. As in [onboarding](onboarding.md), a catalogue outage never undoes the stock changes; unsent feedback goes out on the next confirm of the scan.
+   - Then every decided line goes to Qore Catalog as `source: "photo"` feedback, clientRef `<scanId>:<position>`. After that feedback is sent, each line confirmed with a Qore ID has its crop uploaded to `POST /v1/images` (`view: on_shelf`, same clientRef as `feedbackClientRef`). See "Product crops" below. As in [onboarding](onboarding.md), a catalogue outage never undoes the stock changes; unsent feedback goes out on the next confirm of the scan.
    - Retries are safe: decided detections are left alone, and stock movements are keyed by detection id.
 
 ## Point to sell
@@ -88,6 +88,7 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
   "model": "muse-spark-1.3",
   "countModel": "sam-3.1",
   "catalogueAvailable": true,
+  "cropsStored": 9,
   "timings": { "readMs": 12800, "samMs": 5100, "matchMs": 1300, "totalMs": 17900 },
   "detections": [
     {
@@ -202,6 +203,7 @@ The stored scan with its detections in position order: what was read, the counts
   - A decision that can't apply is listed in `invalid` and the others still apply. Reasons include: item archived, item not archived, linked to another product, another active item already has that product or barcode, not in this scan.
   - `scanConfirmed` is true once every detection is decided.
   - `feedback` is `{ sent, recorded, duplicates }`, or `{ sent: 0, error }` when Qore Catalog was down.
+  - `images` is `{ uploaded, skipped, failed }`: crops sent to Qore Catalog for lines confirmed with a Qore ID.
 - **Errors:** 400 for an invalid body, 403 for a non-member, 404 for an unknown scan.
 
 ### Removing an item (built)
@@ -227,6 +229,16 @@ Errors:
 | 504 | Timeout: 45 s for a shelf scan, 4 s for identify (planned) |
 
 Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–24 s, then SAM takes 3–6 s and the catalogue match about 1–3 s, in parallel. The whole scan takes about 12–30 s. Read time grows with the number of units in the frame, because Spark writes one box per unit. Show progress on the device rather than blocking.
+
+## Product crops
+
+When a scan is stored, Tally cuts one crop per detection (its largest box, 6% margin, at most 640 px, WebP) from the photo while it is still in memory. The crop shows the product, never the whole shelf or the people in it. It is stored in Cloudflare R2 (bucket `tally-media`) at `tally/crops/<scanId>/<position>.webp`. The full photo is not stored.
+
+- **Size:** crops with a short side under 160 px are skipped, because Qore Catalog rejects them.
+- **Lines with a Qore ID:** on confirm, after the line's feedback is sent, Tally reads the crop back and uploads it as a candidate picture of the confirmed product. A curator approves or rejects it in Qore Catalog. Approved pictures come back on products as `image.url`.
+- **New items:** lines confirmed as a new item (no Qore ID) or skipped send nothing.
+- **Best-effort:** a crop or upload failure never fails the scan or the confirm. The scan response reports `cropsStored`; confirm reports `images: { uploaded, skipped, failed }`.
+- **Credentials:** R2 keys are server-only (`R2_*` in apps/api, token scoped to the bucket). Not Supabase Storage, which would write to the shared project's `storage` schema. Clients will only ever get short-lived presigned URLs. Without `R2_*`, crops are skipped and everything else works.
 
 ## Data
 

@@ -58,6 +58,24 @@ class EnvVars {
   @IsOptional()
   META_MODEL_API_KEY?: string;
 
+  // ── Cloudflare R2 (tally-media; all four or crops are skipped) ──
+  @IsString()
+  @IsOptional()
+  R2_ACCOUNT_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  R2_ACCESS_KEY_ID?: string;
+
+  /** Token scoped to the tally-media bucket only. */
+  @IsString()
+  @IsOptional()
+  R2_SECRET_ACCESS_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  R2_BUCKET?: string;
+
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
