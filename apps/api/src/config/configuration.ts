@@ -24,6 +24,13 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
       baseUrl: env.QORE_CATALOG_BASE_URL ?? "http://localhost:3100",
       apiKey: env.QORE_CATALOG_API_KEY!,
     },
+
+    meta: {
+      /** Meta Model API (Muse Spark, SAM 3.1) for camera recognition. Server-only key. */
+      baseUrl: env.META_MODEL_BASE_URL ?? "https://api.meta.ai/v1",
+      /** Unset → vision routes return 503; the rest of the API runs as normal. */
+      apiKey: env.META_MODEL_API_KEY,
+    },
   };
 }
 

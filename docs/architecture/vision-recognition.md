@@ -1,6 +1,8 @@
-# Vision recognition (planned)
+# Vision recognition
 
-> Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg). **Planned, not built.** Endpoint shapes may change before they ship.
+> Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg).
+>
+> **Built:** shelf-scan recognition (Muse Spark reads the photo, Qore Catalog matches), stateless: nothing is stored yet. **Planned:** SAM 3.1 counting, storing scans, confirm → inventory + feedback, and point to sell. Planned endpoint shapes may change before they ship.
 
 The merchant points the phone camera at products and Tally recognises them. There are two flows:
 
@@ -26,10 +28,10 @@ All model calls go through apps/api. `META_MODEL_API_KEY` is server-only, like `
 
 SAM 3.1 segments one concrete noun phrase per request. A generic prompt such as "product" is a weak concept. Cropping each object and reading it separately would cost one model call per crop and lose label resolution. So the order is:
 
-1. One Muse Spark call reads the whole frame. It lists each distinct product with a bounding box on a 0–1000 grid. Structured output guarantees the JSON shape.
-2. SAM 3.1 then counts and outlines the instances of each product. Its boxes also drive the confirm screen's overlay.
+1. One Muse Spark call reads the whole frame. It lists each distinct product with one bounding box per visible unit, on a 0–1000 grid; the count is the number of boxes (Meta's grounding guide: pointing at every instance before counting beats asking for a number). Structured output guarantees the JSON shape.
+2. *(Planned)* SAM 3.1 then counts and outlines the instances of each product. Its masks also drive the confirm screen's overlay.
 
-If SAM finds nothing for a product, the count falls back to Muse Spark's estimate.
+If SAM finds nothing for a product, the count falls back to Muse Spark's.
 
 ## Shelf scan
 
@@ -55,20 +57,66 @@ Latency comes from tiers. The cheapest tier that answers wins.
 
 The app shows the result as a suggestion the merchant taps to confirm. A recognised item is never added to a sale without that tap.
 
-## API (planned)
+## API
 
-All routes need a Supabase JWT and are for business members only.
+All routes need a Supabase JWT and are for business members only (403 otherwise; membership is checked before any model call).
+
+### `POST /api/businesses/:id/vision/shelf-scans` (built)
+
+Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the declared type), at most 4 MB. Send it at about a 1600 px long edge. Returns 200:
+
+```json
+{
+  "model": "muse-spark-1.3",
+  "catalogueAvailable": true,
+  "timings": { "readMs": 6100, "matchMs": 420, "totalMs": 6520 },
+  "detections": [
+    {
+      "id": "3f0c2b9e-…",
+      "brand": "Peak",
+      "name": "Full Cream Milk Powder",
+      "pack": "400g",
+      "count": 6,
+      "boxes": [{ "x1": 102, "y1": 210, "x2": 180, "y2": 395 }],
+      "confidence": "high",
+      "inventoryItemId": null,
+      "candidates": [
+        {
+          "qid": "QC-7K2M-9XQ4-R",
+          "name": "Peak Full Cream Milk Powder",
+          "brand": "Peak",
+          "variantLabel": null,
+          "size": { "value": 400, "unit": "g" },
+          "packQty": 1,
+          "score": 0.94,
+          "price": { "median": 4500, "min": 4200, "max": 5100 },
+          "inventoryItemId": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `brand` and `pack` are `""` when the label isn't legible. `confidence` is `high` (label clearly legible), `medium` (partly) or `low` (inferred from shape or colour).
+- `boxes`: one per visible unit, `count` = `boxes.length`, at most 50 products per photo.
+- `candidates`: up to 3, best first; empty when the catalogue has no match. `price` is `null` when the catalogue has no price.
+- `inventoryItemId` (on a candidate): the business's active item for that product. On the detection it is the top candidate's, so confirming it would restock that item.
+- `catalogueAvailable: false`: Qore Catalog failed; detections come back without candidates rather than failing the scan.
+- `id` is fresh per response until scans are stored; don't keep it.
+- An empty shelf returns `detections: []`.
+
+### Planned
 
 | Route | Body | Returns |
 |---|---|---|
-| `POST /api/businesses/:id/vision/shelf-scans` | multipart `image` (JPEG/PNG/WebP, ≤ 4 MB) | `{ scanId, detections: [{ id, brand, name, pack, count, box, confidence, candidates: [{ qid, name, score, price }], inventoryItemId }] }` |
 | `GET /api/businesses/:id/vision/shelf-scans/:scanId` | none | The same shape, plus each detection's decision |
 | `POST /api/businesses/:id/vision/shelf-scans/:scanId/confirm` | `{ decisions: [{ detectionId, outcome, qid?, name?, price, quantity }] }` | `{ created, restocked, removed, invalid, feedback }` |
 | `POST /api/businesses/:id/vision/identify` | multipart `image` (≤ 300 KB) | `{ match: { itemId, name, price, confidence } \| null }` |
 
 Notes on the fields:
 
-- `box` uses 0–1000 coordinates of the uploaded image.
+- Boxes use 0–1000 coordinates of the uploaded image.
 - `outcome` is one of `accepted`, `corrected`, `new_item`, `removed`, as in onboarding.
 - `price` is an indicative catalogue price in whole Naira. It is not a sale amount.
 
@@ -76,13 +124,13 @@ Errors:
 
 | Status | When |
 |---|---|
-| 400 | Bad or unsupported image |
+| 400 | No `image` field, not a JPEG/PNG/WebP, unreadable, or rejected by the model's content policy |
 | 413 | Image too large |
 | 403 | Not a member |
 | 404 | Unknown business or scan |
-| 503 with `Retry-After` | The model API is rate-limited |
+| 503 with `Retry-After` | The model API is rate-limited, or `META_MODEL_API_KEY` is not set (no header) |
 | 502 | Model failure |
-| 504 | Timeout: 20 s for a shelf scan, 4 s for identify |
+| 504 | Timeout: 45 s for a shelf scan, 4 s for identify (planned) |
 
 ## Data (planned)
 
@@ -92,6 +140,15 @@ Both tables live in the `tally` schema. Child rows carry `business_id` and use c
 - **`vision_detections`**: the scan; brand, name and pack size as read; Muse Spark's count and SAM's count; the box and confidence; the top candidates (jsonb); and the merchant's decision. The decision is the outcome, the confirmed Qore ID, `item_id`, quantity, and when feedback was sent.
 
 Identify calls are not stored.
+
+## Try it
+
+`apps/api/scripts/vision-smoke.mjs` runs the built read + match code on local photos (no database) and prints each product, its top match, timings and token use. It spends Meta Model API credit:
+
+```bash
+pnpm --filter @tally/api build
+node --env-file=apps/api/.env apps/api/scripts/vision-smoke.mjs shelf1.jpg shelf2.jpg
+```
 
 ## Open questions
 

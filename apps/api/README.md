@@ -27,6 +27,8 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 | `SUPABASE_DB_URL` | yes | Postgres URL for Drizzle (`tally` schema) |
 | `QORE_CATALOG_API_KEY` | yes | Sent as `x-api-key`; server-only |
 | `QORE_CATALOG_BASE_URL` | no | Default `http://localhost:3100` |
+| `META_MODEL_API_KEY` | no | Meta Model API bearer key (Muse Spark); server-only. Unset → vision routes return 503 |
+| `META_MODEL_BASE_URL` | no | Default `https://api.meta.ai/v1` |
 | `PORT` | no | Default `4100` |
 | `CORS_ORIGINS` | no | Comma-separated allowlist |
 
@@ -42,6 +44,7 @@ src/
   drizzle/drizzle.module.ts   TALLY_DB provider from @tally/db
   modules/businesses/         businesses, membership, inventory, onboarding starter inventory
   modules/catalog/            CatalogService wrapping @tally/catalog-client
+  modules/vision/             Camera recognition: Meta Model API client, shelf scan (Muse Spark + catalogue match)
   modules/health/             GET /api/health
 ```
 
