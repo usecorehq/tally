@@ -291,7 +291,7 @@ Each slice starts with a read-only audit and stops on contradictions. Testing is
 | 3 | **Schema** `vision_scans`, `vision_detections` (+ settings row if agreed) via `schema.ts` → `pnpm db:generate`. Grants in a separate migration. | Migrations applied to staging, DDL shown |
 | 4 | **Shelf-scan + confirm endpoints**, incl. feedback on confirm. | Scan → confirm → stock updated, via curl on staging |
 | 5 | **Mobile: design kit + tab shell + Inventory tab** — done on `feat/photo-to-inventory`. | Widget tests; device screenshots on staging |
-| 6 | **Mobile: capture → processing → confirm (S2–S5)**. | Screen recording of a real scan on staging |
+| 6 | **Mobile: capture → processing → confirm (S2–S5)** — built on `feat/photo-to-inventory`: agent and quick scan both offered (default still open); S5 lists the scan's plausible matches, whole-catalogue search not yet. | Screen recording of a real scan on staging |
 | 7 | **Point to sell**: `identify` endpoint + S10. | Latency measured on staging, screenshots |
 | 8 | **Ask your stock** (§6.3) + S6. | Test prompts pass, screenshots |
 | 9 | **Landing page** `apps/landing` (Vite). | Deployed preview + mobile/desktop screenshots |

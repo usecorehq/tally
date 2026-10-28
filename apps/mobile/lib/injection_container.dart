@@ -29,6 +29,13 @@ import 'features/inventory/domain/repositories/inventory_repository.dart';
 import 'features/inventory/domain/usecases/inventory_usecases.dart';
 import 'features/inventory/presentation/cubit/inventory_list_cubit.dart';
 import 'features/inventory/presentation/cubit/scan_cubit.dart';
+import 'features/stocktake/data/datasources/stocktake_remote_data_source.dart';
+import 'features/stocktake/data/repositories/stocktake_repository_impl.dart';
+import 'features/stocktake/domain/entities/shelf_scan.dart';
+import 'features/stocktake/domain/repositories/stocktake_repository.dart';
+import 'features/stocktake/domain/usecases/stocktake_usecases.dart';
+import 'features/stocktake/presentation/cubit/scan_review_cubit.dart';
+import 'features/stocktake/presentation/cubit/shelf_scan_cubit.dart';
 
 final sl = GetIt.instance;
 
@@ -91,5 +98,21 @@ Future<void> initDependencies() async {
     )
     ..registerFactoryParam<InventoryListCubit, String, void>(
       (businessId, _) => InventoryListCubit(businessId: businessId, getInventory: sl()),
+    );
+
+  // Photo-to-inventory (ShelfScanCubit is per business, ScanReviewCubit per scan)
+  sl
+    ..registerLazySingleton<StocktakeRemoteDataSource>(() => StocktakeRemoteDataSourceImpl(sl()))
+    ..registerLazySingleton<StocktakeRepository>(() => StocktakeRepositoryImpl(sl()))
+    ..registerLazySingleton(() => QuickScan(sl()))
+    ..registerLazySingleton(() => StartStocktake(sl()))
+    ..registerLazySingleton(() => GetStocktake(sl()))
+    ..registerLazySingleton(() => ConfirmScan(sl()))
+    ..registerFactoryParam<ShelfScanCubit, String, void>(
+      (businessId, _) =>
+          ShelfScanCubit(businessId: businessId, quickScan: sl(), startStocktake: sl(), getStocktake: sl()),
+    )
+    ..registerFactoryParam<ScanReviewCubit, String, ShelfScan>(
+      (businessId, scan) => ScanReviewCubit(businessId: businessId, scan: scan, confirm: sl()),
     );
 }

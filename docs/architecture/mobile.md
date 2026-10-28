@@ -39,13 +39,20 @@ Qorelly's mobile port of web Design V2, so Tally reads as a Qorelly product. Sou
 ## Built so far
 
 - **Shell** (`features/home`): after the business loads, three tabs on the floating `V15TabBar` — **Inventory** (default), **Scans**, **Settings**. Switching business (Settings) reloads Inventory.
-- **Inventory tab** (`InventoryPage`, `InventoryListCubit` per business): shelf-capture card (*planned* — the key is off until the scan API ships, see the [photo-to-inventory PRD](../prd-photo-to-inventory.md)), name search on the device, Items / Units / Low stock tiles (low = on hand ≤ `reorderPoint`), and the stock list from `GET …/inventory`. Pull to refresh keeps the list on screen. The barcode scanner opens from the header.
+- **Inventory tab** (`InventoryPage`, `InventoryListCubit` per business): shelf-capture card (opens photo-to-inventory, below), name search on the device, Items / Units / Low stock tiles (low = on hand ≤ `reorderPoint`), and the stock list from `GET …/inventory`. Pull to refresh keeps the list on screen. The barcode scanner opens from the header.
 - **Scans tab**: *planned* — an honest "no shelf scans yet" until scans exist.
 - **Settings tab**: business switcher, account, sign out.
 
 - **Auth**: session restore, sign in, sign up, emailed code, forgot password → code → new password, sign out — on the kit (`core/design/auth_parts.dart`). Sign-up rules (`auth_rules.dart`, `phone.dart`) are copied unchanged from qorelly-mobile. Signing in with an unconfirmed email sends a fresh code. Pushed auth screens are dropped before `AuthBloc` switches to the app (`finishSignIn`). See [auth.md](auth.md) and the [mobile auth sequence](../diagrams/images/auth-mobile-sequence.svg).
 - **Business** (`features/business`): loads the user's businesses; `BusinessCubit` holds the selected one. A failed read shows retry, never "no businesses".
 - **Onboarding** (no business yet), as mp's: **1. Your business** — name, industry and sub-type from `GET /api/catalog/verticals`; **2. Starter items** — the sub-type's template with up to 2 suggestions each (`…/templates?suggestions=2`, 60 s timeout for the first ~5 s call): keep / swap (sheet) / own product, price and opening stock, then a confirm list, then `POST /api/businesses` and `POST …/inventory/starter`. Step 1 only collects a `BusinessDraft`; nothing is created until step 2 finishes or is skipped, so Back can change the name and type. Every row is sent, kept or removed, so the catalogue hears each decision. See [onboarding.md](onboarding.md).
+- **Photo-to-inventory** (`features/stocktake`, PRD S2–S5; API side in [vision-recognition.md](vision-recognition.md) and [stocktake-agent.md](stocktake-agent.md)). Diagram: [mobile stock-take](../diagrams/images/mobile-stocktake-sequence.svg). The same flow as mp's `/stocktake`, and the same confirm body (`scan_review.dart` is a port of mp's review table, with tests):
+  1. **Capture** (`ShelfScanPage`): take a photo or pick one (`image_picker`, scaled to a 1600 px long edge, JPEG 80; ≤ 4 MB checked before upload).
+  2. **Scan**: **Start stock-take** (the agent: `POST …/vision/stocktakes`, then `GET …/stocktakes/:runId` every 1.5 s with its live step trace, giving up after 6 min) or **Quick scan** (`POST …/vision/shelf-scans`, one request, ~15–30 s). Which is the default is still open (stock-take-agent.md, *Planned*), so both are offered, as on the web. Cancel drops the reply and keeps the photo. `ShelfScanCubit` per business.
+  3. **Review** (`ScanReviewView`, `ScanReviewCubit` per scan): the photo with every counted unit outlined (tap one to find its line), then a line per product: a thumbnail cut from the photo, what was read, the store status ("In store", "Is this your X?", "You removed X. Restore?", "Not in store"), a confidence pill, the agent's flag, the action (restock / restore / add / skip, defaulting as mp), a count stepper, the product picker (plausible Qore Catalog matches or "Add as my own item") and, when adding, name and price prefilled from the match's indicative price. Nothing is stocked until **Stock N items, U units**; every line is sent, skipped ones too, so the catalogue hears each decision.
+  4. **Outcome**: added / restocked / restored / skipped, lines not applied, and the catalogue feedback note. The inventory reloads on the way back.
+
+  Permissions: iOS `NSCameraUsageDescription` and `NSPhotoLibraryUsageDescription`.
 - **Barcode scan** (`features/inventory`), API side in [barcode-scan.md](barcode-scan.md):
   1. On open, `ScanCubit` caches the business's inventory on the device (`GET …/inventory`).
   2. Each scan is normalised (12-digit UPC-A → 13-digit EAN, same rule as the API) and resolved **from the cache first** — instant and offline. A miss asks the API (another device may have linked it) and caches the hit.
@@ -56,4 +63,4 @@ Qorelly's mobile port of web Design V2, so Tally reads as a Qorelly product. Sou
 
 ## Not yet
 
-Photo-to-inventory (capture → review → confirm, Muse search) — see the PRD. Item detail. Release signing (Android keystore, iOS team/profiles). Routing (go_router) now that there are several screens. Persisting the inventory cache between sessions (offline sync). Selling from a scan (POS).
+Muse search (Ask your stock), scan history (Scans tab), searching the whole catalogue from the product picker — see the PRD. Item detail. Release signing (Android keystore, iOS team/profiles). Routing (go_router) now that there are several screens. Persisting the inventory cache between sessions (offline sync). Selling from a scan (POS).

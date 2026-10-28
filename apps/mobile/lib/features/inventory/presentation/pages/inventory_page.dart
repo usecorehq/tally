@@ -7,6 +7,7 @@ import '../../../../injection_container.dart';
 import '../../../business/domain/entities/business.dart';
 import '../../domain/entities/inventory_item.dart';
 import '../cubit/inventory_list_cubit.dart';
+import '../../../stocktake/presentation/pages/shelf_scan_page.dart';
 import 'scanner_page.dart';
 
 /// The default tab: shelf capture on top, the business's stock below.
@@ -55,13 +56,30 @@ class _InventoryView extends StatelessWidget {
                   ),
                 ],
               ),
-              const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: _CaptureCard()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _CaptureCard(
+                  onScan: () async {
+                    await Navigator.of(
+                      context,
+                    ).push(MaterialPageRoute<void>(builder: (_) => ShelfScanPage(business: business)));
+                    // A confirmed scan changed stock; reloading is cheap either way.
+                    await cubit.load();
+                  },
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                 child: V15Search('Search items', onChanged: cubit.search),
               ),
-              Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: _Summary(state: state)),
-              Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: _StockList(state: state)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: _Summary(state: state),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: _StockList(state: state),
+              ),
             ],
           ),
         ),
@@ -70,10 +88,10 @@ class _InventoryView extends StatelessWidget {
   }
 }
 
-/// Photo-to-inventory's entry point. Planned: the key is off until the scan
-/// API ships (docs/prd-photo-to-inventory.md, slices 1–7).
+/// Photo-to-inventory's entry point (docs/prd-photo-to-inventory.md, S1 → S2).
 class _CaptureCard extends StatelessWidget {
-  const _CaptureCard();
+  const _CaptureCard({required this.onScan});
+  final VoidCallback onScan;
 
   @override
   Widget build(BuildContext context) {
@@ -88,8 +106,9 @@ class _CaptureCard extends StatelessWidget {
               children: [
                 const V15IconTile(IconsOutline.camera),
                 const SizedBox(width: 12),
-                Expanded(child: Text('Scan a shelf', style: V15.cardHeading.copyWith(color: c.gray900))),
-                const V15Pill('Coming soon', tone: V15PillTone.violet),
+                Expanded(
+                  child: Text('Scan a shelf', style: V15.cardHeading.copyWith(color: c.gray900)),
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -98,7 +117,7 @@ class _CaptureCard extends StatelessWidget {
               style: V15.description.copyWith(color: c.gray500),
             ),
             const SizedBox(height: 14),
-            const V15Button('Scan shelf', icon: IconsOutline.camera, expand: true),
+            V15Button('Scan shelf', icon: IconsOutline.camera, expand: true, onPressed: onScan),
           ],
         ),
       ),
@@ -126,11 +145,17 @@ class _Summary extends StatelessWidget {
     final warnLow = s is InventoryListLoaded && s.lowStockCount > 0;
     return Row(
       children: [
-        Expanded(child: V15Tile(label: 'Items', value: items)),
+        Expanded(
+          child: V15Tile(label: 'Items', value: items),
+        ),
         const SizedBox(width: 12),
-        Expanded(child: V15Tile(label: 'Units', value: units)),
+        Expanded(
+          child: V15Tile(label: 'Units', value: units),
+        ),
         const SizedBox(width: 12),
-        Expanded(child: V15Tile(label: 'Low stock', value: low, warn: warnLow)),
+        Expanded(
+          child: V15Tile(label: 'Low stock', value: low, warn: warnLow),
+        ),
       ],
     );
   }
