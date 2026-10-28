@@ -62,6 +62,8 @@ export const STOCKTAKE_DEADLINES = {
   runMs: 240_000,
   /** Each status / result write. */
   writeMs: 20_000,
+  /** The store reads before the first paid model call (a saturated pool fails here, in seconds). */
+  dbReadMs: 20_000,
 };
 /** A run still "running" after this is lost (restart, or a write that never landed): marked failed on read. */
 const STALE_RUN_MS = STOCKTAKE_DEADLINES.runMs + 60_000;
@@ -167,11 +169,16 @@ export class VisionService implements OnApplicationBootstrap {
    */
   private async analyse(businessId: string, userId: string, image: Buffer, type: ImageType) {
     // listInventory checks membership; the other two only read this business's rows.
-    const [items, readings, archived] = await Promise.all([
-      this.businesses.listInventory(businessId, userId),
-      this.repo.readings(businessId),
-      this.repo.archivedLinkedItems(businessId),
-    ]);
+    // Bounded: on a saturated database pool this fails in seconds, before any paid model call.
+    const [items, readings, archived] = await withDeadline(
+      Promise.all([this.businesses.listInventory(businessId, userId), this.repo.readings(businessId), this.repo.archivedLinkedItems(businessId)]),
+      STOCKTAKE_DEADLINES.dbReadMs,
+      "Database busy: could not read the store's inventory in time",
+    ).catch((err: unknown) => {
+      if (err instanceof HttpException) throw err;
+      this.logger.warn(`Inventory read failed: ${(err as Error).message}`);
+      throw new ServiceUnavailableException("Database busy, retry shortly");
+    });
     const started = Date.now();
 
     let products: ShelfProduct[];

@@ -24,7 +24,8 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 |---|---|---|
 | `SUPABASE_URL` | yes | Qorelly project URL; also used for JWKS |
 | `SUPABASE_JWT_SECRET` | yes | HS256 secret for verifying user tokens |
-| `SUPABASE_DB_URL` | yes | Postgres URL for Drizzle (`tally` schema) |
+| `SUPABASE_DB_URL` | yes | Postgres URL for Drizzle (`tally` schema). Deployed: use the Supabase **transaction pooler, port 6543**. The session pooler (5432) has 15 client slots shared with the other Qorelly apps, and a full pool made stock-take runs hang. `pnpm db:migrate` may keep using 5432 |
+| `DB_POOL_MAX` | no | Connections this process may hold. Default `5`; keep it small (shared pooler) |
 | `QORE_CATALOG_API_KEY` | yes | Sent as `x-api-key`; server-only |
 | `QORE_CATALOG_BASE_URL` | no | Default `http://localhost:3100` |
 | `META_MODEL_API_KEY` | no | Meta Model API bearer key (Muse Spark); server-only. Unset → vision routes return 503 |

@@ -17,6 +17,8 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
       url: env.SUPABASE_URL!,
       jwtSecret: env.SUPABASE_JWT_SECRET!,
       dbUrl: env.SUPABASE_DB_URL!,
+      /** Connections this API process may hold; the Supabase pooler is shared (see docs/architecture/database.md). */
+      dbPoolMax: env.DB_POOL_MAX ? parseInt(env.DB_POOL_MAX, 10) : undefined,
     },
 
     catalog: {

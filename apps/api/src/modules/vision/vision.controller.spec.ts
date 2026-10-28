@@ -720,6 +720,14 @@ describe("VisionController stock-takes (HTTP)", () => {
       expect(ctx.repo.saveScan).not.toHaveBeenCalled();
     });
 
+    it("store reads that never return (a saturated pool) fail the run fast, before any paid model call", async () => {
+      Object.assign(STOCKTAKE_DEADLINES, { dbReadMs: 50 });
+      ctx.businesses.listInventory.mockImplementationOnce(() => new Promise(() => undefined) as never);
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      expect(await waitForFinish()).toMatchObject({ status: "failed", error: "First pass failed: Database busy, retry shortly" });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it("an agent that never finishes falls back to the first pass at the run deadline", async () => {
       Object.assign(STOCKTAKE_DEADLINES, { runMs: 300 });
       fetchSpy.mockImplementation(async (_url, init) => {

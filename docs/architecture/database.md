@@ -9,7 +9,7 @@ Tally stores its data in the **`tally` schema of the shared Qorelly Supabase Pos
 | Thing | Where |
 |---|---|
 | Drizzle schema | `packages/db/src/schema.ts` — `export const tally = pgSchema("tally")` |
-| Client | `packages/db/src/client.ts` — `buildTallyDb(url)` on `postgres.js`; `prepare: false` on the Supabase pooler; at most 5 connections, idle ones closed after 20 s, 15 s connect timeout. The API's `SUPABASE_DB_URL` should use the **transaction pooler, port 6543**: the session pooler (5432) has 15 client slots shared with other Qorelly projects, and idle sessions hold them. `pnpm db:migrate` can keep using 5432 |
+| Client | `packages/db/src/client.ts` — `buildTallyDb(url, { max?, connectTimeout? })` on `postgres.js`; `prepare: false` on the Supabase pooler; at most 5 connections (`DB_POOL_MAX`), idle ones closed after 20 s, 10 s connect timeout. See [Connection pooling](#connection-pooling) |
 | Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business |
 | Config | `packages/db/drizzle.config.ts`, reads `SUPABASE_DB_URL` from the root `.env`, falling back to `apps/api/.env` |
 | API access | `DrizzleModule` provides the client as `TALLY_DB` |
@@ -58,6 +58,18 @@ Child tables carry `business_id` and use composite foreign keys (`(business_id, 
 ### Money rule
 
 Revenue and reports read `sale_payments` (or `sales.paid_amount`) for `completed` sales — never `total` or `subtotal`. A stored total is what the cashier charged; payments are what came in.
+
+## Connection pooling
+
+The Supabase project is shared: Qorelly's apps, Bookmi and Tally all go through its pooler. Its **session mode** (port 5432) gives each client connection a server connection until the client disconnects, with **15 slots for the whole project**. postgres.js' default `idle_timeout: 0` keeps every opened connection for the life of the process. So a few processes at `max: 10` fill the pool, and new connections fail with `EMAXCONNSESSION … pool_size: 15` or wait. On staging that left a stock-take run stuck in its first pass with no way to record failure.
+
+Tally therefore:
+
+- **Connects the API through the transaction pooler (port 6543).** A server connection is held only for the length of a transaction. The connection string is the same except for the port; `prepare: false` is already set for pooler hosts.
+- **Keeps few connections and gives idle ones back:** `max: 5` (`DB_POOL_MAX`), `idle_timeout: 20`, `max_lifetime: 30 min`.
+- **Fails fast:** `connect_timeout: 10`. Queued queries still fail one connect timeout per slot at a time, about `(queries / max) × 10 s`. So long-running work also has its own deadlines (see [Stock-take agent](stocktake-agent.md#running-it)).
+
+`pnpm db:migrate` can keep using the session pooler: migrations are short, single-connection runs.
 
 ## Why the ledger is `tally.__drizzle_migrations`
 
