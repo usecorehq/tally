@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import type { MatchResult } from "@tally/catalog-client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
+import { feedbackFor } from "./confirm-plan";
 import { indexInventory } from "./inventory-match";
 import { MetaModelClient } from "./meta-model.client";
 import { assignInstances, distinctLooks, parseSamInstances, SAM_MODEL, samRequest, type SamInstance } from "./sam-counter";
@@ -24,10 +25,16 @@ import {
 } from "./shelf-reader";
 import { buildDetections, MATCH_LIMIT, matchItems, type Detection } from "./shelf-scan";
 import { toVisionHttpException } from "./vision-errors";
-import { VisionRepository } from "./vision.repository";
+import type { ConfirmDecision } from "./vision.dto";
+import { VisionRepository, type ConfirmResult } from "./vision.repository";
 
 const SHELF_TIMEOUT_MS = 45_000;
 const SAM_TIMEOUT_MS = 20_000;
+
+export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
+  /** Best-effort: a catalogue outage never undoes the stock changes; feedback is retried on the next confirm. */
+  feedback: { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string };
+};
 
 export type ShelfScanResult = {
   /** The stored scan; confirm it to stock the detections. */
@@ -123,6 +130,30 @@ export class VisionService {
       catalogueAvailable: matching.value.available,
       timings: { ...timings, totalMs: Date.now() - started },
     };
+  }
+
+  /** A stored scan with its detections and decisions (candidates as Qore IDs + scores). */
+  async getScan(businessId: string, userId: string, scanId: string) {
+    await this.businesses.getForMember(businessId, userId);
+    return this.repo.getScan(businessId, scanId);
+  }
+
+  /**
+   * Apply the merchant's decisions (restock / restore / add / skip), then send
+   * every decided line to Qore Catalog as photo feedback. Stock changes commit
+   * first; feedback is best-effort and anything unsent goes out on the next
+   * confirm of this scan.
+   */
+  async confirm(businessId: string, userId: string, scanId: string, decisions: ConfirmDecision[]): Promise<ConfirmResponse> {
+    const business = await this.businesses.getForMember(businessId, userId);
+    const { pendingFeedback, ...result } = await this.repo.confirm(businessId, scanId, userId, decisions);
+
+    let feedback: ConfirmResponse["feedback"] = { sent: 0, recorded: 0, duplicates: 0 };
+    if (pendingFeedback.length > 0) {
+      feedback = await this.businesses.sendFeedback(pendingFeedback.map((d) => feedbackFor(d, businessId, business.subtypeCode)));
+      if (!("error" in feedback)) await this.repo.markFeedbackSent(pendingFeedback.map((d) => d.detectionId));
+    }
+    return { ...result, feedback };
   }
 
   /** Qore Catalog candidates; a catalogue failure leaves detections without candidates instead of failing the scan. */

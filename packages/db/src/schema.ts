@@ -359,6 +359,17 @@ export const visionDetections = tally.table(
     // The business's item this looks like at scan time, and how it was found.
     inventoryItemId: uuid("inventory_item_id"),
     inventoryMatch: text("inventory_match"),
+    // The merchant's decision on confirm; all null until decided.
+    action: text("action"),
+    // Catalogue feedback outcome sent for it.
+    outcome: text("outcome"),
+    confirmedQid: text("confirmed_qid"),
+    // The item that was restocked, restored or created.
+    itemId: uuid("item_id"),
+    quantity: integer("quantity"),
+    decidedBy: uuid("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    feedbackSentAt: timestamp("feedback_sent_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -383,6 +394,20 @@ export const visionDetections = tally.table(
       sql`(inventory_item_id is null) = (inventory_match is null) and (inventory_match is null or inventory_match in ('reading', 'catalogue', 'name'))`,
     ),
     check("vision_detections_name_length", sql`char_length(name) between 1 and 200`),
+    foreignKey({
+      name: "vision_detections_item_fk",
+      columns: [t.businessId, t.itemId],
+      foreignColumns: [inventoryItems.businessId, inventoryItems.id],
+    }),
+    check("vision_detections_action", sql`action is null or action in ('restock', 'restore', 'add', 'skip')`),
+    check("vision_detections_outcome", sql`outcome is null or outcome in ('accepted', 'corrected', 'new_item', 'removed')`),
+    check("vision_detections_confirmed_qid_format", sql.raw(`confirmed_qid is null or confirmed_qid ~ '${QID_REGEX}'`)),
+    check("vision_detections_quantity_nonneg", sql`quantity is null or quantity >= 0`),
+    check(
+      "vision_detections_decision_consistent",
+      sql`(action is null) = (decided_at is null) and (action is null) = (outcome is null) and (action is null) = (decided_by is null)
+        and (action = 'skip') = (outcome = 'removed') and (action is distinct from 'skip') = (item_id is not null or action is null)`,
+    ),
   ],
 );
 

@@ -28,6 +28,7 @@ describe("BusinessesController (HTTP)", () => {
     addStarterInventory: jest.fn(async () => ({ created: 1 })),
     findByBarcode: jest.fn(async () => ({ id: "item-1" })),
     setBarcode: jest.fn(async () => ({ id: "item-1" })),
+    archiveItem: jest.fn(async () => ({ id: "item-1" })),
   };
 
   beforeAll(async () => {
@@ -57,6 +58,7 @@ describe("BusinessesController (HTTP)", () => {
     ["post", `/api/businesses/${BIZ}/inventory/starter`],
     ["get", `/api/businesses/${BIZ}/inventory/barcode/6156000024013`],
     ["put", `/api/businesses/${BIZ}/inventory/${ITEM}/barcode`],
+    ["delete", `/api/businesses/${BIZ}/inventory/${ITEM}`],
   ] as const)("%s %s needs a Supabase JWT", async (method, path) => {
     await http()[method](path).expect(401);
   });
@@ -142,6 +144,18 @@ describe("BusinessesController (HTTP)", () => {
 
     it("link rejects a non-uuid item id", async () => {
       await http().put(`/api/businesses/${BIZ}/inventory/not-a-uuid/barcode`).set(auth).send({ barcode: "6156000024013" }).expect(400);
+    });
+  });
+
+  describe("archive", () => {
+    it("archives (not deletes) the item for the caller", async () => {
+      await http().delete(`/api/businesses/${BIZ}/inventory/${ITEM}`).set(auth).expect(200);
+      expect(service.archiveItem).toHaveBeenCalledWith(BIZ, USER, ITEM);
+    });
+
+    it("rejects a non-uuid item id", async () => {
+      await http().delete(`/api/businesses/${BIZ}/inventory/not-a-uuid`).set(auth).expect(400);
+      expect(service.archiveItem).not.toHaveBeenCalled();
     });
   });
 });
