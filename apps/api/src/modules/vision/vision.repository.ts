@@ -1,9 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, schema } from "@tally/db";
+import { and, eq, isNotNull, schema } from "@tally/db";
 import { TALLY_DB, type TallyDb } from "../../drizzle/drizzle.module";
 import type { Detection } from "./shelf-scan";
 
-const { inventoryItemReadings, visionDetections, visionScans } = schema;
+const { inventoryItemReadings, inventoryItems, visionDetections, visionScans } = schema;
 
 /** Vision tables only. Callers have already checked business membership. */
 @Injectable()
@@ -15,6 +15,21 @@ export class VisionRepository {
       .select({ itemId: inventoryItemReadings.itemId, readingKey: inventoryItemReadings.readingKey })
       .from(inventoryItemReadings)
       .where(eq(inventoryItemReadings.businessId, businessId));
+  }
+
+  /** Items the merchant removed that are linked to a Qore ID: a scan offers to restore them instead of adding a duplicate. */
+  archivedLinkedItems(
+    businessId: string,
+  ): Promise<{ id: string; name: string; variantLabel: string | null; coreQid: string | null }[]> {
+    return this.db
+      .select({
+        id: inventoryItems.id,
+        name: inventoryItems.name,
+        variantLabel: inventoryItems.variantLabel,
+        coreQid: inventoryItems.coreQid,
+      })
+      .from(inventoryItems)
+      .where(and(eq(inventoryItems.businessId, businessId), isNotNull(inventoryItems.archivedAt), isNotNull(inventoryItems.coreQid)));
   }
 
   /** The scan and its detections in one transaction; detection ids are the ones already returned to the client. */

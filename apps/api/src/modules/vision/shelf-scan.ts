@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MatchCandidate, MatchItem, MatchResult } from "@tally/catalog-client";
-import { matchInventory, type InventoryIndex, type InventoryMatch } from "./inventory-match";
+import { matchInventory, type InventoryIndex, type InventoryMatch, type StockedMatch } from "./inventory-match";
 import type { Box, Confidence, ShelfProduct } from "./shelf-reader";
 
 export const MATCH_CANDIDATES = 3;
@@ -56,6 +56,8 @@ export type Detection = {
   inventoryItemId: string | null;
   /** How that item was found; null when the merchant doesn't seem to stock it. */
   inventoryMatch: InventoryMatch | null;
+  /** The match is an item the merchant removed: offer to restore it rather than add a duplicate. */
+  inventoryItemArchived: boolean;
 };
 
 /** One /v1/match item per product, ref = its index, so results map back without relying on order. */
@@ -106,7 +108,7 @@ export function buildDetections(
       ...counted(p, samBoxes.get(i)),
       confidence: p.confidence,
       candidates,
-      ...stocked(matchInventory(p, candidates[0]?.qid ?? null, inventory)),
+      ...stocked(matchInventory(p, candidates.map((c) => c.qid), inventory)),
     };
   });
 }
@@ -119,6 +121,8 @@ function counted(p: ShelfProduct, sam: Box[] | undefined): Pick<Detection, "coun
     : { count: p.count, countSource: "spark", sparkCount: p.count, samCount, boxes: p.boxes };
 }
 
-function stocked(m: ReturnType<typeof matchInventory>): Pick<Detection, "inventoryItemId" | "inventoryMatch"> {
-  return m ? { inventoryItemId: m.itemId, inventoryMatch: m.match } : { inventoryItemId: null, inventoryMatch: null };
+function stocked(m: StockedMatch | null): Pick<Detection, "inventoryItemId" | "inventoryMatch" | "inventoryItemArchived"> {
+  return m
+    ? { inventoryItemId: m.itemId, inventoryMatch: m.match, inventoryItemArchived: m.archived }
+    : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false };
 }

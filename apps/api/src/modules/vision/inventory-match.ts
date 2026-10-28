@@ -1,25 +1,35 @@
 /**
  * "Does this merchant already have it?" — answered in Tally against the
- * business's own items, never by Qore Catalog. Pure, no IO.
+ * business's own items; Qore Catalog never sees merchant inventory. Pure, no IO.
+ * Checked in this order (store first, then catalogue):
  *
  *   reading   → the camera read exactly this before and the merchant confirmed
- *               it as this item (inventory_item_readings). Strongest: works for
- *               products the catalogue doesn't know.
- *   catalogue → the top plausible catalogue candidate is linked to an item.
- *   name      → brand and name read off the pack appear in one item's name.
- *               Conservative: needs a legible brand, a single matching item and
- *               no conflicting pack size.
+ *               it as this item (inventory_item_readings). Works for products
+ *               the catalogue doesn't know.
+ *   catalogue → an active item is linked to one of the plausible candidates'
+ *               Qore IDs (best candidate first): "in stock", never a duplicate.
+ *   catalogue + archived → only an archived item has that Qore ID: "you
+ *               removed X, restore?" (restoring keeps its name, price, history).
+ *   name      → a hand-typed item (no Qore ID) whose name holds the brand and
+ *               name read off the pack: "is this your X?". Conservative: needs a
+ *               legible brand, exactly one such item and no conflicting size.
  */
 
 export type InventoryMatch = "reading" | "catalogue" | "name";
 
+type Item = { id: string; name: string; variantLabel: string | null; coreQid: string | null };
+
 export type InventoryIndex = {
   byQid: Map<string, string>;
+  archivedByQid: Map<string, string>;
   byReading: Map<string, string>;
-  items: { id: string; name: string; variantLabel: string | null }[];
+  /** Active items without a Qore ID, for name matching. */
+  unlinked: { id: string; name: string; variantLabel: string | null }[];
 };
 
 export type Reading = { brand: string; name: string; pack: string };
+
+export type StockedMatch = { itemId: string; match: InventoryMatch; archived: boolean };
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}.]+/gu, " ").replace(/\s+/g, " ").trim();
 
@@ -28,31 +38,39 @@ export function readingKey({ brand, name, pack }: Reading): string {
   return [brand, name, pack].map(norm).join("|");
 }
 
+/** active: the business's live items; archived: its archived items that carry a Qore ID. */
 export function indexInventory(
-  items: { id: string; name: string; variantLabel: string | null; coreQid: string | null }[],
+  active: Item[],
   readings: { itemId: string; readingKey: string }[],
+  archived: Item[] = [],
 ): InventoryIndex {
-  const live = new Set(items.map((i) => i.id));
+  const live = new Set(active.map((i) => i.id));
+  const byQid = new Map(active.filter((i) => i.coreQid).map((i) => [i.coreQid!, i.id]));
   return {
-    byQid: new Map(items.filter((i) => i.coreQid).map((i) => [i.coreQid!, i.id])),
+    byQid,
+    // Several archived copies of one product: any will do; an active one always wins.
+    archivedByQid: new Map(archived.filter((i) => i.coreQid && !byQid.has(i.coreQid)).map((i) => [i.coreQid!, i.id])),
     byReading: new Map(readings.filter((r) => live.has(r.itemId)).map((r) => [r.readingKey, r.itemId])),
-    items: items.map(({ id, name, variantLabel }) => ({ id, name, variantLabel })),
+    unlinked: active.filter((i) => !i.coreQid).map(({ id, name, variantLabel }) => ({ id, name, variantLabel })),
   };
 }
 
-export function matchInventory(
-  reading: Reading,
-  topQid: string | null,
-  index: InventoryIndex,
-): { itemId: string; match: InventoryMatch } | null {
+/** candidateQids: the plausible catalogue candidates, best first. */
+export function matchInventory(reading: Reading, candidateQids: string[], index: InventoryIndex): StockedMatch | null {
   const byReading = index.byReading.get(readingKey(reading));
-  if (byReading) return { itemId: byReading, match: "reading" };
+  if (byReading) return { itemId: byReading, match: "reading", archived: false };
 
-  const byQid = topQid ? index.byQid.get(topQid) : undefined;
-  if (byQid) return { itemId: byQid, match: "catalogue" };
+  for (const qid of candidateQids) {
+    const itemId = index.byQid.get(qid);
+    if (itemId) return { itemId, match: "catalogue", archived: false };
+  }
+  for (const qid of candidateQids) {
+    const itemId = index.archivedByQid.get(qid);
+    if (itemId) return { itemId, match: "catalogue", archived: true };
+  }
 
-  const byName = matchByName(reading, index.items);
-  return byName ? { itemId: byName, match: "name" } : null;
+  const byName = matchByName(reading, index.unlinked);
+  return byName ? { itemId: byName, match: "name", archived: false } : null;
 }
 
 const SIZE = /^\d+(?:\.\d+)?(?:g|kg|mg|ml|cl|l|ltr|oz|lb|pcs|pc|x)?$/;
@@ -64,7 +82,7 @@ const tokens = (s: string) =>
     .filter(Boolean);
 const sizes = (ts: string[]) => ts.filter((t) => SIZE.test(t) && /\d/.test(t));
 
-function matchByName(reading: Reading, items: InventoryIndex["items"]): string | null {
+function matchByName(reading: Reading, items: InventoryIndex["unlinked"]): string | null {
   if (!reading.brand) return null;
   const wanted = [...new Set([...tokens(reading.brand), ...tokens(reading.name)])].filter((t) => !SIZE.test(t));
   if (wanted.length === 0) return null;

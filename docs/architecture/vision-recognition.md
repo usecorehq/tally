@@ -124,7 +124,12 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 - `inventoryItemId` (on a candidate): the business's active item linked to that Qore ID.
 - `catalogueAvailable: false`: Qore Catalog failed; detections come back without candidates rather than failing the scan.
 - `scanId` and detection `id`s are stored: confirm uses them. Only the photo's sha256 is kept, not the photo.
-- `inventoryItemId` / `inventoryMatch` (on the detection): the business's item this looks like, found in this order: `reading` (the camera read exactly this before and the merchant confirmed it), `catalogue` (the top candidate's Qore ID is linked to an item), `name` (the brand and name read appear in exactly one item's name, with no conflicting size; needs a legible brand). `null` = looks new. Tally decides this, not Qore Catalog.
+- **Does the merchant already have it?** Tally answers this against the business's own items; Qore Catalog never sees merchant inventory. The detection's `inventoryItemId`, `inventoryMatch` and `inventoryItemArchived` are set by the first rule that applies:
+  1. `reading`: the camera read exactly this before and the merchant confirmed it as this item. Works for products the catalogue doesn't know.
+  2. `catalogue`: an active item is linked to one of the plausible candidates' Qore IDs, best candidate first. Show it as "in stock" and never create a duplicate.
+  3. `catalogue` with `inventoryItemArchived: true`: only an item the merchant removed has that Qore ID. Show "You removed X. Restore?"; restoring keeps their name, price and history.
+  4. `name`: a hand-typed item (no Qore ID) whose name contains the brand and name read off the pack. Show "Is this your X?". This needs a legible brand, exactly one such item and no conflicting pack size. Confirming it links the item to the Qore ID, so later scans match exactly.
+  5. `null`: not in store. Offer the catalogue candidates ("Add to my store"), or a new item named from the label when there are none.
 - An empty shelf returns `detections: []`.
 
 ### Planned

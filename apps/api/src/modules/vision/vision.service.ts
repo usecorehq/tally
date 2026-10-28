@@ -72,9 +72,11 @@ export class VisionService {
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
 
     // Membership check before any paid model call.
-    const [items, readings] = await Promise.all([
+    // listInventory checks membership; the other two only read this business's rows.
+    const [items, readings, archived] = await Promise.all([
       this.businesses.listInventory(businessId, userId),
       this.repo.readings(businessId),
+      this.repo.archivedLinkedItems(businessId),
     ]);
     const started = Date.now();
 
@@ -98,7 +100,7 @@ export class VisionService {
       timed(() => this.match(products)),
     ]);
 
-    const detections = buildDetections(products, matching.value.matches, indexInventory(items, readings), counting.value);
+    const detections = buildDetections(products, matching.value.matches, indexInventory(items, readings, archived), counting.value);
     const timings = { readMs, samMs: counting.ms, matchMs: matching.ms };
     const scanId = await this.repo.saveScan(
       {

@@ -57,6 +57,7 @@ async function app(apiKey: string | undefined) {
   const repo = {
     readings: jest.fn(async () => [] as { itemId: string; readingKey: string }[]),
     saveScan: jest.fn(async () => "scan-1"),
+    archivedLinkedItems: jest.fn(async () => [] as { id: string; name: string; variantLabel: string | null; coreQid: string | null }[]),
   };
   const catalog = {
     client: {
@@ -137,6 +138,7 @@ describe("VisionController shelf-scans (HTTP)", () => {
           samCount: 2,
           inventoryItemId: "item-a",
           inventoryMatch: "catalogue",
+          inventoryItemArchived: false,
           candidates: [{ qid: "QC-A", inventoryItemId: "item-a" }],
         },
       ],
