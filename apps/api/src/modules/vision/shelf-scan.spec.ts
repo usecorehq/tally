@@ -7,6 +7,7 @@ const peak: ShelfProduct = {
   brand: "Peak",
   name: "Full Cream Milk Powder",
   pack: "400g",
+  look: "yellow tin",
   count: 2,
   boxes: [{ x1: 1, y1: 2, x2: 3, y2: 4 }],
   confidence: "high",
@@ -55,7 +56,7 @@ describe("buildDetections", () => {
       result("1", []),
       result("0", [candidate("QC-A", 0.9), candidate("QC-B", 0.8), candidate("QC-C", 0.7), candidate("QC-D", 0.6)]),
     ];
-    const [first, second] = buildDetections([peak, loose], matches, new Map([["QC-A", "item-a"], ["QC-C", "item-c"]]), id);
+    const [first, second] = buildDetections([peak, loose], matches, new Map([["QC-A", "item-a"], ["QC-C", "item-c"]]), new Map(), id);
 
     expect(first).toMatchObject({ id: "d1", name: "Full Cream Milk Powder", count: 2, inventoryItemId: "item-a" });
     expect(first!.candidates.map((c) => [c.qid, c.inventoryItemId])).toEqual([
@@ -68,7 +69,7 @@ describe("buildDetections", () => {
   });
 
   it("returns detections without candidates when the catalogue gave nothing", () => {
-    expect(buildDetections([peak], [], new Map(), id)[0]).toMatchObject({ candidates: [], inventoryItemId: null });
+    expect(buildDetections([peak], [], new Map(), new Map(), id)[0]).toMatchObject({ candidates: [], inventoryItemId: null });
   });
 
   it("drops implausible candidates before keeping the top 3", () => {
@@ -76,14 +77,28 @@ describe("buildDetections", () => {
       result("0", [candidate("QC-X", 0.95, 0), candidate("QC-A", 0.9), candidate("QC-B", 0.5), candidate("QC-C", 0.4), candidate("QC-D", 0.3)]),
       result("1", [candidate("QC-E", 0.8, 0.5), candidate("QC-F", 0.7, 0.5)]),
     ];
-    const [branded, unbranded] = buildDetections([peak, loose], matches, new Map(), id);
+    const [branded, unbranded] = buildDetections([peak, loose], matches, new Map(), new Map(), id);
     expect(branded!.candidates.map((c) => c.qid)).toEqual(["QC-A", "QC-B", "QC-C"]);
     expect(unbranded!.candidates.map((c) => c.qid)).toEqual(["QC-E"]);
   });
 
+  it("uses SAM's count and boxes when SAM found units, else Spark's", () => {
+    const sam = [{ x1: 5, y1: 5, x2: 9, y2: 9 }, { x1: 10, y1: 5, x2: 14, y2: 9 }, { x1: 20, y1: 5, x2: 24, y2: 9 }];
+    const [counted, missed, notRun] = buildDetections(
+      [peak, loose, { ...peak, name: "Other" }],
+      [],
+      new Map(),
+      new Map([[0, sam], [1, []]]),
+      id,
+    );
+    expect(counted).toMatchObject({ count: 3, countSource: "sam", sparkCount: 2, samCount: 3, boxes: sam });
+    expect(missed).toMatchObject({ count: 2, countSource: "spark", sparkCount: 2, samCount: 0, boxes: peak.boxes });
+    expect(notRun).toMatchObject({ count: 2, countSource: "spark", samCount: null });
+  });
+
   it("passes a null price through", () => {
     const c = { ...candidate("QC-A", 0.9), price: null } as MatchCandidate;
-    expect(buildDetections([peak], [result("0", [c])], new Map(), id)[0]!.candidates[0]!.price).toBeNull();
+    expect(buildDetections([peak], [result("0", [c])], new Map(), new Map(), id)[0]!.candidates[0]!.price).toBeNull();
   });
 });
 

@@ -39,8 +39,15 @@ export type Detection = {
   brand: string;
   name: string;
   pack: string;
+  /** The visual phrase SAM counted with, e.g. "red toothpaste box". */
+  look: string;
+  /** samCount when SAM found this product's units, else sparkCount. */
   count: number;
-  /** 0–1000 grid of the uploaded image, one per visible unit. */
+  countSource: "sam" | "spark";
+  sparkCount: number;
+  /** null when SAM didn't run for this product (too many looks, or SAM failed). */
+  samCount: number | null;
+  /** 0–1000 grid of the uploaded image, one per counted unit (SAM's when it counted). */
   boxes: Box[];
   confidence: Confidence;
   candidates: DetectionCandidate[];
@@ -67,6 +74,7 @@ export function buildDetections(
   products: ShelfProduct[],
   matches: MatchResult[],
   inventoryByQid: Map<string, string>,
+  samBoxes: Map<number, Box[]> = new Map(),
   newId: () => string = randomUUID,
 ): Detection[] {
   const byRef = new Map(matches.map((m) => [m.ref, m]));
@@ -90,11 +98,19 @@ export function buildDetections(
       brand: p.brand,
       name: p.name,
       pack: p.pack,
-      count: p.count,
-      boxes: p.boxes,
+      look: p.look,
+      ...counted(p, samBoxes.get(i)),
       confidence: p.confidence,
       candidates,
       inventoryItemId: candidates[0]?.inventoryItemId ?? null,
     };
   });
+}
+
+/** SAM's count wins when it found at least one unit; zero means SAM missed it, not that it isn't there. */
+function counted(p: ShelfProduct, sam: Box[] | undefined): Pick<Detection, "count" | "countSource" | "sparkCount" | "samCount" | "boxes"> {
+  const samCount = sam ? sam.length : null;
+  return samCount
+    ? { count: samCount, countSource: "sam", sparkCount: p.count, samCount, boxes: sam! }
+    : { count: p.count, countSource: "spark", sparkCount: p.count, samCount, boxes: p.boxes };
 }
