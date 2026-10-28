@@ -4,11 +4,13 @@ import { ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import * as jwt from "jsonwebtoken";
+import { createHash } from "node:crypto";
 import request from "supertest";
 import { SupabaseJwtGuard } from "../../common/guards/supabase-jwt.guard";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { MAX_SHELF_IMAGE_BYTES, VisionController } from "./vision.controller";
+import { VisionRepository } from "./vision.repository";
 import { VisionService } from "./vision.service";
 
 // Real guard, controller and service; the business lookup, the catalogue and
@@ -51,7 +53,11 @@ const metaApi = (spark: () => Response, sam: () => Response) => async (_url: unk
   JSON.parse(String(init?.body)).model === "sam-3.1" ? sam() : spark();
 
 async function app(apiKey: string | undefined) {
-  const businesses = { listInventory: jest.fn(async () => [{ id: "item-a", coreQid: "QC-A" }]) };
+  const businesses = { listInventory: jest.fn(async () => [{ id: "item-a", name: "Peak 400g", variantLabel: null, coreQid: "QC-A" }]) };
+  const repo = {
+    readings: jest.fn(async () => [] as { itemId: string; readingKey: string }[]),
+    saveScan: jest.fn(async () => "scan-1"),
+  };
   const catalog = {
     client: {
       match: jest.fn(async () => ({
@@ -66,6 +72,7 @@ async function app(apiKey: string | undefined) {
       VisionService,
       { provide: BusinessesService, useValue: businesses },
       { provide: CatalogService, useValue: catalog },
+      { provide: VisionRepository, useValue: repo },
       { provide: ConfigService, useValue: { get: (k: string) => config[k], getOrThrow: (k: string) => config[k] } },
       { provide: APP_GUARD, useClass: SupabaseJwtGuard },
     ],
@@ -74,17 +81,18 @@ async function app(apiKey: string | undefined) {
   nest.setGlobalPrefix("api");
   nest.useGlobalPipes(new ValidationPipe({ transform: true }));
   await nest.init();
-  return { nest, businesses, catalog };
+  return { nest, businesses, catalog, repo };
 }
 
 describe("VisionController shelf-scans (HTTP)", () => {
   let nest: INestApplication;
   let businesses: Awaited<ReturnType<typeof app>>["businesses"];
   let catalog: Awaited<ReturnType<typeof app>>["catalog"];
+  let repo: Awaited<ReturnType<typeof app>>["repo"];
   const fetchSpy = jest.spyOn(global, "fetch");
 
   beforeAll(async () => {
-    ({ nest, businesses, catalog } = await app("LLM_000_not-a-real-key"));
+    ({ nest, businesses, catalog, repo } = await app("LLM_000_not-a-real-key"));
   });
   afterAll(async () => {
     await nest.close();
@@ -94,6 +102,8 @@ describe("VisionController shelf-scans (HTTP)", () => {
     fetchSpy.mockReset();
     businesses.listInventory.mockClear();
     catalog.client.match.mockClear();
+    repo.saveScan.mockClear();
+    repo.readings.mockClear();
   });
 
   const post = () => request(nest.getHttpServer()).post(path);
@@ -113,6 +123,7 @@ describe("VisionController shelf-scans (HTTP)", () => {
     expect(businesses.listInventory).toHaveBeenCalledWith(BIZ, USER);
     expect(catalog.client.match).toHaveBeenCalledWith({ items: [{ ref: "0", brand: "Peak", name: "Full Cream Milk Powder", pack: "400g" }], limit: 10 });
     expect(res.body).toMatchObject({
+      scanId: "scan-1",
       model: "muse-spark-1.3",
       countModel: "sam-3.1",
       catalogueAvailable: true,
@@ -125,6 +136,7 @@ describe("VisionController shelf-scans (HTTP)", () => {
           sparkCount: 1,
           samCount: 2,
           inventoryItemId: "item-a",
+          inventoryMatch: "catalogue",
           candidates: [{ qid: "QC-A", inventoryItemId: "item-a" }],
         },
       ],
@@ -133,6 +145,17 @@ describe("VisionController shelf-scans (HTTP)", () => {
       { x1: 100, y1: 100, x2: 150, y2: 200 },
       { x1: 155, y1: 100, x2: 205, y2: 200 },
     ]);
+    const [scan, saved] = repo.saveScan.mock.calls[0] as unknown as [Record<string, unknown>, { id: string }[]];
+    expect(scan).toMatchObject({
+      businessId: BIZ,
+      createdBy: USER,
+      imageSha256: createHash("sha256").update(JPEG).digest("hex"),
+      imageBytes: JPEG.length,
+      readModel: "muse-spark-1.3",
+      countModel: "sam-3.1",
+      catalogueAvailable: true,
+    });
+    expect(saved.map((d) => d.id)).toEqual([res.body.detections[0].id]);
     expect(res.body.timings).toEqual({
       readMs: expect.any(Number),
       samMs: expect.any(Number),
@@ -165,6 +188,15 @@ describe("VisionController shelf-scans (HTTP)", () => {
     businesses.listInventory.mockRejectedValueOnce(new ForbiddenException("Not a member of this business"));
     await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(403);
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(repo.saveScan).not.toHaveBeenCalled();
+  });
+
+  it("recognises an item from a reading the merchant confirmed before", async () => {
+    repo.readings.mockResolvedValueOnce([{ itemId: "item-a", readingKey: "peak|full cream milk powder|400g" }]);
+    fetchSpy.mockImplementation(metaApi(() => sparkReply([peak]), () => samReply("")));
+    catalog.client.match.mockResolvedValueOnce({ items: [{ ref: "0", query: {}, parsedPack: null, candidates: [] }] } as never);
+    const res = await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
+    expect(res.body.detections[0]).toMatchObject({ candidates: [], inventoryItemId: "item-a", inventoryMatch: "reading" });
   });
 
   it("rejects a missing image, a non-image and an oversized image before the model", async () => {
@@ -186,6 +218,12 @@ describe("VisionController shelf-scans (HTTP)", () => {
     const res = await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(expected);
     if (expected === 503) expect(res.headers["retry-after"]).toBe("12");
     expect(JSON.stringify(res.body)).not.toContain("LLM_");
+  });
+
+  it("stores nothing when the model call fails", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 }));
+    await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(502);
+    expect(repo.saveScan).not.toHaveBeenCalled();
   });
 
   it("maps a model timeout to 504", async () => {

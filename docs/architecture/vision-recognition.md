@@ -2,7 +2,7 @@
 
 > Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg).
 >
-> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), stateless: nothing is stored yet. **Planned:** storing scans, confirm → inventory + feedback, and point to sell. Planned endpoint shapes may change before they ship.
+> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, and storing each scan. **Planned:** crops in R2, confirm → inventory + feedback, and point to sell. Planned endpoint shapes may change before they ship.
 
 The merchant points the phone camera at products and Tally recognises them. There are two flows:
 
@@ -79,6 +79,7 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 
 ```json
 {
+  "scanId": "9b1e…",
   "model": "muse-spark-1.3",
   "countModel": "sam-3.1",
   "catalogueAvailable": true,
@@ -97,6 +98,7 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
       "boxes": [{ "x1": 102, "y1": 210, "x2": 180, "y2": 395 }],
       "confidence": "high",
       "inventoryItemId": null,
+      "inventoryMatch": null,
       "candidates": [
         {
           "qid": "QC-7K2M-9XQ4-R",
@@ -119,9 +121,10 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 - `count` is SAM's when SAM found this product's units (`countSource: "sam"`), else Spark's. Both raw counts are returned; `samCount` is `null` when SAM didn't run for the product (more than 20 distinct looks, or the SAM request failed). `boxes`: one per counted unit, at most 50 products per photo.
 - `timings`: `samMs` and `matchMs` run in parallel after `readMs`.
 - `candidates`: up to 3 plausible matches, best first. When a brand was read, only products of that brand count; without one, only near-exact name matches (score ≥ 0.75). `/v1/match` always returns its nearest products, so without this filter a brand the catalogue lacks comes back as another brand's lookalike. Empty means the catalogue doesn't have it: the merchant adds it as their own item. `price` is `null` when the catalogue has no price.
-- `inventoryItemId` (on a candidate): the business's active item for that product. On the detection it is the top candidate's, so confirming it would restock that item.
+- `inventoryItemId` (on a candidate): the business's active item linked to that Qore ID.
 - `catalogueAvailable: false`: Qore Catalog failed; detections come back without candidates rather than failing the scan.
-- `id` is fresh per response until scans are stored; don't keep it.
+- `scanId` and detection `id`s are stored: confirm uses them. Only the photo's sha256 is kept, not the photo.
+- `inventoryItemId` / `inventoryMatch` (on the detection): the business's item this looks like, found in this order: `reading` (the camera read exactly this before and the merchant confirmed it), `catalogue` (the top candidate's Qore ID is linked to an item), `name` (the brand and name read appear in exactly one item's name, with no conflicting size; needs a legible brand). `null` = looks new. Tally decides this, not Qore Catalog.
 - An empty shelf returns `detections: []`.
 
 ### Planned
@@ -152,12 +155,13 @@ Errors:
 
 Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–24 s, then SAM takes 3–6 s and the catalogue match about 1–3 s, in parallel. The whole scan takes about 12–30 s. Read time grows with the number of units in the frame, because Spark writes one box per unit. Show progress on the device rather than blocking.
 
-## Data (planned)
+## Data
 
-Both tables live in the `tally` schema. Child rows carry `business_id` and use composite foreign keys, like the rest of the schema.
+Migration `0004_add_vision_scans`, all in the `tally` schema. Child rows carry `business_id` and use composite foreign keys, like the rest of the schema. Tally keeps its own readings and only Qore IDs + match scores from the catalogue: no catalogue names or prices.
 
-- **`vision_scans`**: business, status, image size and hash, model ids, time per stage, `created_by`.
-- **`vision_detections`**: the scan; brand, name and pack size as read; Muse Spark's count and SAM's count; the box and confidence; the top candidates (jsonb); and the merchant's decision. The decision is the outcome, the confirmed Qore ID, `item_id`, quantity, and when feedback was sent.
+- **`vision_scans`** (built): business, status (`open`, `confirmed`), the photo's sha256 and size, model ids, time per stage, `created_by`.
+- **`vision_detections`** (built): the scan and position; brand, name, pack and look as read; Spark's and SAM's counts; boxes and confidence; candidates as `[{qid, score}]`; the item it looks like and how it was found. *Planned:* the merchant's decision (outcome, confirmed Qore ID, item, quantity, when feedback was sent).
+- **`inventory_item_readings`** (built table, written on confirm, which is planned): `brand|name|pack` as read → the merchant's item. One reading maps to one item per business.
 
 Identify calls are not stored.
 
