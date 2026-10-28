@@ -48,6 +48,16 @@ class EnvVars {
   @IsString()
   QORE_CATALOG_API_KEY!: string;
 
+  // ── Meta Model API (camera recognition) ──
+  @IsString()
+  @IsOptional()
+  META_MODEL_BASE_URL: string = "https://api.meta.ai/v1";
+
+  /** Bearer key (LLM_…). Optional: without it only the vision routes are unavailable. */
+  @IsString()
+  @IsOptional()
+  META_MODEL_API_KEY?: string;
+
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
