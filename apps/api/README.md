@@ -46,6 +46,7 @@ src/
   modules/businesses/         businesses, membership, inventory, onboarding starter inventory
   modules/catalog/            CatalogService wrapping @tally/catalog-client
   modules/vision/             Camera recognition: shelf scan (Muse Spark, SAM 3.1, catalogue), confirm, identify, crops
+  modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
   modules/media/              R2Storage: Tally's files in Cloudflare R2 (aws4fetch, server-only)
   modules/health/             GET /api/health
 ```

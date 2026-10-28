@@ -370,6 +370,8 @@ export const visionDetections = tally.table(
     decidedBy: uuid("decided_by"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     feedbackSentAt: timestamp("feedback_sent_at", { withTimezone: true }),
+    // Stock-take agent: how this line was resolved (tool calls behind it); null for a quick scan.
+    evidence: jsonb("evidence").$type<{ turn: number; tool: string; summary: string }[]>(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -408,6 +410,74 @@ export const visionDetections = tally.table(
       sql`(action is null) = (decided_at is null) and (action is null) = (outcome is null) and (action is null) = (decided_by is null)
         and (action = 'skip') = (outcome = 'removed') and (action is distinct from 'skip') = (item_id is not null or action is null)`,
     ),
+  ],
+);
+
+/**
+ * A stock-take agent run: Muse Spark working through one shelf photo with
+ * tools until every product is resolved or flagged. The result lands as a
+ * normal vision_scan (scan_id) so the merchant confirms it the same way.
+ */
+export const visionAgentRuns = tally.table(
+  "vision_agent_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    // Set when the run saves its scan (done, or fallback to the quick scan).
+    scanId: uuid("scan_id"),
+    status: text("status").notNull().default("running"),
+    model: text("model").notNull(),
+    turns: integer("turns").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    // Why the run ended early (budget, model error); never a key or upstream body.
+    error: text("error"),
+    startedBy: uuid("started_by").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("vision_agent_runs_business_id_key").on(t.businessId, t.id),
+    foreignKey({
+      name: "vision_agent_runs_scan_fk",
+      columns: [t.businessId, t.scanId],
+      foreignColumns: [visionScans.businessId, visionScans.id],
+    }),
+    check("vision_agent_runs_status", sql`status in ('running', 'done', 'fallback', 'failed')`),
+    check("vision_agent_runs_finished_consistent", sql`(status = 'running') = (finished_at is null)`),
+    check("vision_agent_runs_counts_nonneg", sql`turns >= 0 and input_tokens >= 0 and output_tokens >= 0`),
+    index("vision_agent_runs_business_started_idx").on(t.businessId, t.startedAt.desc()),
+  ],
+);
+
+/** The run's audit trail: what the agent thought, which tools it called, what came back. */
+export const visionAgentSteps = tally.table(
+  "vision_agent_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    runId: uuid("run_id").notNull(),
+    turn: integer("turn").notNull(),
+    kind: text("kind").notNull(),
+    tool: text("tool"),
+    args: jsonb("args").$type<Record<string, unknown>>(),
+    // Short, human-readable; never image data.
+    summary: text("summary").notNull(),
+    ms: integer("ms"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "vision_agent_steps_run_fk",
+      columns: [t.businessId, t.runId],
+      foreignColumns: [visionAgentRuns.businessId, visionAgentRuns.id],
+    }).onDelete("cascade"),
+    check("vision_agent_steps_kind", sql`kind in ('baseline', 'thought', 'tool', 'result')`),
+    check("vision_agent_steps_turn_nonneg", sql`turn >= 0`),
+    check("vision_agent_steps_tool_consistent", sql`(kind = 'tool') = (tool is not null)`),
+    index("vision_agent_steps_run_idx").on(t.runId, t.createdAt),
   ],
 );
 
@@ -461,3 +531,7 @@ export type VisionDetection = typeof visionDetections.$inferSelect;
 export type NewVisionDetection = typeof visionDetections.$inferInsert;
 export type InventoryItemReading = typeof inventoryItemReadings.$inferSelect;
 export type NewInventoryItemReading = typeof inventoryItemReadings.$inferInsert;
+export type VisionAgentRun = typeof visionAgentRuns.$inferSelect;
+export type NewVisionAgentRun = typeof visionAgentRuns.$inferInsert;
+export type VisionAgentStep = typeof visionAgentSteps.$inferSelect;
+export type NewVisionAgentStep = typeof visionAgentSteps.$inferInsert;

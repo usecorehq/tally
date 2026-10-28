@@ -27,16 +27,31 @@ export class MetaModelError extends Error {
 
 export type ResponsesUsage = { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 
+/** A function tool call the model asked for; answer it with a function_call_output carrying callId. */
+export type ToolCall = { callId: string; name: string; arguments: string };
+
 export type ResponsesResult = {
+  /** Pass as previous_response_id to continue the conversation (tool loops). */
+  id: string | null;
   status: string;
   /** All output_text parts of the message items, concatenated. */
   text: string;
+  toolCalls: ToolCall[];
+  /** The raw output items (reasoning, message, function_call), for stateless replay in tool loops. */
+  output: Record<string, unknown>[];
   usage: ResponsesUsage | null;
 };
 
 type RawResponse = {
+  id?: string;
   status?: string;
-  output?: { type?: string; content?: { type?: string; text?: string }[] }[];
+  output?: {
+    type?: string;
+    content?: { type?: string; text?: string }[];
+    call_id?: string;
+    name?: string;
+    arguments?: string;
+  }[];
   usage?: ResponsesUsage;
 };
 
@@ -84,6 +99,17 @@ export class MetaModelClient {
       .map((part) => part.text)
       .join("");
 
-    return { status: payload?.status ?? "unknown", text, usage: payload?.usage ?? null };
+    const toolCalls = (payload?.output ?? [])
+      .filter((item) => item.type === "function_call" && item.call_id && item.name)
+      .map((item) => ({ callId: item.call_id!, name: item.name!, arguments: item.arguments ?? "{}" }));
+
+    return {
+      id: payload?.id ?? null,
+      status: payload?.status ?? "unknown",
+      text,
+      toolCalls,
+      output: (payload?.output ?? []) as Record<string, unknown>[],
+      usage: payload?.usage ?? null,
+    };
   }
 }
