@@ -11,7 +11,9 @@ import { createHash } from "node:crypto";
 import type { MatchResult } from "@tally/catalog-client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
-import { feedbackFor } from "./confirm-plan";
+import { R2Storage } from "../media/r2-storage";
+import { feedbackFor, feedbackRef } from "./confirm-plan";
+import { bestBox, cropKey, makeCrops } from "./crops";
 import { indexInventory, matchInventory, readingKey, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
@@ -69,6 +71,12 @@ export type IdentifyResult = {
 export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
   /** Best-effort: a catalogue outage never undoes the stock changes; feedback is retried on the next confirm. */
   feedback: { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string };
+  /**
+   * Crops sent to Qore Catalog (POST /v1/images) for lines confirmed with a
+   * Qore ID, after their feedback. Best-effort; skipped = no crop stored
+   * (R2 off, box too small) or no Qore ID.
+   */
+  images: { uploaded: number; skipped: number; failed: number };
 };
 
 export type ShelfScanResult = {
@@ -81,6 +89,8 @@ export type ShelfScanResult = {
   detections: Detection[];
   /** False when Qore Catalog failed: detections come back without candidates. */
   catalogueAvailable: boolean;
+  /** Product crops stored in R2 for this scan (0 when R2 isn't configured). */
+  cropsStored: number;
   /** samMs and matchMs run in parallel after readMs. */
   timings: { readMs: number; samMs: number; matchMs: number; totalMs: number };
 };
@@ -95,6 +105,7 @@ export class VisionService {
     private readonly businesses: BusinessesService,
     private readonly catalog: CatalogService,
     private readonly repo: VisionRepository,
+    private readonly media: R2Storage,
   ) {
     const apiKey = config.get<string>("meta.apiKey");
     this.meta = apiKey ? new MetaModelClient(config.getOrThrow<string>("meta.baseUrl"), apiKey) : null;
@@ -157,14 +168,36 @@ export class VisionService {
       },
       detections,
     );
+    const cropsStored = await this.storeCrops(scanId, image, detections);
     return {
       scanId,
       model: SHELF_MODEL,
       countModel: SAM_MODEL,
       detections,
       catalogueAvailable: matching.value.available,
+      cropsStored,
       timings: { ...timings, totalMs: Date.now() - started },
     };
+  }
+
+  /**
+   * One crop per detection (its largest box) to R2 at tally/crops/<scanId>/<position>.webp,
+   * read back on confirm. Best-effort: a crop failure never fails the scan.
+   */
+  private async storeCrops(scanId: string, image: Buffer, detections: Detection[]): Promise<number> {
+    if (!this.media.enabled || detections.length === 0) return 0;
+    try {
+      const crops = await makeCrops(image, detections.map((d) => bestBox(d.boxes)));
+      const results = await Promise.allSettled(
+        crops.map((crop, position) => (crop ? this.media.put(cropKey(scanId, position), crop, "image/webp").then(() => 1) : 0)),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed) this.logger.warn(`${failed} crop(s) not stored for scan ${scanId}`);
+      return results.reduce((n, r) => n + (r.status === "fulfilled" ? r.value : 0), 0);
+    } catch (err) {
+      this.logger.warn(`Crops not made for scan ${scanId}: ${(err as Error).message}`);
+      return 0;
+    }
   }
 
   /**
@@ -260,11 +293,50 @@ export class VisionService {
     const { pendingFeedback, ...result } = await this.repo.confirm(businessId, scanId, userId, decisions);
 
     let feedback: ConfirmResponse["feedback"] = { sent: 0, recorded: 0, duplicates: 0 };
+    let images: ConfirmResponse["images"] = { uploaded: 0, skipped: 0, failed: 0 };
     if (pendingFeedback.length > 0) {
       feedback = await this.businesses.sendFeedback(pendingFeedback.map((d) => feedbackFor(d, businessId, business.subtypeCode)));
-      if (!("error" in feedback)) await this.repo.markFeedbackSent(pendingFeedback.map((d) => d.detectionId));
+      if (!("error" in feedback)) {
+        await this.repo.markFeedbackSent(pendingFeedback.map((d) => d.detectionId));
+        // The catalogue links a picture to its feedback line, so pictures only follow sent feedback.
+        images = await this.uploadCrops(pendingFeedback);
+      }
     }
-    return { ...result, feedback };
+    return { ...result, feedback, images };
+  }
+
+  /**
+   * Send each confirmed line's crop to Qore Catalog as an on_shelf picture of
+   * its Qore ID, linked to the line's feedback (same clientRef). Lines without
+   * a Qore ID (new_item, skip) send nothing. Stored by sha256 there, so a
+   * resend is harmless.
+   */
+  private async uploadCrops(lines: ConfirmResult["pendingFeedback"]): Promise<ConfirmResponse["images"]> {
+    const images = { uploaded: 0, skipped: 0, failed: 0 };
+    await Promise.all(
+      lines.map(async (line) => {
+        const qid = line.outcome === "accepted" || line.outcome === "corrected" ? line.confirmedQid : null;
+        const crop = qid && this.media.enabled ? await this.media.get(cropKey(line.scanId, line.position)).catch(() => null) : null;
+        if (!qid || !crop) {
+          images.skipped++;
+          return;
+        }
+        try {
+          await this.catalog.client.uploadImage({
+            file: crop,
+            filename: `${line.position}.webp`,
+            qid,
+            view: "on_shelf",
+            feedbackClientRef: feedbackRef(line.scanId, line.position),
+          });
+          images.uploaded++;
+        } catch (err) {
+          images.failed++;
+          this.logger.warn(`Crop not sent to Qore Catalog (${(err as { status?: number }).status ?? (err as Error).name})`);
+        }
+      }),
+    );
+    return images;
   }
 
   /** Qore Catalog candidates; a catalogue failure leaves detections without candidates instead of failing the scan. */

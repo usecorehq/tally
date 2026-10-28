@@ -31,6 +31,14 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
       /** Unset → vision routes return 503; the rest of the API runs as normal. */
       apiKey: env.META_MODEL_API_KEY,
     },
+
+    r2: {
+      /** Cloudflare R2 (tally-media bucket) for Tally's own files: product crops. Server-only. */
+      accountId: env.R2_ACCOUNT_ID,
+      accessKeyId: env.R2_ACCESS_KEY_ID,
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+      bucket: env.R2_BUCKET,
+    },
   };
 }
 

@@ -7,8 +7,9 @@ sequenceDiagram
     participant S as Meta Model API
     participant Q as Qore Catalog
     participant D as Postgres (tally)
+    participant R as R2 (tally-media)
 
-    Note over M,D: BUILT. PLANNED: crops to R2 and POST /v1/images after feedback.
+    Note over M,D: BUILT
     M->>P: photograph shelf
     P->>P: scale to 1600 px, JPEG ~400 KB
     P->>A: POST /api/businesses/:id/vision/shelf-scans [multipart, Bearer JWT]
@@ -22,10 +23,13 @@ sequenceDiagram
         Q-->>A: candidates + indicative ₦ price (plausible ones kept)
     end
     A->>D: insert vision_scans + vision_detections
+    A->>R: PUT tally/crops/scanId/position.webp (one crop per product, best-effort)
     A-->>P: scanId + detections (counts, boxes, candidates, inventory match)
     M->>P: per item: restock / restore / add to store / skip, set qty (+ name, price)
     P->>A: POST …/shelf-scans/:scanId/confirm {decisions[]}
     A->>D: one transaction: add → inventory_items (source photo) + opening movement<br/>restock / restore → restock movement, remember reading
     A->>Q: POST /v1/feedback, source "photo" (clientRef scanId:position)
+    A->>R: GET the crop of each line confirmed with a Qore ID
+    A->>Q: POST /v1/images {crop, qid, on_shelf, feedbackClientRef} (pending until a curator approves)
     Note over A,Q: Best-effort: a catalogue failure never undoes stock, unsent feedback retries on the next confirm.
-    A-->>P: {created, restocked, restored, skipped, invalid, feedback}
+    A-->>P: {created, restocked, restored, skipped, invalid, feedback, images}

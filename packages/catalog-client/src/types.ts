@@ -4,6 +4,20 @@ export type HealthResponse = { status: "ok"; db: "up" };
 
 export type Size = { value: number; unit: string } | null;
 
+/** An approved, public product picture; null until a curator approves one. */
+export type CatalogImage = { url: string; width: number | null; height: number | null } | null;
+
+export type ImageView = "front" | "back" | "side" | "top" | "label" | "barcode" | "nutrition" | "on_shelf" | "in_hand";
+
+export type UploadImageResponse = {
+  sha256: string;
+  qid: string;
+  view: ImageView;
+  status: "pending";
+  width: number;
+  height: number;
+};
+
 export type Product = {
   qid: string;
   name: string;
@@ -14,6 +28,7 @@ export type Product = {
   family: { slug: string; name: string };
   brand: { slug: string; name: string } | null;
   category: { path: string; name: string };
+  image: CatalogImage;
 };
 
 export type Price = {

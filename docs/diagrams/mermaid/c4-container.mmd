@@ -5,6 +5,8 @@ flowchart TB
 
     supabase["<b>Qorelly Supabase Auth</b><br/><i>[External System]</i><br/>auth.users shared with Qorelly"]
     catalog["<b>Qore Catalog API</b><br/><i>[External System]</i><br/>/v1/*, x-api-key"]
+    meta["<b>Meta Model API</b><br/><i>[External System]</i><br/>Muse Spark + SAM 3.1, Bearer key"]
+    r2["<b>Cloudflare R2</b><br/><i>[External System]</i><br/>tally-media bucket: product crops"]
 
     subgraph tally[" Tally "]
         direction TB
@@ -30,7 +32,9 @@ flowchart TB
 
     api -- "Verifies JWT<br/>[HS256 secret or JWKS]" --> supabase
     api -- "Reads/writes [Postgres wire]" --> db
-    api -- "Product lookups [HTTPS, x-api-key]" --> catalog
+    api -- "Product lookups, feedback, crops<br/>[HTTPS, x-api-key]" --> catalog
+    api -- "Read labels, count units<br/>[HTTPS, Bearer, /v1/responses]" --> meta
+    api -- "Store / read crops under tally/<br/>[S3 API, SigV4]" --> r2
     train -- "Product data [HTTPS, x-api-key]" --> catalog
 
     classDef person fill:#08427b,stroke:#052e56,color:#fff
@@ -40,5 +44,5 @@ flowchart TB
     classDef boundary fill:#ffffff,stroke:#999999,color:#333,stroke-dasharray: 4 3
     class merchant,operator person
     class mp,console,mobile,api,train,db container
-    class supabase,catalog external
+    class supabase,catalog,meta,r2 external
     class tally boundary
