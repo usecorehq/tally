@@ -39,6 +39,12 @@ export default async function Home() {
                 <p className="truncate text-[15px] font-medium text-gray-900">{b.name}</p>
                 <p className="text-[13px] text-gray-500">{b.subtypeCode.replace(/_/g, " ")}</p>
               </div>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/stocktake?business=${b.id}`}>
+                  <SolarIcon name="Gallery-Add" iconStyle="Outline" size={16} />
+                  Stock-take
+                </Link>
+              </Button>
             </div>
           ))}
         </Card>

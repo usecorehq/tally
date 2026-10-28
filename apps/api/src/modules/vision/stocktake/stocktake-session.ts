@@ -26,6 +26,9 @@ export type StocktakeDeps = {
 
 export const STOCKTAKE_LIMITS = { maxZooms: 20, maxSearchesPerLine: 3, maxCountsPerLine: 2 } as const;
 
+/** Refusals before a line (or the submit) is escalated to the merchant instead of retried. */
+export const MAX_REFUSALS = 3;
+
 type Line = {
   product: ShelfProduct;
   candidates: MatchCandidate[];
@@ -34,6 +37,14 @@ type Line = {
   pendingSam?: Box[];
   /** The Qore ID the agent recorded: kept even if the plausibility filter would drop it. */
   chosenQid: string | null;
+  /** The first pass flagged it (unclear label, no match, or a store match to confirm). */
+  check: boolean;
+  /** The first-pass reading, to tell when the agent changes the label. */
+  firstReading: string;
+  zoomed: boolean;
+  refusals: number;
+  /** Why the merchant should look closely; set by escalation or when the agent never reviewed the line. */
+  review: string | null;
   recorded: boolean;
   unresolved: string | null;
   evidence: Evidence[];
@@ -106,6 +117,7 @@ export const STOCKTAKE_INSTRUCTIONS = [
   "To fix a line: zoom to read the label, search_catalogue with what you read (retry with other wording if nothing fits), count_units when the count matters and the pack is rigid, then record_line.",
   "In record_line, brand, name and pack are what is printed on the pack, not the catalogue's wording: the merchant sees them, and they teach the catalogue how products look on Nigerian shelves.",
   "Never invent a Qore ID: only use one that a search returned or the checklist lists for that line. If you cannot resolve a line, record it with unresolved_reason.",
+  "record_line is checked: a CHECK line or a changed label needs a zoom first, and a matched product must agree with the brand and size you read. A refused record says why; fix it and record again. After 3 refusals the line goes to the merchant.",
   "Call several tools in one turn whenever they don't depend on each other (for example, zoom into five lines at once). You have a small turn budget: record each line in the same turn you settle it, and don't keep searching a product the catalogue clearly lacks.",
   "When every line is recorded, call submit_stocktake.",
 ].join("\n");
@@ -113,6 +125,7 @@ export const STOCKTAKE_INSTRUCTIONS = [
 export class StocktakeSession {
   readonly lines: Line[];
   private zooms = 0;
+  private submitRefusals = 0;
   submitted = false;
 
   constructor(
@@ -123,11 +136,17 @@ export class StocktakeSession {
     private readonly deps: StocktakeDeps,
   ) {
     const byRef = new Map(matches.map((m) => [m.ref, m.candidates]));
+    const first = buildDetections(products, matches, inventory, samBoxes);
     this.lines = products.map((product, i) => ({
       product: { ...product },
       candidates: byRef.get(String(i)) ?? [],
       samBoxes: samBoxes.get(i),
       chosenQid: null,
+      check: first[i]!.confidence !== "high" || !first[i]!.candidates[0] || first[i]!.inventoryNeedsConfirm,
+      firstReading: readingOf(product),
+      zoomed: false,
+      refusals: 0,
+      review: null,
       recorded: false,
       unresolved: null,
       evidence: [],
@@ -144,7 +163,7 @@ export class StocktakeSession {
       const top = d.candidates[0];
       const match = top ? `${top.qid} ${top.name} (score ${top.score.toFixed(2)})` : "no catalogue match";
       const store = d.inventoryItemId ? `in store${d.inventoryNeedsConfirm ? " (to confirm)" : ""}` : "not in store";
-      const check = d.confidence !== "high" || !top || d.inventoryNeedsConfirm ? "CHECK" : "OK";
+      const check = this.lines[i]!.check ? "CHECK" : "OK";
       const box = d.boxes[0];
       return `${i}. [${check}] ${read} | count ${d.count} (${d.countSource}) | ${match} | ${store} | box ${box ? `${box.x1},${box.y1},${box.x2},${box.y2}` : "-"}`;
     });
@@ -178,6 +197,7 @@ export class StocktakeSession {
         if (!box) return { output: "Error: no box for this line; give one.", summary: "zoom: no box" };
         const image = await this.deps.zoom(box);
         this.zooms++;
+        if (image) line.zoomed = true;
         if (!image) return { output: "That area is too small to read; try a larger box.", summary: "zoom: too small" };
         return {
           output: [
@@ -225,15 +245,11 @@ export class StocktakeSession {
         };
       }
       case "record_line": {
+        if (line.recorded) return { output: `Line ${index} is already recorded.`, summary: "record refused: already recorded" };
         const reading = { brand: text(args.brand), name: text(args.name), pack: text(args.pack) };
-        if (!reading.name && !reading.brand) return { output: "Error: give at least a name or brand.", summary: "record refused: empty" };
         const qid = text(args.qid);
-        if (qid && !line.candidates.some((c) => c.qid === qid)) {
-          return { output: `Error: ${qid} was not returned for line ${index}. Use a Qore ID from a search, or give unresolved_reason.`, summary: `record refused: unknown qid ${qid}` };
-        }
-        if (args.use_counted === true && !line.pendingSam) {
-          return { output: "Error: use_counted needs a count_units result for this line.", summary: "record refused: no count" };
-        }
+        const problem = this.verifyRecord(line, reading, qid, args.use_counted === true);
+        if (problem) return this.refuse(line, index, problem);
         line.product = { ...line.product, brand: reading.brand, name: reading.name || reading.brand, pack: reading.pack };
         if (args.use_counted === true) line.samBoxes = line.pendingSam;
         // The chosen product goes first, so it becomes the line's top candidate.
@@ -251,18 +267,57 @@ export class StocktakeSession {
     }
   }
 
+  /**
+   * Verification at record_line (the workshop pattern: fixed checks the model
+   * can't skip, refused with feedback it can act on). Null when it passes.
+   */
+  private verifyRecord(line: Line, reading: Reading, qid: string, useCounted: boolean): string | null {
+    if (!reading.name && !reading.brand) return "give at least a name or brand.";
+    const chosen = qid ? line.candidates.find((c) => c.qid === qid) : undefined;
+    if (qid && !chosen) return `${qid} was not returned for this line. Use a Qore ID from a search, or give unresolved_reason.`;
+    if (useCounted && !line.pendingSam) return "use_counted needs a count_units result for this line.";
+    // Grounding: a line the first pass flagged, or a changed label, must have been looked at.
+    const changed = readingOf({ ...line.product, ...reading }) !== line.firstReading;
+    if ((line.check || changed) && !line.zoomed && this.zooms < STOCKTAKE_LIMITS.maxZooms) {
+      return line.check ? "this line was flagged: zoom into it before recording." : "you changed the label: zoom into it first so the reading comes from the pack.";
+    }
+    if (chosen && reading.brand && chosen.brand && !sameBrand(reading.brand, chosen.brand.name)) {
+      return `${qid} is a ${chosen.brand.name} product but you read "${reading.brand}". Pick a ${reading.brand} product or leave qid empty.`;
+    }
+    const read = parseSize(reading.pack);
+    if (chosen && read && chosen.size && !sameSize(read, chosen.size)) {
+      return `${qid} is ${chosen.size.value}${chosen.size.unit} but the pack says ${reading.pack}. Pick the matching size or leave qid empty.`;
+    }
+    return null;
+  }
+
+  /** Refuse with feedback; after MAX_REFUSALS the line goes to the merchant unresolved instead. */
+  private refuse(line: Line, index: number, problem: string): ToolResult {
+    line.refusals++;
+    if (line.refusals < MAX_REFUSALS) return { output: `Refused: ${problem}`, summary: `record refused: ${problem}` };
+    line.recorded = true;
+    line.chosenQid = null;
+    line.review = `Escalated after ${MAX_REFUSALS} refused records: ${problem}`;
+    return { output: `Line ${index} is escalated to the merchant: ${problem}`, summary: `escalated: ${problem}` };
+  }
+
+  /** Refused while lines are open; on the third try it ends anyway with those lines flagged for the merchant. */
   private submit(): ToolResult {
     const open = this.lines.map((l, i) => (l.recorded ? -1 : i)).filter((i) => i >= 0);
+    if (open.length && ++this.submitRefusals < MAX_REFUSALS) {
+      return { output: `Refused: lines ${open.join(", ")} are not recorded. Record them, or record them with unresolved_reason.`, summary: `submit refused: ${open.length} open` };
+    }
     this.submitted = true;
     return {
-      output: open.length ? `Submitted. Lines ${open.join(", ")} keep the first-pass result.` : "Submitted.",
-      summary: open.length ? `submitted; ${open.length} line(s) not recorded` : "submitted",
+      output: open.length ? `Submitted. Lines ${open.join(", ")} go to the merchant unreviewed.` : "Submitted.",
+      summary: open.length ? `submitted with ${open.length} unreviewed line(s)` : "submitted",
       done: true,
     };
   }
 
   /** The stock-take result in the shelf-scan shape, with each line's evidence. */
-  detections(): (Detection & { evidence: Evidence[] })[] {
+  /** review: null, or why the merchant should look closely (escalated, or never reviewed by the agent). */
+  detections(): (Detection & { evidence: Evidence[]; review: string | null })[] {
     const products = this.lines.map((l) => l.product);
     const matches: MatchResult[] = this.lines.map((l, i) => ({ ref: String(i), query: { brand: null, name: "", pack: null }, parsedPack: null, candidates: l.candidates }));
     const sam = new Map(this.lines.flatMap((l, i) => (l.samBoxes ? [[i, l.samBoxes] as [number, Box[]]] : [])));
@@ -270,12 +325,13 @@ export class StocktakeSession {
       const line = this.lines[i]!;
       // The plausibility filter judges candidates against the (possibly rewritten) brand; a product the
       // agent explicitly recorded stays on top, and the merchant still confirms it.
+      const review = line.review ?? (line.recorded ? null : "Not reviewed by the agent: first-pass result.");
       if (line.chosenQid && d.candidates[0]?.qid !== line.chosenQid) {
         const chosen = line.candidates.find((c) => c.qid === line.chosenQid)!;
         const rest = d.candidates.filter((c) => c.qid !== line.chosenQid);
-        return { ...d, candidates: [toCandidate(chosen, this.inventory), ...rest].slice(0, MATCH_CANDIDATES), evidence: line.evidence };
+        return { ...d, candidates: [toCandidate(chosen, this.inventory), ...rest].slice(0, MATCH_CANDIDATES), evidence: line.evidence, review };
       }
-      return { ...d, evidence: line.evidence };
+      return { ...d, evidence: line.evidence, review };
     });
   }
 }
@@ -297,3 +353,40 @@ function dedupe(candidates: MatchCandidate[]): MatchCandidate[] {
 }
 
 const sizeWord = (s: number) => (s === 1 ? "matches" : s === 0.5 ? "unknown" : "differs");
+
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+function readingOf(p: Pick<ShelfProduct, "brand" | "name" | "pack">): string {
+  return [p.brand, p.name, p.pack].map(norm).join("|");
+}
+
+/** "Close-Up" = "closeup"; "Peak" vs "Peak Milk" counts as the same brand. */
+function sameBrand(read: string, catalogue: string): boolean {
+  const a = norm(read);
+  const b = norm(catalogue);
+  return a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+}
+
+const UNITS: Record<string, { base: "g" | "ml"; factor: number }> = {
+  g: { base: "g", factor: 1 },
+  kg: { base: "g", factor: 1000 },
+  mg: { base: "g", factor: 0.001 },
+  ml: { base: "ml", factor: 1 },
+  cl: { base: "ml", factor: 10 },
+  l: { base: "ml", factor: 1000 },
+  ltr: { base: "ml", factor: 1000 },
+};
+
+/** "400g", "50 cl", "1.5L" → amount in g or ml; null for anything else (packs of n, words). */
+function parseSize(pack: string): { base: "g" | "ml"; amount: number } | null {
+  const m = /(\d+(?:\.\d+)?)\s*(kg|mg|g|ml|cl|ltr|l)\b/i.exec(pack);
+  const u = m ? UNITS[m[2]!.toLowerCase()] : undefined;
+  return m && u ? { base: u.base, amount: Number(m[1]) * u.factor } : null;
+}
+
+function sameSize(read: { base: "g" | "ml"; amount: number }, size: { value: number; unit: string }): boolean {
+  const u = UNITS[size.unit.toLowerCase()];
+  if (!u || u.base !== read.base) return true; // can't compare: don't block
+  const amount = size.value * u.factor;
+  return Math.abs(amount - read.amount) <= 0.05 * Math.max(amount, read.amount);
+}

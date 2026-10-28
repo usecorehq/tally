@@ -52,6 +52,31 @@ Runtime env vars (values live in Coolify only): `NODE_ENV=production`, `PORT=410
 - HTTPS is done by the server's nginx + certbot: the `tally-api.qorecatalogue.com` site forwards to `http://127.0.0.1:4100`. Coolify's proxy is not used.
 - The container does not run migrations. After a schema PR merges, apply it to staging with `pnpm db:migrate`; production is applied by the CTO.
 
+## Vision benchmark
+
+`scripts/vision-benchmark.mjs` scores the quick shelf scan against the stock-take agent on photos with hand-counted ground truth. It runs the built code (no database, empty inventory) and spends Meta Model API credit (about $0.02 per photo for the quick scan, $0.05–0.15 for the agent).
+
+```bash
+pnpm --filter @tally/api build
+# 1. A starter truth file from the quick scan, written next to the photo as shelf1.truth.json
+node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs --template ~/shelves/shelf1.jpg
+# 2. Correct it by hand: brand/name/pack as printed, every unit counted, the right Qore ID (or null)
+# 3. Benchmark a folder (or a list of photos); photos without a truth file are skipped
+node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs ~/shelves --out ~/shelves/results.json
+```
+
+Truth file (`shelf1.truth.json` or `shelf1.jpg.truth.json`):
+
+```json
+{ "products": [{ "brand": "Peak", "name": "Full Cream Milk Powder", "pack": "400g", "count": 12, "qid": "QC-…" }] }
+```
+
+- **Runs:** per photo, the quick scan, then the agent starting from that same first pass with the same tools and deps as `VisionService.runStocktake`. The agent's time, tokens and cost include the first pass. If the agent throws, it is scored on the quick-scan fallback and marked `fallback`.
+- **Matching** (`src/modules/vision/benchmark-score.ts`): each detection pairs with at most one truth product by word overlap of normalised brand + name (≥ 0.5; brands, when both are read, must share a word). Extra lines for an already-paired product count against precision.
+- **Scores:** product recall and precision; brand read right (case and spaces ignored); name read right (same words, any order); Qore ID right / wrong / missing (only where the truth has one); count mean absolute error and share within ±20%; time; tokens; estimated $ (Muse Spark Standard $1.25/M in, $4.25/M out; SAM $2.50 per 1,000 images; catalogue calls not priced).
+- **Variance:** The read varies a lot run to run, so run each photo more than once when benchmarking.
+- **Output:** Markdown tables (per photo, totals, per product) on stdout; full JSON (detections, pairs, agent steps) to `--out`, default the OS temp dir. `--out` inside the repo is refused. Keep photos, truth files and results out of the repo.
+
 ## Layout
 
 ```
@@ -66,6 +91,7 @@ src/
   modules/catalog/            CatalogService wrapping @tally/catalog-client
   modules/vision/             Camera recognition: shelf scan (Muse Spark, SAM 3.1, catalogue), confirm, identify, crops
   modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
+  modules/vision/benchmark-score.ts  Scoring for scripts/vision-benchmark.mjs (not used by routes)
   modules/media/              R2Storage: Tally's files in Cloudflare R2 (aws4fetch, server-only)
   modules/health/             GET /api/health
 ```

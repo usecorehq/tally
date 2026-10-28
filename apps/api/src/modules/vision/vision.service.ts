@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnApplicationBootstrap,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -48,6 +49,8 @@ import { VisionRepository, type ConfirmResult } from "./vision.repository";
 const SHELF_TIMEOUT_MS = 45_000;
 const SAM_TIMEOUT_MS = 20_000;
 const LABEL_TIMEOUT_MS = 10_000;
+/** A run still "running" after this was lost to a restart (budget 150 s + first pass ≈ 3 min). */
+const STALE_RUN_MS = 10 * 60 * 1000;
 
 export type IdentifyResult = {
   model: string;
@@ -99,7 +102,7 @@ export type ShelfScanResult = {
 };
 
 @Injectable()
-export class VisionService {
+export class VisionService implements OnApplicationBootstrap {
   private readonly logger = new Logger(VisionService.name);
   private readonly meta: MetaModelClient | null;
 
@@ -203,6 +206,12 @@ export class VisionService {
 
   // ── Stock-take agent ──
 
+  /** Runs live in this process: any left "running" from before a restart are marked failed. */
+  async onApplicationBootstrap(): Promise<void> {
+    const n = await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS)).catch(() => 0);
+    if (n) this.logger.warn(`Marked ${n} interrupted stock-take run(s) failed`);
+  }
+
   /**
    * Start a stock-take: returns at once with a run id; the work runs in the
    * background (about 1–2 minutes) and is polled with getStocktake. The quick
@@ -224,7 +233,12 @@ export class VisionService {
   /** The run, its step trace and, once finished, its scan (same shape as a quick scan while it is fresh). */
   async getStocktake(businessId: string, userId: string, runId: string) {
     await this.businesses.getForMember(businessId, userId);
-    const { steps, ...run } = await this.repo.getRun(businessId, runId);
+    let { steps, ...run } = await this.repo.getRun(businessId, runId);
+    // Lost to a restart on another instance or before the boot sweep: say so instead of "running" forever.
+    if (run.status === "running" && Date.now() - new Date(run.startedAt).getTime() > STALE_RUN_MS) {
+      await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS));
+      ({ steps, ...run } = await this.repo.getRun(businessId, runId));
+    }
     const fresh = this.stocktakeResults.get(runId);
     const result = fresh ?? (run.scanId ? await this.repo.getScan(businessId, run.scanId) : null);
     return {

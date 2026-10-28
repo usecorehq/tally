@@ -94,6 +94,7 @@ async function app(apiKey: string | undefined) {
     markFeedbackSent: jest.fn(async () => undefined),
     rememberReading: jest.fn(async () => true),
     createRun: jest.fn(async () => "run-1"),
+    failStaleRuns: jest.fn(async (_before: Date) => 0),
     addStep: jest.fn(async (_b: string, _r: string, _s: unknown) => undefined),
     finishRun: jest.fn(async (_r: string, _e: Record<string, unknown>) => undefined),
     getRun: jest.fn(async () => ({ id: "run-1", status: "running", scanId: null as string | null, steps: [] as Record<string, unknown>[] })),

@@ -6,6 +6,8 @@
 
 The merchant points the phone camera at products and Tally recognises them. There are two flows. Stock-taking can also run as an agent; see [Stock-take agent](stocktake-agent.md).
 
+On the web, the merchant portal's `/stocktake` page runs the shelf scan from an uploaded or captured photo (see [Web stock-take](#web-stock-take-apps-mp)).
+
 - **Shelf scan (photo → inventory).** Photograph a shelf or a pile of stock. Tally identifies every product in the frame and matches each one to a Qore Catalog product with an indicative ₦ price. The merchant confirms or corrects the results, and the items land in their inventory with counts. Accuracy matters more than speed here.
 - **Point to sell.** Point the camera at one item to find it at the till. Speed matters most here.
 
@@ -59,6 +61,19 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
    - Every non-skip decision remembers the reading for that item (`inventory_item_readings`).
    - Then every decided line goes to Qore Catalog as `source: "photo"` feedback, clientRef `<scanId>:<position>`. After that feedback is sent, each line confirmed with a Qore ID has its crop uploaded to `POST /v1/images` (`view: on_shelf`, same clientRef as `feedbackClientRef`). See "Product crops" below. As in [onboarding](onboarding.md), a catalogue outage never undoes the stock changes; unsent feedback goes out on the next confirm of the scan.
    - Retries are safe: decided detections are left alone, and stock movements are keyed by detection id.
+
+### Web stock-take (apps/mp)
+
+`/stocktake` in the merchant portal (built) runs the same flow from a browser, so the shelf scan doesn't need the mobile app:
+
+1. Pick one of the user's businesses (`GET /api/businesses`).
+2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to a 1600 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation.
+3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then `GET …/stocktakes/:runId` every 1.5 s, showing the step trace as it grows. **Quick scan** calls `POST …/shelf-scans` and waits.
+4. The review table has one row per detection, `review` lines first: the reading, an editable count, the catalogue candidates with their ₦ median, the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box.
+5. Confirm sends every row to `…/shelf-scans/:scanId/confirm` and shows the outcome: created, restocked, restored, skipped, invalid lines with their reasons, and the feedback sent.
+
+- **Calls:** every call is a server action (`apps/mp/app/stocktake/actions.ts`) that uses the session's Supabase token. The browser never sees the token, and the Meta key stays in apps/api. Server actions accept up to 5 MB (`experimental.serverActions.bodySizeLimit`).
+- **States:** 503 "not configured" or rate-limited, 413, 504, a `failed` run, and a `fallback` run ("the agent couldn't finish; showing the first pass") each get their own message. A run still `running` after 6 minutes stops polling.
 
 ## Point to sell
 
