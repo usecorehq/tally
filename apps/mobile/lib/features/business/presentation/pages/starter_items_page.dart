@@ -5,34 +5,34 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/design/auth_parts.dart';
 import '../../../../core/design/v15_widgets.dart';
 import '../../../../core/utils/naira.dart';
-import '../../../../injection_container.dart';
-import '../../domain/entities/business.dart';
 import '../../domain/entities/starter_items.dart';
 import '../cubit/starter_items_cubit.dart';
 import 'setup_business_page.dart';
 
 /// Onboarding step 2 (apps/mp's items wizard): pick, confirm, done. [onDone]
 /// opens the app on the new business.
+///
+/// The caller owns [cubit] (`sl<StarterItemsCubit>(param1: draft)`), so the
+/// picks survive a trip back to step 1.
 class StarterItemsPage extends StatelessWidget {
-  const StarterItemsPage({super.key, required this.business, required this.onDone, required this.onBack});
-  final Business business;
+  const StarterItemsPage({super.key, required this.cubit, required this.onDone, required this.onBack});
+  final StarterItemsCubit cubit;
   final VoidCallback onDone;
 
-  /// Back to step 1 (shown read-only: the business exists).
+  /// Back to step 1, to change the name or type. Gone once the business exists.
   final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => sl<StarterItemsCubit>(param1: business)..load(),
-      child: _StarterItemsView(business: business, onDone: onDone, onBack: onBack),
+    return BlocProvider.value(
+      value: cubit,
+      child: _StarterItemsView(onDone: onDone, onBack: onBack),
     );
   }
 }
 
 class _StarterItemsView extends StatelessWidget {
-  const _StarterItemsView({required this.business, required this.onDone, required this.onBack});
-  final Business business;
+  const _StarterItemsView({required this.onDone, required this.onBack});
   final VoidCallback onDone;
   final VoidCallback onBack;
 
@@ -42,9 +42,16 @@ class _StarterItemsView extends StatelessWidget {
     return BlocBuilder<StarterItemsCubit, StarterItemsState>(
       builder: (context, state) {
         final cubit = context.read<StarterItemsCubit>();
+        // Back to step 1 only while nothing exists yet.
+        final back = state.business == null && !state.submitting ? onBack : null;
+        Future<void> skip() async {
+          if (await cubit.skip()) onDone();
+        }
+
+        final skipKey = AuthTextAction('Skip for now', quiet: true, onTap: state.submitting ? null : skip);
         final (body, footer) = switch (state) {
           StarterItemsState(step: StarterStep.done, :final result?) => (
-            _Done(business: business, result: result, onDone: onDone),
+            _Done(name: state.draft.name, result: result, onDone: onDone),
             null,
           ),
           StarterItemsState(loadStatus: StarterLoadStatus.loading) => (const _Loading(), null),
@@ -56,12 +63,12 @@ class _StarterItemsView extends StatelessWidget {
               action: V15Button('Try again', tone: V15Tone.quiet, onPressed: cubit.load),
             ),
             _Footer(
-              secondary: V15Button('Back', tone: V15Tone.soft, height: 48, onPressed: onBack),
-              primary: AuthTextAction('Skip for now', quiet: true, onTap: onDone),
+              secondary: V15Button('Back', tone: V15Tone.soft, height: 48, onPressed: back),
+              primary: skipKey,
             ),
           ),
           StarterItemsState(step: StarterStep.confirm) => (
-            _Confirm(business: business, state: state),
+            _Confirm(state: state),
             _Footer(
               secondary: V15Button(
                 'Back',
@@ -75,9 +82,9 @@ class _StarterItemsView extends StatelessWidget {
           _ => (
             _Pick(state: state),
             _Footer(
-              secondary: V15Button('Back', tone: V15Tone.soft, height: 48, onPressed: onBack),
-              skip: AuthTextAction('Skip for now', quiet: true, onTap: onDone),
-              primary: V15Button('Continue', height: 48, onPressed: cubit.next),
+              secondary: V15Button('Back', tone: V15Tone.soft, height: 48, onPressed: back),
+              skip: skipKey,
+              primary: V15Button('Continue', height: 48, loading: state.submitting, onPressed: cubit.next),
             ),
           ),
         };
@@ -156,6 +163,7 @@ class _Pick extends StatelessWidget {
           start: true,
         ),
         const SizedBox(height: 16),
+        if (state.error != null) ...[AuthMessage(state.error!), const SizedBox(height: 12)],
         if (state.attempted && invalid > 0) ...[
           AuthMessage('$invalid item${invalid == 1 ? ' needs' : 's need'} a price or name.'),
           const SizedBox(height: 12),
@@ -442,8 +450,7 @@ class _CheckBox extends StatelessWidget {
 }
 
 class _Confirm extends StatelessWidget {
-  const _Confirm({required this.business, required this.state});
-  final Business business;
+  const _Confirm({required this.state});
   final StarterItemsState state;
 
   @override
@@ -457,7 +464,7 @@ class _Confirm extends StatelessWidget {
         AuthHeading(
           title: 'Confirm your starter inventory',
           subtitle:
-              '${kept.length} item${kept.length == 1 ? '' : 's'} for ${business.name}. You can change prices and stock any time.',
+              '${kept.length} item${kept.length == 1 ? '' : 's'} for ${state.draft.name}. You can change prices and stock any time.',
           start: true,
         ),
         const SizedBox(height: 16),
@@ -504,8 +511,8 @@ class _Confirm extends StatelessWidget {
 }
 
 class _Done extends StatelessWidget {
-  const _Done({required this.business, required this.result, required this.onDone});
-  final Business business;
+  const _Done({required this.name, required this.result, required this.onDone});
+  final String name;
   final StarterResult result;
   final VoidCallback onDone;
 
@@ -517,7 +524,7 @@ class _Done extends StatelessWidget {
       children: [
         V15MessageState(
           icon: IconsOutline.check_circle,
-          title: '${business.name} is ready',
+          title: '$name is ready',
           body:
               '$added product${added == 1 ? '' : 's'} in your inventory'
               '${result.skipped > 0 ? ' (${result.skipped} already there)' : ''}.'

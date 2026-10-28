@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/usecase/usecase.dart';
 import '../entities/business.dart';
+import '../entities/business_draft.dart';
 import '../entities/business_vertical.dart';
 import '../entities/starter_items.dart';
 import '../repositories/business_repository.dart';
@@ -17,27 +18,23 @@ class GetBusinessVerticals implements UseCase<List<BusinessVertical>, NoParams> 
 }
 
 /// Same checks as the API (name 1–120 characters, a sub-type picked), with mp's copy.
-class CreateBusiness implements UseCase<Business, CreateBusinessParams> {
+String? businessDraftProblem(BusinessDraft d) {
+  final name = d.name.trim();
+  if (name.isEmpty) return 'Enter your business name.';
+  if (name.length > 120) return 'Keep the business name under 120 characters.';
+  if (d.subtypeCode.isEmpty) return 'Choose your industry and business type.';
+  return null;
+}
+
+class CreateBusiness implements UseCase<Business, BusinessDraft> {
   const CreateBusiness(this._repository);
   final BusinessRepository _repository;
 
   @override
-  Future<Either<Failure, Business>> call(CreateBusinessParams p) async {
-    final name = p.name.trim();
-    if (name.isEmpty) return const Left(ServerFailure('Enter your business name.'));
-    if (name.length > 120) return const Left(ServerFailure('Keep the business name under 120 characters.'));
-    if (p.subtypeCode.isEmpty) return const Left(ServerFailure('Choose your industry and business type.'));
-    return _repository.createBusiness(name: name, subtypeCode: p.subtypeCode);
+  Future<Either<Failure, Business>> call(BusinessDraft d) async {
+    if (businessDraftProblem(d) case final problem?) return Left(ServerFailure(problem));
+    return _repository.createBusiness(name: d.name.trim(), subtypeCode: d.subtypeCode);
   }
-}
-
-class CreateBusinessParams extends Equatable {
-  const CreateBusinessParams({required this.name, required this.subtypeCode});
-  final String name;
-  final String subtypeCode;
-
-  @override
-  List<Object?> get props => [name, subtypeCode];
 }
 
 class GetStarterRows implements UseCase<List<StarterRow>, String> {

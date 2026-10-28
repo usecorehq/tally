@@ -5,7 +5,8 @@ import '../../../../core/design/v15_widgets.dart';
 import '../../../../injection_container.dart';
 import '../../../auth/domain/entities/merchant_user.dart';
 import '../../../business/presentation/cubit/business_cubit.dart';
-import '../../../business/domain/entities/business.dart';
+import '../../../business/domain/entities/business_draft.dart';
+import '../../../business/presentation/cubit/starter_items_cubit.dart';
 import '../../../business/presentation/pages/setup_business_page.dart';
 import '../../../business/presentation/pages/starter_items_page.dart';
 import 'home_shell.dart';
@@ -57,7 +58,8 @@ class _BusinessGate extends StatelessWidget {
   }
 }
 
-/// Step 1 creates the business, step 2 stocks it; then the app opens on it.
+/// Step 1 collects the name and type, step 2 picks the stock and creates the
+/// business on Finish or Skip; then the app opens on it.
 class _Onboarding extends StatefulWidget {
   const _Onboarding();
 
@@ -66,23 +68,40 @@ class _Onboarding extends StatefulWidget {
 }
 
 class _OnboardingState extends State<_Onboarding> {
-  Business? _created;
+  BusinessDraft? _draft;
   bool _onStarter = false;
+
+  /// Lives across Back so the picks are kept; a new type starts it over.
+  StarterItemsCubit? _starter;
+
+  void _continue(BusinessDraft draft) {
+    final starter = _starter;
+    if (starter != null && starter.state.draft.subtypeCode == draft.subtypeCode) {
+      starter.rename(draft);
+    } else {
+      starter?.close();
+      _starter = sl<StarterItemsCubit>(param1: draft)..load();
+    }
+    setState(() {
+      _draft = draft;
+      _onStarter = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _starter?.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final created = _created;
-    if (created == null || !_onStarter) {
-      return SetupBusinessPage(
-        existing: created,
-        onCreated: (b) => setState(() {
-          _created = b;
-          _onStarter = true;
-        }),
-      );
+    final starter = _starter;
+    if (starter == null || !_onStarter) {
+      return SetupBusinessPage(initial: _draft, onContinue: _continue);
     }
     return StarterItemsPage(
-      business: created,
+      cubit: starter,
       onBack: () => setState(() => _onStarter = false),
       onDone: () => context.read<BusinessCubit>().load(),
     );

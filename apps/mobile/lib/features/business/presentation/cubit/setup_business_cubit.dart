@@ -2,21 +2,20 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/usecase/usecase.dart';
-import '../../domain/entities/business.dart';
+import '../../domain/entities/business_draft.dart';
 import '../../domain/entities/business_vertical.dart';
 import '../../domain/usecases/setup_usecases.dart';
 
 /// Onboarding step 1 (apps/mp's business step): name, industry, sub-type.
+/// Continue hands on a [BusinessDraft]; step 2 creates the business.
 class SetupBusinessCubit extends Cubit<SetupBusinessState> {
-  SetupBusinessCubit({required GetBusinessVerticals getVerticals, required CreateBusiness createBusiness})
+  SetupBusinessCubit({required GetBusinessVerticals getVerticals})
     : _getVerticals = getVerticals,
-      _createBusiness = createBusiness,
       super(const SetupBusinessState());
 
   final GetBusinessVerticals _getVerticals;
-  final CreateBusiness _createBusiness;
 
-  /// [subtypeCode]: an already-created business's type, shown picked.
+  /// [subtypeCode]: the type picked before going back, shown picked.
   Future<void> load({String? subtypeCode}) async {
     emit(state.copyWith(verticalsStatus: VerticalsStatus.loading));
     final result = await _getVerticals(const NoParams());
@@ -47,15 +46,10 @@ class SetupBusinessCubit extends Cubit<SetupBusinessState> {
 
   void pickSubtype(String code) => emit(state.copyWith(subtypeCode: code, clearError: true));
 
-  Future<void> submit(String name) async {
-    emit(state.copyWith(submitting: true, clearError: true));
-    final result = await _createBusiness(CreateBusinessParams(name: name, subtypeCode: state.subtypeCode));
-    emit(
-      result.fold(
-        (f) => state.copyWith(submitting: false, error: f.message),
-        (business) => state.copyWith(submitting: false, created: business),
-      ),
-    );
+  void submit(String name) {
+    final draft = BusinessDraft(name: name.trim(), subtypeCode: state.subtypeCode);
+    final problem = businessDraftProblem(draft);
+    emit(problem == null ? state.copyWith(draft: draft, clearError: true) : state.copyWith(error: problem));
   }
 }
 
@@ -68,9 +62,8 @@ class SetupBusinessState extends Equatable {
     this.verticalsError,
     this.verticalCode = '',
     this.subtypeCode = '',
-    this.submitting = false,
     this.error,
-    this.created,
+    this.draft,
   });
 
   final VerticalsStatus verticalsStatus;
@@ -78,13 +71,12 @@ class SetupBusinessState extends Equatable {
   final String? verticalsError;
   final String verticalCode;
   final String subtypeCode;
-  final bool submitting;
 
-  /// The create failed (shown above the form).
+  /// The answers don't pass the API's checks (shown above the form).
   final String? error;
 
-  /// Set once the business exists; the page moves on.
-  final Business? created;
+  /// Set on a valid Continue; the page moves on.
+  final BusinessDraft? draft;
 
   BusinessVertical? get vertical => verticals.where((v) => v.code == verticalCode).firstOrNull;
 
@@ -94,30 +86,19 @@ class SetupBusinessState extends Equatable {
     String? verticalsError,
     String? verticalCode,
     String? subtypeCode,
-    bool? submitting,
     String? error,
     bool clearError = false,
-    Business? created,
+    BusinessDraft? draft,
   }) => SetupBusinessState(
     verticalsStatus: verticalsStatus ?? this.verticalsStatus,
     verticals: verticals ?? this.verticals,
     verticalsError: verticalsError ?? this.verticalsError,
     verticalCode: verticalCode ?? this.verticalCode,
     subtypeCode: subtypeCode ?? this.subtypeCode,
-    submitting: submitting ?? this.submitting,
     error: clearError ? null : (error ?? this.error),
-    created: created ?? this.created,
+    draft: draft ?? this.draft,
   );
 
   @override
-  List<Object?> get props => [
-    verticalsStatus,
-    verticals,
-    verticalsError,
-    verticalCode,
-    subtypeCode,
-    submitting,
-    error,
-    created,
-  ];
+  List<Object?> get props => [verticalsStatus, verticals, verticalsError, verticalCode, subtypeCode, error, draft];
 }

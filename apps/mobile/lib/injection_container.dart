@@ -16,7 +16,7 @@ import 'features/auth/presentation/cubit/account_cubits.dart';
 import 'features/auth/presentation/cubit/sign_in_cubit.dart';
 import 'features/business/data/datasources/business_remote_data_source.dart';
 import 'features/business/data/repositories/business_repository_impl.dart';
-import 'features/business/domain/entities/business.dart';
+import 'features/business/domain/entities/business_draft.dart';
 import 'features/business/domain/repositories/business_repository.dart';
 import 'features/business/domain/usecases/get_my_businesses.dart';
 import 'features/business/domain/usecases/setup_usecases.dart';
@@ -59,13 +59,8 @@ Future<void> initDependencies() async {
     ..registerFactory(() => NewPasswordCubit(sl()))
     // The code screen is per email + flow: sl<VerifyCodeCubit>(param1: email, param2: recovery)
     ..registerFactoryParam<VerifyCodeCubit, String, bool>(
-      (email, recovery) => VerifyCodeCubit(
-        email: email,
-        recovery: recovery,
-        verify: sl(),
-        resendSignup: sl(),
-        resendRecovery: sl(),
-      ),
+      (email, recovery) =>
+          VerifyCodeCubit(email: email, recovery: recovery, verify: sl(), resendSignup: sl(), resendRecovery: sl()),
     );
 
   // Business
@@ -78,10 +73,10 @@ Future<void> initDependencies() async {
     ..registerFactory(() => BusinessCubit(sl()))
     ..registerLazySingleton(() => GetStarterRows(sl()))
     ..registerLazySingleton(() => SubmitStarterItems(sl()))
-    ..registerFactory(() => SetupBusinessCubit(getVerticals: sl(), createBusiness: sl()))
-    // Onboarding step 2 is per new business: sl<StarterItemsCubit>(param1: business)
-    ..registerFactoryParam<StarterItemsCubit, Business, void>(
-      (business, _) => StarterItemsCubit(business: business, getRows: sl(), submit: sl()),
+    ..registerFactory(() => SetupBusinessCubit(getVerticals: sl()))
+    // Onboarding step 2 is per step-1 draft: sl<StarterItemsCubit>(param1: draft)
+    ..registerFactoryParam<StarterItemsCubit, BusinessDraft, void>(
+      (draft, _) => StarterItemsCubit(draft: draft, getRows: sl(), createBusiness: sl(), submit: sl()),
     );
 
   // Inventory (ScanCubit and InventoryListCubit are per business: sl<…>(param1: businessId))

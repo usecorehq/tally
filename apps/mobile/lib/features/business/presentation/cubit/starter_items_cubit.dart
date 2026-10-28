@@ -2,25 +2,32 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../domain/entities/business.dart';
+import '../../domain/entities/business_draft.dart';
 import '../../domain/entities/starter_items.dart';
 import '../../domain/usecases/setup_usecases.dart';
 
 /// Onboarding step 2: keep / swap / remove the sub-type's template items, set
-/// prices and opening stock, confirm, apply. Per business:
-/// `sl<StarterItemsCubit>(param1: business)`.
+/// prices and opening stock, confirm, apply. Finish (or Skip) creates the
+/// business from step 1's draft first, once — a retry reuses it. Per draft:
+/// `sl<StarterItemsCubit>(param1: draft)`.
 class StarterItemsCubit extends Cubit<StarterItemsState> {
-  StarterItemsCubit({required this.business, required GetStarterRows getRows, required SubmitStarterItems submit})
-    : _getRows = getRows,
-      _submit = submit,
-      super(const StarterItemsState());
+  StarterItemsCubit({
+    required BusinessDraft draft,
+    required GetStarterRows getRows,
+    required CreateBusiness createBusiness,
+    required SubmitStarterItems submit,
+  }) : _getRows = getRows,
+       _createBusiness = createBusiness,
+       _submit = submit,
+       super(StarterItemsState(draft: draft));
 
-  final Business business;
   final GetStarterRows _getRows;
+  final CreateBusiness _createBusiness;
   final SubmitStarterItems _submit;
 
   Future<void> load() async {
     emit(state.copyWith(loadStatus: StarterLoadStatus.loading));
-    final result = await _getRows(business.subtypeCode);
+    final result = await _getRows(state.draft.subtypeCode);
     emit(
       result.fold(
         (f) => state.copyWith(loadStatus: StarterLoadStatus.error, error: f.message),
@@ -60,8 +67,13 @@ class StarterItemsCubit extends Cubit<StarterItemsState> {
 
   void back() => emit(state.copyWith(step: StarterStep.pick, clearError: true));
 
+  /// Back to step 1 kept the same type but a new name. Picks are kept.
+  void rename(BusinessDraft draft) => emit(state.copyWith(draft: draft));
+
   Future<void> finish() async {
     emit(state.copyWith(submitting: true, clearError: true));
+    final business = await _ensureBusiness();
+    if (business == null) return;
     final result = await _submit(
       SubmitStarterParams(businessId: business.id, rows: state.rows, choices: state.choices),
     );
@@ -70,6 +82,30 @@ class StarterItemsCubit extends Cubit<StarterItemsState> {
         (f) => state.copyWith(submitting: false, error: f.message),
         (r) => state.copyWith(submitting: false, step: StarterStep.done, result: r),
       ),
+    );
+  }
+
+  /// No starter items: just the business. True once it exists.
+  Future<bool> skip() async {
+    emit(state.copyWith(submitting: true, clearError: true));
+    final business = await _ensureBusiness();
+    if (business == null) return false;
+    emit(state.copyWith(submitting: false));
+    return true;
+  }
+
+  Future<Business?> _ensureBusiness() async {
+    if (state.business case final b?) return b;
+    final result = await _createBusiness(state.draft);
+    return result.fold(
+      (f) {
+        emit(state.copyWith(submitting: false, error: f.message));
+        return null;
+      },
+      (b) {
+        emit(state.copyWith(business: b));
+        return b;
+      },
     );
   }
 
@@ -83,6 +119,8 @@ enum StarterStep { pick, confirm, done }
 
 class StarterItemsState extends Equatable {
   const StarterItemsState({
+    required this.draft,
+    this.business,
     this.loadStatus = StarterLoadStatus.loading,
     this.rows = const [],
     this.choices = const {},
@@ -92,6 +130,11 @@ class StarterItemsState extends Equatable {
     this.error,
     this.result,
   });
+
+  final BusinessDraft draft;
+
+  /// Created on Finish or Skip; until then, step 1 can still change.
+  final Business? business;
 
   final StarterLoadStatus loadStatus;
   final List<StarterRow> rows;
@@ -122,6 +165,8 @@ class StarterItemsState extends Equatable {
   }
 
   StarterItemsState copyWith({
+    BusinessDraft? draft,
+    Business? business,
     StarterLoadStatus? loadStatus,
     List<StarterRow>? rows,
     Map<String, StarterChoice>? choices,
@@ -132,6 +177,8 @@ class StarterItemsState extends Equatable {
     bool clearError = false,
     StarterResult? result,
   }) => StarterItemsState(
+    draft: draft ?? this.draft,
+    business: business ?? this.business,
     loadStatus: loadStatus ?? this.loadStatus,
     rows: rows ?? this.rows,
     choices: choices ?? this.choices,
@@ -143,5 +190,5 @@ class StarterItemsState extends Equatable {
   );
 
   @override
-  List<Object?> get props => [loadStatus, rows, choices, step, attempted, submitting, error, result];
+  List<Object?> get props => [draft, business, loadStatus, rows, choices, step, attempted, submitting, error, result];
 }

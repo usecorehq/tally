@@ -4,7 +4,7 @@
 
 A merchant creates a business by picking a Qore Catalog sub-type, then turns that sub-type's template into a starter inventory. Every keep/swap/add/remove decision goes back to Qore Catalog as feedback, which is how the catalogue learns what Nigerian shops actually stock.
 
-Built: the API (`apps/api/src/modules/businesses`), the mp screens (`apps/mp/app/onboarding`) and the mobile screens (`apps/mobile/lib/features/business`: `SetupBusinessPage`, `StarterItemsPage`). Mobile sends the same body as mp — `toStarterItem` in `starter_items.dart` is a port of mp's, with tests for every outcome — and adds **Skip for now** (no starter list sent).
+Built: the API (`apps/api/src/modules/businesses`), the mp screens (`apps/mp/app/onboarding`) and the mobile screens (`apps/mobile/lib/features/business`: `SetupBusinessPage`, `StarterItemsPage`). Mobile sends the same body as mp — `toStarterItem` in `starter_items.dart` is a port of mp's, with tests for every outcome — and adds **Skip for now** (no starter list sent). Mobile creates the business only when step 2 finishes or is skipped, so **Back** to step 1 can still change the name and type (picks are kept unless the type changes); a failed starter submit retries against the business already created, never a second one.
 
 ## Routes (all need a Supabase JWT)
 
