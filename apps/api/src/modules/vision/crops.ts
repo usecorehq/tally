@@ -41,17 +41,23 @@ export function pixelRegion(box: Box, width: number, height: number): { left: nu
  * short side under MIN_CROP_SIDE). Decodes the photo once; honours EXIF
  * orientation; output carries no metadata.
  */
-export async function makeCrops(image: Buffer, boxes: (Box | null)[]): Promise<(Buffer | null)[]> {
+export async function makeCrops(
+  image: Buffer,
+  boxes: (Box | null)[],
+  /** Agent zooms read small labels: a lower minimum, and enlarged to the max side. */
+  opts: { minSide?: number; enlarge?: boolean } = {},
+): Promise<(Buffer | null)[]> {
+  const minSide = opts.minSide ?? MIN_CROP_SIDE;
   const { data, info } = await sharp(image).rotate().raw().toBuffer({ resolveWithObject: true });
   const raw = { raw: { width: info.width, height: info.height, channels: info.channels } } as const;
   return Promise.all(
     boxes.map(async (box) => {
       if (!box) return null;
       const r = pixelRegion(box, info.width, info.height);
-      if (Math.min(r.width, r.height) < MIN_CROP_SIDE) return null;
+      if (Math.min(r.width, r.height) < minSide) return null;
       return sharp(data, raw)
         .extract(r)
-        .resize({ width: MAX_CROP_SIDE, height: MAX_CROP_SIDE, fit: "inside", withoutEnlargement: true })
+        .resize({ width: MAX_CROP_SIDE, height: MAX_CROP_SIDE, fit: "inside", withoutEnlargement: !opts.enlarge })
         .webp({ quality: 80 })
         .toBuffer();
     }),

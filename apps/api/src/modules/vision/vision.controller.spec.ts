@@ -93,6 +93,10 @@ async function app(apiKey: string | undefined) {
     })),
     markFeedbackSent: jest.fn(async () => undefined),
     rememberReading: jest.fn(async () => true),
+    createRun: jest.fn(async () => "run-1"),
+    addStep: jest.fn(async (_b: string, _r: string, _s: unknown) => undefined),
+    finishRun: jest.fn(async (_r: string, _e: Record<string, unknown>) => undefined),
+    getRun: jest.fn(async () => ({ id: "run-1", status: "running", scanId: null as string | null, steps: [] as Record<string, unknown>[] })),
   };
   const catalog = {
     client: {
@@ -610,5 +614,116 @@ describe("VisionController identify (HTTP)", () => {
       await request(nest.getHttpServer()).post(confirmPath).set(auth).send(body).expect(400);
       expect(ctx.repo.rememberReading).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("VisionController stock-takes (HTTP)", () => {
+  let nest: INestApplication;
+  let ctx: Awaited<ReturnType<typeof app>>;
+  let fetchSpy: ReturnType<typeof jest.spyOn<typeof global, "fetch">>;
+  const startPath = `/api/businesses/${BIZ}/vision/stocktakes`;
+  const RUN = "00000000-0000-4000-8000-0000000000f1";
+  const reply = (body: Record<string, unknown>) => new Response(JSON.stringify({ status: "completed", ...body }), { status: 200 });
+  const text = (s: string) => ({ output: [{ type: "message", content: [{ type: "output_text", text: s }] }] });
+
+  beforeAll(async () => {
+    fetchSpy = jest.spyOn(global, "fetch");
+    ctx = await app("LLM_000_not-a-real-key");
+    nest = ctx.nest;
+  });
+  afterAll(async () => {
+    await nest.close();
+    fetchSpy.mockRestore();
+  });
+  beforeEach(() => {
+    fetchSpy.mockReset();
+    ctx.repo.createRun.mockClear();
+    ctx.repo.finishRun.mockClear();
+    ctx.repo.addStep.mockClear();
+    ctx.repo.saveScan.mockClear();
+    ctx.businesses.listInventory.mockResolvedValue([] as never);
+  });
+
+  /** The Meta API, routed by request: the agent turn (has tools), SAM, or the shelf read. */
+  const metaRoutes = (agentTurns: Record<string, unknown>[]) =>
+    fetchSpy.mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.tools) return reply({ id: `resp_${agentTurns.length}`, ...agentTurns.shift() });
+      if (body.model === "sam-3.1") return reply(text(""));
+      return reply(text(JSON.stringify({ products: [peak] })));
+    });
+
+  const waitForFinish = async () => {
+    for (let i = 0; i < 100 && ctx.repo.finishRun.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    return ctx.repo.finishRun.mock.calls[0]?.[1];
+  };
+
+  it.each([
+    ["post", startPath],
+    ["get", `${startPath}/${RUN}`],
+  ] as const)("%s %s needs a Supabase JWT", async (method, p) => {
+    await request(nest.getHttpServer())[method](p).expect(401);
+  });
+
+  it("starts in the background (202) and finishes as a stored scan after the agent submits", async () => {
+    metaRoutes([
+      {
+        output: [
+          { type: "message", content: [{ type: "output_text", text: "Recording the one line." }] },
+          { type: "function_call", call_id: "c1", name: "record_line", arguments: '{"line":0,"brand":"Peak","name":"Full Cream Milk Powder","pack":"400g","qid":"QC-A"}' },
+          { type: "function_call", call_id: "c2", name: "submit_stocktake", arguments: "{}" },
+        ],
+      },
+    ]);
+    const res = await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+    expect(res.body).toEqual({ runId: "run-1", status: "running" });
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3");
+
+    expect(await waitForFinish()).toMatchObject({ status: "done", scanId: "scan-1", turns: 1, error: null });
+    const [, saved] = ctx.repo.saveScan.mock.calls[0] as unknown as [unknown, { evidence?: { tool: string }[] }[]];
+    expect(saved[0]!.evidence?.map((e) => e.tool)).toEqual(["record_line"]);
+    const kinds = ctx.repo.addStep.mock.calls.map(([, , s]) => (s as { kind: string; tool?: string }).tool ?? (s as { kind: string }).kind);
+    expect(kinds).toEqual(["baseline", "thought", "record_line", "submit_stocktake"]);
+  });
+
+  it("falls back to the quick scan when the agent fails", async () => {
+    fetchSpy.mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.tools) return new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 });
+      if (body.model === "sam-3.1") return reply(text(""));
+      return reply(text(JSON.stringify({ products: [peak] })));
+    });
+    await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+    expect(await waitForFinish()).toMatchObject({ status: "fallback", scanId: "scan-1" });
+    expect(ctx.repo.saveScan).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a failed run when the first pass fails", async () => {
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({ error: { message: "down" } }), { status: 503 }));
+    await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+    expect(await waitForFinish()).toMatchObject({ status: "failed" });
+    expect(ctx.repo.saveScan).not.toHaveBeenCalled();
+  });
+
+  it("checks membership and the image before starting anything", async () => {
+    ctx.businesses.getForMember.mockRejectedValueOnce(new ForbiddenException("Not a member of this business"));
+    await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(403);
+    await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", Buffer.from("<svg/>"), "s.jpg").expect(400);
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("get returns the run, its trace and (when stored) the scan", async () => {
+    ctx.repo.getRun.mockResolvedValueOnce({
+      id: RUN,
+      status: "done",
+      scanId: "scan-9",
+      steps: [{ turn: 1, kind: "tool", tool: "zoom", summary: "zoomed 1,2,3,4", ms: 900, createdAt: "2026-10-29T10:00:00Z", args: { line: 0 } }],
+    });
+    const res = await request(nest.getHttpServer()).get(`${startPath}/${RUN}`).set(auth).expect(200);
+    expect(ctx.repo.getScan).toHaveBeenCalledWith(BIZ, "scan-9");
+    expect(res.body.run).toMatchObject({ id: RUN, status: "done", scanId: "scan-9" });
+    expect(res.body.steps).toEqual([{ turn: 1, kind: "tool", tool: "zoom", summary: "zoomed 1,2,3,4", ms: 900, at: "2026-10-29T10:00:00Z" }]);
+    expect(res.body.result).toEqual({ id: SCAN, detections: [] });
   });
 });

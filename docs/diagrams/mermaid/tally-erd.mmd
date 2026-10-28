@@ -14,6 +14,9 @@ erDiagram
     VISION_SCANS ||--o{ VISION_DETECTIONS : finds
     INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "looks like"
     INVENTORY_ITEMS ||--o{ INVENTORY_ITEM_READINGS : "recognised by"
+    BUSINESSES ||--o{ VISION_AGENT_RUNS : "stock-takes"
+    VISION_AGENT_RUNS ||--o{ VISION_AGENT_STEPS : "trace"
+    VISION_AGENT_RUNS |o--o| VISION_SCANS : "result"
 
     AUTH_USERS {
         uuid id PK "auth schema (Qorelly)"
@@ -100,4 +103,19 @@ erDiagram
     INVENTORY_ITEM_READINGS {
         uuid item_id FK
         text reading_key "brand|name|pack, unique per business"
+    }
+    VISION_AGENT_RUNS {
+        uuid id PK
+        uuid scan_id FK "result, nullable"
+        text status "running | done | fallback | failed"
+        int turns
+        int input_tokens
+        int output_tokens
+    }
+    VISION_AGENT_STEPS {
+        uuid run_id FK
+        int turn
+        text kind "baseline | thought | tool"
+        text tool
+        text summary "no image data"
     }

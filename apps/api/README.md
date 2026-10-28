@@ -33,6 +33,25 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 | `PORT` | no | Default `4100` |
 | `CORS_ORIGINS` | no | Comma-separated allowlist |
 
+## Deploy (Coolify)
+
+`apps/api/Dockerfile` builds a production image from the repo root (`docker build -f apps/api/Dockerfile -t tally-api .`). The image holds no secrets and no `.env`; all config comes from runtime env vars.
+
+Coolify app (staging):
+
+| Setting | Value |
+|---|---|
+| Source | GitHub `usecorehq/tally`, branch `staging` |
+| Build pack | Dockerfile, path `apps/api/Dockerfile`, base directory `/` |
+| Ports exposes | `4100` |
+| Port mappings | `127.0.0.1:4100:4100` |
+| Health check | `/api/health` (also baked into the image) |
+
+Runtime env vars (values live in Coolify only): `NODE_ENV=production`, `PORT=4100`, `CORS_ORIGINS` (Tally web origins; empty = none in production), `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `SUPABASE_DB_URL`, `QORE_CATALOG_BASE_URL=https://api.qorecatalogue.com`, `QORE_CATALOG_API_KEY`, `META_MODEL_BASE_URL`, `META_MODEL_API_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET=tally-media`. The four Supabase/Catalog key vars are required to boot (see [Env](#env)); the rest degrade features when unset.
+
+- HTTPS is done by the server's nginx + certbot: the `tally-api.qorecatalogue.com` site forwards to `http://127.0.0.1:4100`. Coolify's proxy is not used.
+- The container does not run migrations. After a schema PR merges, apply it to staging with `pnpm db:migrate`; production is applied by the CTO.
+
 ## Layout
 
 ```
@@ -46,6 +65,7 @@ src/
   modules/businesses/         businesses, membership, inventory, onboarding starter inventory
   modules/catalog/            CatalogService wrapping @tally/catalog-client
   modules/vision/             Camera recognition: shelf scan (Muse Spark, SAM 3.1, catalogue), confirm, identify, crops
+  modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
   modules/media/              R2Storage: Tally's files in Cloudflare R2 (aws4fetch, server-only)
   modules/health/             GET /api/health
 ```

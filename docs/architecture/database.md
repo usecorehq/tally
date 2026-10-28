@@ -29,6 +29,8 @@ One store per business, Naira only, no VAT. Money is `numeric(12,2)`; Drizzle re
 | `sale_payments` | Money received for a sale: amount and method (`cash`, `transfer`, `card`, `other`); recorded, not processed |
 | `vision_scans` | One shelf photo recognised by the camera flow: status (`open`, `confirmed`), image sha256 and size (the photo itself isn't in the database), models and timings |
 | `vision_detections` | One product found in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates as Qore IDs + scores only, the item the merchant seems to stock, and the merchant's decision (`restock`, `restore`, `add`, `skip`) with its feedback outcome |
+| `vision_agent_runs` | A stock-take agent run: status (`running`, `done`, `fallback`, `failed`), model, turns, tokens, error, the resulting scan |
+| `vision_agent_steps` | The run's audit trail: one row per step (`baseline`, `thought`, `tool`) with tool, arguments and a short summary |
 | `inventory_item_readings` | What the camera read for an item the merchant confirmed (`brand\|name\|pack`), so later scans recognise it; one reading → one item per business |
 
 Child tables carry `business_id` and use composite foreign keys (`(business_id, x_id)`), so no row can point at another business's data.

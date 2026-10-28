@@ -6,7 +6,7 @@ import { readingKey } from "./inventory-match";
 import type { Detection } from "./shelf-scan";
 import type { ConfirmDecision } from "./vision.dto";
 
-const { inventoryItemReadings, inventoryItems, stockMovements, visionDetections, visionScans } = schema;
+const { inventoryItemReadings, inventoryItems, stockMovements, visionAgentRuns, visionAgentSteps, visionDetections, visionScans } = schema;
 type Tx = Parameters<Parameters<TallyDb["transaction"]>[0]>[0];
 type Item = schema.InventoryItem;
 
@@ -54,7 +54,7 @@ export class VisionRepository {
   /** The scan and its detections in one transaction; detection ids are the ones already returned to the client. */
   async saveScan(
     scan: Omit<schema.NewVisionScan, "id" | "status" | "confirmedAt" | "createdAt">,
-    detections: Detection[],
+    detections: (Detection & { evidence?: { turn: number; tool: string; summary: string }[] })[],
   ): Promise<string> {
     return this.db.transaction(async (tx) => {
       const [row] = await tx.insert(visionScans).values(scan).returning({ id: visionScans.id });
@@ -78,11 +78,69 @@ export class VisionRepository {
             candidates: d.candidates.map((c) => ({ qid: c.qid, score: c.score })),
             inventoryItemId: d.inventoryItemId,
             inventoryMatch: d.inventoryMatch,
+            evidence: d.evidence ?? null,
           })),
         );
       }
       return row!.id;
     });
+  }
+
+  // ── Stock-take agent runs ──
+
+  async createRun(businessId: string, startedBy: string, model: string): Promise<string> {
+    const [row] = await this.db.insert(visionAgentRuns).values({ businessId, startedBy, model }).returning({ id: visionAgentRuns.id });
+    return row!.id;
+  }
+
+  async addStep(
+    businessId: string,
+    runId: string,
+    step: { turn: number; kind: "baseline" | "thought" | "tool" | "result"; tool?: string; args?: Record<string, unknown>; summary: string; ms?: number },
+  ): Promise<void> {
+    await this.db.insert(visionAgentSteps).values({
+      businessId,
+      runId,
+      turn: step.turn,
+      kind: step.kind,
+      tool: step.tool ?? null,
+      args: step.args ?? null,
+      summary: step.summary.slice(0, 2000),
+      ms: step.ms ?? null,
+    });
+  }
+
+  async finishRun(
+    runId: string,
+    end: { status: "done" | "fallback" | "failed"; scanId?: string | null; turns?: number; inputTokens?: number; outputTokens?: number; error?: string | null },
+  ): Promise<void> {
+    await this.db
+      .update(visionAgentRuns)
+      .set({
+        status: end.status,
+        scanId: end.scanId ?? null,
+        turns: end.turns ?? 0,
+        inputTokens: end.inputTokens ?? 0,
+        outputTokens: end.outputTokens ?? 0,
+        error: end.error ?? null,
+        finishedAt: new Date(),
+      })
+      .where(eq(visionAgentRuns.id, runId));
+  }
+
+  /** A run and its steps in order; 404 when it isn't this business's. */
+  async getRun(businessId: string, runId: string): Promise<schema.VisionAgentRun & { steps: schema.VisionAgentStep[] }> {
+    const [run] = await this.db
+      .select()
+      .from(visionAgentRuns)
+      .where(and(eq(visionAgentRuns.businessId, businessId), eq(visionAgentRuns.id, runId)));
+    if (!run) throw new NotFoundException(`No stock-take ${runId}`);
+    const steps = await this.db
+      .select()
+      .from(visionAgentSteps)
+      .where(eq(visionAgentSteps.runId, runId))
+      .orderBy(asc(visionAgentSteps.createdAt));
+    return { ...run, steps };
   }
 
   /** A scan and its detections in position order; 404 when it isn't this business's. */
