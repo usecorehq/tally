@@ -13,7 +13,7 @@ import { CatalogService } from "../catalog/catalog.service";
 import { MAX_IDENTIFY_IMAGE_BYTES, MAX_SHELF_IMAGE_BYTES, VisionController } from "./vision.controller";
 import { R2Storage } from "../media/r2-storage";
 import { VisionRepository } from "./vision.repository";
-import { VisionService } from "./vision.service";
+import { STOCKTAKE_DEADLINES, VisionService } from "./vision.service";
 
 // Real guard, controller and service; the business lookup, the catalogue and
 // the Meta Model API (global fetch) are mocked. Live behaviour is checked with
@@ -704,6 +704,60 @@ describe("VisionController stock-takes (HTTP)", () => {
     await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
     expect(await waitForFinish()).toMatchObject({ status: "failed" });
     expect(ctx.repo.saveScan).not.toHaveBeenCalled();
+  });
+
+  describe("deadlines: every run ends", () => {
+    const saved = { ...STOCKTAKE_DEADLINES };
+    afterEach(() => Object.assign(STOCKTAKE_DEADLINES, saved));
+    /** A call that never answers (ignores its abort signal), like a hung pooler connection. */
+    const never = () => new Promise<Response>(() => undefined);
+
+    it("a first pass that never finishes ends the run failed with the reason", async () => {
+      Object.assign(STOCKTAKE_DEADLINES, { firstPassMs: 50 });
+      fetchSpy.mockImplementation(never);
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      expect(await waitForFinish()).toMatchObject({ status: "failed", error: "First pass failed: First pass took longer than 0.05 s" });
+      expect(ctx.repo.saveScan).not.toHaveBeenCalled();
+    });
+
+    it("store reads that never return (a saturated pool) fail the run fast, before any paid model call", async () => {
+      Object.assign(STOCKTAKE_DEADLINES, { dbReadMs: 50 });
+      ctx.businesses.listInventory.mockImplementationOnce(() => new Promise(() => undefined) as never);
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      expect(await waitForFinish()).toMatchObject({ status: "failed", error: "First pass failed: Database busy, retry shortly" });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("an agent that never finishes falls back to the first pass at the run deadline", async () => {
+      Object.assign(STOCKTAKE_DEADLINES, { runMs: 300 });
+      fetchSpy.mockImplementation(async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (body.tools) return never();
+        if (body.model === "sam-3.1") return reply(text(""));
+        return reply(text(JSON.stringify({ products: [peak] })));
+      });
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      expect(await waitForFinish()).toMatchObject({ status: "fallback", scanId: "scan-1", error: "Agent stopped: Run deadline reached" });
+    });
+
+    it("a status write that fails is retried", async () => {
+      metaRoutes([{ output: [{ type: "function_call", call_id: "c", name: "submit_stocktake", arguments: "{}" }] }]);
+      ctx.repo.finishRun.mockRejectedValueOnce(new Error("connection reset"));
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      for (let i = 0; i < 300 && ctx.repo.finishRun.mock.calls.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(ctx.repo.finishRun.mock.calls.map(([, e]) => e.status)).toEqual(["done", "done"]);
+    });
+
+    it("a run still running past the deadline is reported failed when read", async () => {
+      const old = new Date(Date.now() - STOCKTAKE_DEADLINES.runMs - 120_000).toISOString();
+      ctx.repo.getRun
+        .mockResolvedValueOnce({ id: RUN, status: "running", startedAt: old, scanId: null, steps: [] } as never)
+        .mockResolvedValueOnce({ id: RUN, status: "failed", startedAt: old, scanId: null, error: "Interrupted: the API restarted during the run", steps: [] } as never);
+      ctx.repo.failStaleRuns.mockClear();
+      const res = await request(nest.getHttpServer()).get(`${startPath}/${RUN}`).set(auth).expect(200);
+      expect(ctx.repo.failStaleRuns).toHaveBeenCalledTimes(1);
+      expect(res.body.run).toMatchObject({ status: "failed" });
+    });
   });
 
   it("checks membership and the image before starting anything", async () => {

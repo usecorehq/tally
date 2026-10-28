@@ -12,7 +12,7 @@ export type { TallyDb };
       provide: TALLY_DB,
       useFactory: (config: ConfigService): TallyDb => {
         const url = config.getOrThrow<string>("supabase.dbUrl");
-        return buildTallyDb(url);
+        return buildTallyDb(url, { max: config.get<number>("supabase.dbPoolMax") });
       },
       inject: [ConfigService],
     },
