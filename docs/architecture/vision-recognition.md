@@ -4,7 +4,7 @@
 >
 > **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, point-to-sell identify (tier 1), and product crops (R2) sent to Qore Catalog as pictures. **Planned:** an on-device model. Planned endpoint shapes may change before they ship.
 
-The merchant points the phone camera at products and Tally recognises them. There are two flows:
+The merchant points the phone camera at products and Tally recognises them. There are two flows. Stock-taking can also run as an agent; see [Stock-take agent](stocktake-agent.md).
 
 - **Shelf scan (photo → inventory).** Photograph a shelf or a pile of stock. Tally identifies every product in the frame and matches each one to a Qore Catalog product with an indicative ₦ price. The merchant confirms or corrects the results, and the items land in their inventory with counts. Accuracy matters more than speed here.
 - **Point to sell.** Point the camera at one item to find it at the till. Speed matters most here.

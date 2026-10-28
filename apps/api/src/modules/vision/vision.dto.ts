@@ -110,3 +110,9 @@ export class IdentifyConfirmBody {
   @IsUUID()
   itemId!: string;
 }
+
+export class RunParams extends BusinessParams {
+  @ApiProperty()
+  @IsUUID()
+  runId!: string;
+}

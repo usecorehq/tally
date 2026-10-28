@@ -43,6 +43,13 @@
       "when": 1793192275345,
       "tag": "0005_add_vision_decisions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793208541601,
+      "tag": "0006_add_stocktake_agent",
+      "breakpoints": true
     }
   ]
 }

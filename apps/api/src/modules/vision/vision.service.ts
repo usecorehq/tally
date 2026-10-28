@@ -39,6 +39,9 @@ import {
   type DetectionCandidate,
 } from "./shelf-scan";
 import { toVisionHttpException } from "./vision-errors";
+import { runStocktakeAgent, STOCKTAKE_MODEL, type AgentStep } from "./stocktake/stocktake-agent";
+import { StocktakeSession } from "./stocktake/stocktake-session";
+import { TtlCache } from "../catalog/ttl-cache";
 import type { ConfirmDecision } from "./vision.dto";
 import { VisionRepository, type ConfirmResult } from "./vision.repository";
 
@@ -124,7 +127,28 @@ export class VisionService {
     const type = sniffImageType(image);
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
 
-    // Membership check before any paid model call.
+    const started = Date.now();
+    const a = await this.analyse(businessId, userId, image, type);
+    const detections = buildDetections(a.products, a.matches, a.index, a.samBoxes);
+    const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections);
+    const cropsStored = await this.storeCrops(scanId, image, detections);
+    return {
+      scanId,
+      model: SHELF_MODEL,
+      countModel: SAM_MODEL,
+      detections,
+      catalogueAvailable: a.catalogueAvailable,
+      cropsStored,
+      timings: { ...a.timings, totalMs: Date.now() - started },
+    };
+  }
+
+  /**
+   * The quick scan's analysis, shared with the stock-take agent's first pass:
+   * membership check (before any paid call), Muse Spark read, then SAM counts
+   * and catalogue candidates in parallel. Stores nothing.
+   */
+  private async analyse(businessId: string, userId: string, image: Buffer, type: ImageType) {
     // listInventory checks membership; the other two only read this business's rows.
     const [items, readings, archived] = await Promise.all([
       this.businesses.listInventory(businessId, userId),
@@ -133,9 +157,10 @@ export class VisionService {
     ]);
     const started = Date.now();
 
-    let products;
+    let products: ShelfProduct[];
     try {
-      const res = await this.meta.respond(shelfRequest(image, type), SHELF_TIMEOUT_MS);
+      // Callers check this.meta before any paid work.
+      const res = await this.meta!.respond(shelfRequest(image, type), SHELF_TIMEOUT_MS);
       if (res.status !== "completed") this.logger.warn(`Shelf read ended with status ${res.status}`);
       products = parseShelfProducts(res.text);
       this.logger.log(
@@ -153,31 +178,124 @@ export class VisionService {
       timed(() => this.match(products)),
     ]);
 
-    const detections = buildDetections(products, matching.value.matches, indexInventory(items, readings, archived), counting.value);
-    const timings = { readMs, samMs: counting.ms, matchMs: matching.ms };
-    const scanId = await this.repo.saveScan(
-      {
-        businessId,
-        imageSha256: createHash("sha256").update(image).digest("hex"),
-        imageBytes: image.length,
-        readModel: SHELF_MODEL,
-        countModel: SAM_MODEL,
-        catalogueAvailable: matching.value.available,
-        ...timings,
-        createdBy: userId,
-      },
-      detections,
-    );
-    const cropsStored = await this.storeCrops(scanId, image, detections);
     return {
+      products,
+      matches: matching.value.matches,
+      catalogueAvailable: matching.value.available,
+      samBoxes: counting.value,
+      index: indexInventory(items, readings, archived),
+      timings: { readMs, samMs: counting.ms, matchMs: matching.ms },
+    };
+  }
+
+  private scanRow(businessId: string, userId: string, image: Buffer, a: { catalogueAvailable: boolean; timings: { readMs: number; samMs: number; matchMs: number } }) {
+    return {
+      businessId,
+      imageSha256: createHash("sha256").update(image).digest("hex"),
+      imageBytes: image.length,
+      readModel: SHELF_MODEL,
+      countModel: SAM_MODEL,
+      catalogueAvailable: a.catalogueAvailable,
+      ...a.timings,
+      createdBy: userId,
+    };
+  }
+
+  // ── Stock-take agent ──
+
+  /**
+   * Start a stock-take: returns at once with a run id; the work runs in the
+   * background (about 1–2 minutes) and is polled with getStocktake. The quick
+   * scan runs first as the agent's starting checklist and as the fallback.
+   */
+  async startStocktake(businessId: string, userId: string, image: Buffer): Promise<{ runId: string; status: "running" }> {
+    if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
+    const type = sniffImageType(image);
+    if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
+    await this.businesses.getForMember(businessId, userId);
+
+    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL);
+    void this.runStocktake(runId, businessId, userId, image, type).catch((err: unknown) =>
+      this.logger.error(`Stock-take ${runId} crashed: ${(err as Error).message}`),
+    );
+    return { runId, status: "running" };
+  }
+
+  /** The run, its step trace and, once finished, its scan (same shape as a quick scan while it is fresh). */
+  async getStocktake(businessId: string, userId: string, runId: string) {
+    await this.businesses.getForMember(businessId, userId);
+    const { steps, ...run } = await this.repo.getRun(businessId, runId);
+    const fresh = this.stocktakeResults.get(runId);
+    const result = fresh ?? (run.scanId ? await this.repo.getScan(businessId, run.scanId) : null);
+    return {
+      run,
+      steps: steps.map(({ turn, kind, tool, summary, ms, createdAt }) => ({ turn, kind, tool, summary, ms, at: createdAt })),
+      result,
+    };
+  }
+
+  /** Finished results in the quick-scan shape (with candidate names and prices), kept an hour for polling. */
+  private readonly stocktakeResults = new TtlCache<ShelfScanResult>(60 * 60 * 1000);
+
+  private async runStocktake(runId: string, businessId: string, userId: string, image: Buffer, type: ImageType): Promise<void> {
+    const step = (s: AgentStep | { turn: number; kind: "baseline"; summary: string; ms?: number }) =>
+      this.repo.addStep(businessId, runId, s).catch(() => undefined);
+    const started = Date.now();
+
+    let a: Awaited<ReturnType<VisionService["analyse"]>>;
+    try {
+      a = await this.analyse(businessId, userId, image, type);
+    } catch (err) {
+      await this.repo.finishRun(runId, { status: "failed", error: `First pass failed: ${(err as Error).message}`.slice(0, 300) });
+      return;
+    }
+    await step({ turn: 0, kind: "baseline", summary: `First pass: ${a.products.length} products`, ms: Date.now() - started });
+
+    const baseline = buildDetections(a.products, a.matches, a.index, a.samBoxes);
+    const session: StocktakeSession = new StocktakeSession(a.products, a.matches, a.samBoxes, a.index, {
+      searchCatalogue: async (reading) => {
+        const res = await this.catalog.client.match({ items: [{ ref: "0", ...(reading.brand && { brand: reading.brand }), name: reading.name, ...(reading.pack && { pack: reading.pack }) }], limit: MATCH_LIMIT });
+        return (res.items[0]?.candidates ?? []).filter((c) => plausible(reading, c));
+      },
+      countUnits: async (look, line) => {
+        const res = await this.meta!.respond(samRequest(image, type, look), SAM_TIMEOUT_MS);
+        const products = session.lines.map((l, i) => (i === line ? { ...l.product, look } : l.product));
+        return assignInstances(products, new Map([[look, parseSamInstances(res.text)]])).get(line) ?? [];
+      },
+      zoom: async (box) => {
+        const [crop] = await makeCrops(image, [box], { minSide: 48, enlarge: true });
+        return crop ? `data:image/webp;base64,${crop.toString("base64")}` : null;
+      },
+    });
+
+    let detections: (Detection & { evidence?: { turn: number; tool: string; summary: string }[] })[] = baseline;
+    let end: { status: "done" | "fallback"; turns: number; input: number; output: number; error: string | null };
+    try {
+      const outcome = await runStocktakeAgent({
+        client: this.meta!,
+        session,
+        photo: `data:${type};base64,${image.toString("base64")}`,
+        onStep: step,
+      });
+      detections = session.detections();
+      end = { status: "done", turns: outcome.turns, input: outcome.usage.input, output: outcome.usage.output, error: outcome.end === "budget" ? "Turn or time budget reached" : null };
+    } catch (err) {
+      // The merchant still gets the quick scan.
+      end = { status: "fallback", turns: 0, input: 0, output: 0, error: `Agent stopped: ${(err as Error).message}`.slice(0, 300) };
+    }
+
+    const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections);
+    const cropsStored = await this.storeCrops(scanId, image, detections);
+    this.stocktakeResults.set(runId, {
       scanId,
-      model: SHELF_MODEL,
+      model: STOCKTAKE_MODEL,
       countModel: SAM_MODEL,
       detections,
-      catalogueAvailable: matching.value.available,
+      catalogueAvailable: a.catalogueAvailable,
       cropsStored,
-      timings: { ...timings, totalMs: Date.now() - started },
-    };
+      timings: { ...a.timings, totalMs: Date.now() - started },
+    });
+    await this.repo.finishRun(runId, { status: end.status, scanId, turns: end.turns, inputTokens: end.input, outputTokens: end.output, error: end.error });
   }
 
   /**

@@ -21,11 +21,31 @@ describe("MetaModelClient.respond", () => {
 
     const res = await client.respond({ model: "muse-spark-1.3" }, 1000);
 
-    expect(res).toEqual({ status: "completed", text: '{"a":1}', usage: { input_tokens: 1400, output_tokens: 300 } });
+    expect(res).toMatchObject({ id: null, status: "completed", text: '{"a":1}', toolCalls: [], usage: { input_tokens: 1400, output_tokens: 300 } });
+    expect(res.output).toHaveLength(2);
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBe("https://api.meta.ai/v1/responses");
     expect((init!.headers as Record<string, string>).Authorization).toBe(`Bearer ${KEY}`);
     expect(JSON.parse(init!.body as string)).toEqual({ model: "muse-spark-1.3" });
+  });
+
+  it("returns the response id and the model's function calls", async () => {
+    const fetchImpl = fakeFetch(200, {
+      id: "resp_1",
+      status: "completed",
+      output: [
+        { type: "message", content: [{ type: "output_text", text: "Zooming in." }] },
+        { type: "function_call", call_id: "call_a", name: "zoom", arguments: '{"line":2}' },
+        { type: "function_call", call_id: "call_b", name: "search_catalogue", arguments: '{"line":3,"name":"Garri"}' },
+      ],
+    });
+    const res = await new MetaModelClient("https://x", KEY, fetchImpl).respond({}, 1000);
+    expect(res.id).toBe("resp_1");
+    expect(res.text).toBe("Zooming in.");
+    expect(res.toolCalls).toEqual([
+      { callId: "call_a", name: "zoom", arguments: '{"line":2}' },
+      { callId: "call_b", name: "search_catalogue", arguments: '{"line":3,"name":"Garri"}' },
+    ]);
   });
 
   it("raises Meta's error code and Retry-After, without the key", async () => {

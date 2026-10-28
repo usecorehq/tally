@@ -16,7 +16,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { BusinessParams } from "../businesses/businesses.dto";
 import { VisionExceptionFilter } from "./vision-errors";
-import { ConfirmBody, IdentifyConfirmBody, ScanParams } from "./vision.dto";
+import { ConfirmBody, IdentifyConfirmBody, RunParams, ScanParams } from "./vision.dto";
 import { VisionService } from "./vision.service";
 
 export const MAX_SHELF_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -75,6 +75,39 @@ export class VisionController {
   ) {
     if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
     return this.vision.recogniseShelf(businessId, user.sub, file.buffer);
+  }
+
+  @Post("stocktakes")
+  @HttpCode(202)
+  @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_SHELF_IMAGE_BYTES + 1, files: 1 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ schema: { type: "object", properties: { image: { type: "string", format: "binary" } }, required: ["image"] } })
+  @ApiOperation({
+    summary:
+      "Thorough stock-take of a shelf photo (same image rules as shelf-scans). Starts the stock-take agent in the background and returns at once; poll GET …/stocktakes/:runId. About 1–2 minutes.",
+  })
+  @ApiOkResponse({ schema: { example: { runId: "5b0e…", status: "running" } } })
+  startStocktake(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() { businessId }: BusinessParams,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: MAX_SHELF_IMAGE_BYTES, message: "Image must be 4 MB or smaller" })
+        .build({ errorHttpStatusCode: 413, fileIsRequired: false }),
+    )
+    file: UploadedImage | undefined,
+  ) {
+    if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
+    return this.vision.startStocktake(businessId, user.sub, file.buffer);
+  }
+
+  @Get("stocktakes/:runId")
+  @ApiOperation({
+    summary:
+      "A stock-take run: status (running, done, fallback, failed), the agent's step trace so far, and once finished the result in the shelf-scans shape. Confirm it with …/shelf-scans/:scanId/confirm.",
+  })
+  getStocktake(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, runId }: RunParams) {
+    return this.vision.getStocktake(businessId, user.sub, runId);
   }
 
   @Post("identify")

@@ -14,6 +14,7 @@ Why we made the choices we made. Read these before changing something load-beari
 - **[Onboarding](architecture/onboarding.md)** — Create a business from a Qore Catalog sub-type, turn its template into a starter inventory, send every decision back as feedback. Safe to retry.
 - **[Barcode scan](architecture/barcode-scan.md)** — Scan to find an item in the merchant's inventory; link unknown barcodes once. One item per barcode, UPC-A = EAN-13.
 - **[Vision recognition](architecture/vision-recognition.md)** — Shelf photo → inventory (Muse Spark reads, SAM 3.1 counts, Qore Catalog matches, the merchant confirms) and point-to-sell identify, with the API contract for the mobile app. Crops in R2 and an on-device model are *planned*.
+- **[Stock-take agent](architecture/stocktake-agent.md)** — Muse Spark with tools (zoom, catalogue search, SAM count, store check) working through a shelf photo in the background until every line is settled; quick scan as first pass and fallback; the merchant confirms.
 - **[Q Vision distillation](architecture/qvision-distillation.md)** — *Planned.* Console → API → train service against Qore Catalog, plus the open questions.
 
 ### Diagrams
