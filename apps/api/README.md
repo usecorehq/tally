@@ -27,6 +27,9 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 | `SUPABASE_DB_URL` | yes | Postgres URL for Drizzle (`tally` schema) |
 | `QORE_CATALOG_API_KEY` | yes | Sent as `x-api-key`; server-only |
 | `QORE_CATALOG_BASE_URL` | no | Default `http://localhost:3100` |
+| `META_MODEL_API_KEY` | no | Meta Model API bearer key (Muse Spark); server-only. Unset → vision routes return 503 |
+| `META_MODEL_BASE_URL` | no | Default `https://api.meta.ai/v1` |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | no | Cloudflare R2 `tally-media` (token scoped to that bucket) for product crops under `tally/`; server-only. Unset → crops skipped |
 | `PORT` | no | Default `4100` |
 | `CORS_ORIGINS` | no | Comma-separated allowlist |
 
@@ -42,6 +45,8 @@ src/
   drizzle/drizzle.module.ts   TALLY_DB provider from @tally/db
   modules/businesses/         businesses, membership, inventory, onboarding starter inventory
   modules/catalog/            CatalogService wrapping @tally/catalog-client
+  modules/vision/             Camera recognition: shelf scan (Muse Spark, SAM 3.1, catalogue), confirm, identify, crops
+  modules/media/              R2Storage: Tally's files in Cloudflare R2 (aws4fetch, server-only)
   modules/health/             GET /api/health
 ```
 

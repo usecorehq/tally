@@ -1,0 +1,35 @@
+%%{init: {"theme": "neutral"} }%%
+sequenceDiagram
+    autonumber
+    actor M as Merchant
+    participant P as mobile / mp
+    participant A as Tally apps/api
+    participant S as Meta Model API
+    participant Q as Qore Catalog
+    participant D as Postgres (tally)
+    participant R as R2 (tally-media)
+
+    Note over M,D: BUILT
+    M->>P: photograph shelf
+    P->>P: scale to 1600 px, JPEG ~400 KB
+    P->>A: POST /api/businesses/:id/vision/shelf-scans [multipart, Bearer JWT]
+    A->>S: muse-spark-1.3: list products {brand, name, pack, look, boxes per unit} [JSON schema]
+    S-->>A: products
+    par one SAM request per distinct look
+        A->>S: sam-3.1: "<look>" e.g. "red box" + image
+        S-->>A: instance boxes (assigned to products by position)
+    and catalogue
+        A->>Q: POST /v1/match (all products, x-api-key)
+        Q-->>A: candidates + indicative ₦ price (plausible ones kept)
+    end
+    A->>D: insert vision_scans + vision_detections
+    A->>R: PUT tally/crops/scanId/position.webp (one crop per product, best-effort)
+    A-->>P: scanId + detections (counts, boxes, candidates, inventory match)
+    M->>P: per item: restock / restore / add to store / skip, set qty (+ name, price)
+    P->>A: POST …/shelf-scans/:scanId/confirm {decisions[]}
+    A->>D: one transaction: add → inventory_items (source photo) + opening movement<br/>restock / restore → restock movement, remember reading
+    A->>Q: POST /v1/feedback, source "photo" (clientRef scanId:position)
+    A->>R: GET the crop of each line confirmed with a Qore ID
+    A->>Q: POST /v1/images {crop, qid, on_shelf, feedbackClientRef} (pending until a curator approves)
+    Note over A,Q: Best-effort: a catalogue failure never undoes stock, unsent feedback retries on the next confirm.
+    A-->>P: {created, restocked, restored, skipped, invalid, feedback, images}

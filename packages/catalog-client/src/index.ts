@@ -8,6 +8,7 @@ import type {
   FeedbackResponse,
   FeedbackStats,
   HealthResponse,
+  ImageView,
   MatchRequest,
   MatchResponse,
   MergedProduct,
@@ -16,6 +17,7 @@ import type {
   ProductSearchParams,
   ProductSearchResult,
   SubtypeTemplates,
+  UploadImageResponse,
 } from "./types";
 
 export * from "./types";
@@ -27,6 +29,8 @@ const API_KEY_HEADER = "x-api-key";
 const DEFAULT_TIMEOUT_MS = 10_000;
 // Template suggestions run a match per item; the first uncached call takes ~4s.
 const SUGGESTIONS_TIMEOUT_MS = 20_000;
+const UPLOAD_TIMEOUT_MS = 30_000;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const MAX_MATCH_ITEMS = 50;
 const MAX_FEEDBACK_ITEMS = 100;
@@ -77,7 +81,9 @@ export class CatalogClient {
 
     const headers = new Headers(init?.headers);
     if (auth && this.apiKey) headers.set(API_KEY_HEADER, this.apiKey);
-    if (body !== undefined) headers.set("content-type", "application/json");
+    // FormData sets its own multipart content-type (with the boundary).
+    const multipart = body instanceof FormData;
+    if (body !== undefined && !multipart) headers.set("content-type", "application/json");
 
     const timeout = AbortSignal.timeout(timeoutMs);
     const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
@@ -87,7 +93,7 @@ export class CatalogClient {
       method,
       headers,
       signal,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -168,6 +174,30 @@ export class CatalogClient {
       throw guardError("/v1/feedback", `feedback takes 1-${MAX_FEEDBACK_ITEMS} items, got ${n}`);
     }
     return this.request<FeedbackResponse>("POST", "/v1/feedback", { body: { items }, init });
+  }
+
+  /**
+   * POST /v1/images: a product picture for a confirmed Qore ID (scope
+   * feedback:write). Send a tight crop, never the whole shelf. Send the
+   * /v1/feedback line first and pass its clientRef as feedbackClientRef.
+   * Stored once per sha256, so resending is safe. Pending until a curator approves it.
+   */
+  async uploadImage(
+    upload: { file: Blob | Uint8Array; filename: string; qid: string; view?: ImageView; feedbackClientRef?: string },
+    init?: RequestInit,
+  ) {
+    const size = upload.file instanceof Blob ? upload.file.size : upload.file.byteLength;
+    if (size === 0 || size > MAX_IMAGE_BYTES) {
+      throw guardError("/v1/images", `image must be 1 byte to 8 MB, got ${size}`);
+    }
+    if (!QID_PATTERN.test(upload.qid)) throw guardError("/v1/images", `invalid qid ${upload.qid}`);
+    const form = new FormData();
+    const blob = upload.file instanceof Blob ? upload.file : new Blob([upload.file as Uint8Array<ArrayBuffer>]);
+    form.set("file", blob, upload.filename);
+    form.set("qid", upload.qid);
+    if (upload.view) form.set("view", upload.view);
+    if (upload.feedbackClientRef) form.set("feedbackClientRef", upload.feedbackClientRef);
+    return this.request<UploadImageResponse>("POST", "/v1/images", { body: form, init, timeoutMs: UPLOAD_TIMEOUT_MS });
   }
 
   /** since: ISO date. */
