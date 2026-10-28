@@ -3,7 +3,7 @@ import { OnboardingShell, StepHeading } from "../../_components/onboarding-shell
 
 export default function Loading() {
   return (
-    <OnboardingShell step={2}>
+    <OnboardingShell step={3}>
       <StepHeading title="Pick your starter items" subtitle="Finding products shops like yours stock…" />
       <div className="mb-6 flex items-center gap-3 text-sm text-gray-500">
         <QorellyLoader className="h-5 w-5" />

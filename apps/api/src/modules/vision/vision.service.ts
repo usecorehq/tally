@@ -49,8 +49,24 @@ import { VisionRepository, type ConfirmResult } from "./vision.repository";
 const SHELF_TIMEOUT_MS = 45_000;
 const SAM_TIMEOUT_MS = 20_000;
 const LABEL_TIMEOUT_MS = 10_000;
-/** A run still "running" after this was lost to a restart (budget 150 s + first pass ≈ 3 min). */
-const STALE_RUN_MS = 10 * 60 * 1000;
+/**
+ * Hard limits for a background stock-take, so every run ends done, fallback or
+ * failed. Each phase is raced against its own deadline; a hung model call or a
+ * database connection that never comes (a full Supabase pooler) can't leave a
+ * run "running" forever.
+ */
+export const STOCKTAKE_DEADLINES = {
+  /** Quick-scan analysis: Spark read (45 s) + SAM / catalogue in parallel, plus DB reads. */
+  firstPassMs: 120_000,
+  /** The whole run; the agent gets whatever the first pass left. */
+  runMs: 240_000,
+  /** Each status / result write. */
+  writeMs: 20_000,
+  /** The store reads before the first paid model call (a saturated pool fails here, in seconds). */
+  dbReadMs: 20_000,
+};
+/** A run still "running" after this is lost (restart, or a write that never landed): marked failed on read. */
+const STALE_RUN_MS = STOCKTAKE_DEADLINES.runMs + 60_000;
 
 export type IdentifyResult = {
   model: string;
@@ -153,11 +169,16 @@ export class VisionService implements OnApplicationBootstrap {
    */
   private async analyse(businessId: string, userId: string, image: Buffer, type: ImageType) {
     // listInventory checks membership; the other two only read this business's rows.
-    const [items, readings, archived] = await Promise.all([
-      this.businesses.listInventory(businessId, userId),
-      this.repo.readings(businessId),
-      this.repo.archivedLinkedItems(businessId),
-    ]);
+    // Bounded: on a saturated database pool this fails in seconds, before any paid model call.
+    const [items, readings, archived] = await withDeadline(
+      Promise.all([this.businesses.listInventory(businessId, userId), this.repo.readings(businessId), this.repo.archivedLinkedItems(businessId)]),
+      STOCKTAKE_DEADLINES.dbReadMs,
+      "Database busy: could not read the store's inventory in time",
+    ).catch((err: unknown) => {
+      if (err instanceof HttpException) throw err;
+      this.logger.warn(`Inventory read failed: ${(err as Error).message}`);
+      throw new ServiceUnavailableException("Database busy, retry shortly");
+    });
     const started = Date.now();
 
     let products: ShelfProduct[];
@@ -224,9 +245,10 @@ export class VisionService implements OnApplicationBootstrap {
     await this.businesses.getForMember(businessId, userId);
 
     const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL);
-    void this.runStocktake(runId, businessId, userId, image, type).catch((err: unknown) =>
-      this.logger.error(`Stock-take ${runId} crashed: ${(err as Error).message}`),
-    );
+    void this.runStocktake(runId, businessId, userId, image, type).catch(async (err: unknown) => {
+      this.logger.error(`Stock-take ${runId} crashed: ${(err as Error).message}`);
+      await this.finish(runId, { status: "failed", error: `Stock-take crashed: ${(err as Error).message}` });
+    });
     return { runId, status: "running" };
   }
 
@@ -256,11 +278,13 @@ export class VisionService implements OnApplicationBootstrap {
       this.repo.addStep(businessId, runId, s).catch(() => undefined);
     const started = Date.now();
 
+    const limits = STOCKTAKE_DEADLINES;
+
     let a: Awaited<ReturnType<VisionService["analyse"]>>;
     try {
-      a = await this.analyse(businessId, userId, image, type);
+      a = await withDeadline(this.analyse(businessId, userId, image, type), limits.firstPassMs, `First pass took longer than ${limits.firstPassMs / 1000} s`);
     } catch (err) {
-      await this.repo.finishRun(runId, { status: "failed", error: `First pass failed: ${(err as Error).message}`.slice(0, 300) });
+      await this.finish(runId, { status: "failed", error: `First pass failed: ${(err as Error).message}` });
       return;
     }
     await step({ turn: 0, kind: "baseline", summary: `First pass: ${a.products.length} products`, ms: Date.now() - started });
@@ -285,12 +309,12 @@ export class VisionService implements OnApplicationBootstrap {
     let detections: (Detection & { evidence?: { turn: number; tool: string; summary: string }[] })[] = baseline;
     let end: { status: "done" | "fallback"; turns: number; input: number; output: number; error: string | null };
     try {
-      const outcome = await runStocktakeAgent({
-        client: this.meta!,
-        session,
-        photo: `data:${type};base64,${image.toString("base64")}`,
-        onStep: step,
-      });
+      const left = Math.max(0, limits.runMs - (Date.now() - started));
+      const outcome = await withDeadline(
+        runStocktakeAgent({ client: this.meta!, session, photo: `data:${type};base64,${image.toString("base64")}`, onStep: step }),
+        left,
+        "Run deadline reached",
+      );
       detections = session.detections();
       end = { status: "done", turns: outcome.turns, input: outcome.usage.input, output: outcome.usage.output, error: outcome.end === "budget" ? "Turn or time budget reached" : null };
     } catch (err) {
@@ -298,8 +322,14 @@ export class VisionService implements OnApplicationBootstrap {
       end = { status: "fallback", turns: 0, input: 0, output: 0, error: `Agent stopped: ${(err as Error).message}`.slice(0, 300) };
     }
 
-    const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections);
-    const cropsStored = await this.storeCrops(scanId, image, detections);
+    let scanId: string;
+    try {
+      scanId = await withDeadline(this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections), limits.writeMs, "Saving the scan timed out");
+    } catch (err) {
+      await this.finish(runId, { status: "failed", error: `Could not save the result: ${(err as Error).message}` });
+      return;
+    }
+    const cropsStored = await withDeadline(this.storeCrops(scanId, image, detections), limits.writeMs, "crops").catch(() => 0);
     this.stocktakeResults.set(runId, {
       scanId,
       model: STOCKTAKE_MODEL,
@@ -309,7 +339,24 @@ export class VisionService implements OnApplicationBootstrap {
       cropsStored,
       timings: { ...a.timings, totalMs: Date.now() - started },
     });
-    await this.repo.finishRun(runId, { status: end.status, scanId, turns: end.turns, inputTokens: end.input, outputTokens: end.output, error: end.error });
+    await this.finish(runId, { status: end.status, scanId, turns: end.turns, inputTokens: end.input, outputTokens: end.output, error: end.error });
+  }
+
+  /**
+   * Mark a run finished: a few tries, each with a deadline. If every try fails
+   * (the database is unreachable), getStocktake marks it failed once it is stale.
+   */
+  private async finish(runId: string, end: Parameters<VisionRepository["finishRun"]>[1]): Promise<void> {
+    const row = { ...end, error: end.error ? end.error.slice(0, 300) : end.error };
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await withDeadline(this.repo.finishRun(runId, row), STOCKTAKE_DEADLINES.writeMs, "finishing the run timed out");
+        return;
+      } catch (err) {
+        this.logger.warn(`Stock-take ${runId}: could not record its end (try ${attempt}): ${(err as Error).message}`);
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
   }
 
   /**
@@ -508,4 +555,14 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ value: T; ms: number }>
   const t0 = Date.now();
   const value = await fn();
   return { value, ms: Date.now() - t0 };
+}
+
+/** Resolve or reject with the promise, or reject with `message` after `ms`. The timer never keeps the process alive. */
+export function withDeadline<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }
