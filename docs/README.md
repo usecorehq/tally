@@ -27,7 +27,7 @@ Why we made the choices we made. Read these before changing something load-beari
 - **[Database migrations](guides/database-migrations.md)** — Generate, review, apply on staging, hand to the CTO.
 - **[Keeping docs current](guides/documentation.md)** — What to update when, and how to regenerate diagrams.
 
-Deploy guides are not written yet — hosting targets for api, console, mp and train are still undecided.
+Deploy: the API ships as a Docker image to Coolify — see [apps/api README](../apps/api/README.md#deploy-coolify). Deploy guides for console, mp and train are planned.
 
 ## Contributing
 
