@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Put } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import {
@@ -56,6 +56,15 @@ export class BusinessesController {
   @ApiOperation({ summary: "Find the item with this barcode (scan to find). 404 when no active item has it." })
   findByBarcode(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, code }: BarcodeParams) {
     return this.businesses.findByBarcode(businessId, user.sub, code);
+  }
+
+  @Delete(":businessId/inventory/:itemId")
+  @ApiOperation({
+    summary:
+      "Remove an item from the shop. It is archived, not deleted: it keeps its Qore ID, name, price and history, and a shelf scan of the same product offers to restore it. 404 when no active item has this id.",
+  })
+  archive(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, itemId }: ItemParams) {
+    return this.businesses.archiveItem(businessId, user.sub, itemId);
   }
 
   @Put(":businessId/inventory/:itemId/barcode")

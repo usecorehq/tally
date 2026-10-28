@@ -41,7 +41,15 @@ See [`architecture/vision-recognition.md`](../architecture/vision-recognition.md
 | Diagram | Description |
 |---|---|
 | [`vision-shelf-scan-sequence.svg`](images/vision-shelf-scan-sequence.svg) ([source](mermaid/vision-shelf-scan-sequence.mmd)) | Shelf photo → Muse Spark → SAM 3.1 per product → catalogue match → confirm → inventory + photo feedback. |
-| [`vision-identify-sequence.svg`](images/vision-identify-sequence.svg) ([source](mermaid/vision-identify-sequence.mmd)) | Point to sell: barcode on device first, then a closed-set Muse Spark identify against the merchant's inventory. |
+| [`vision-identify-sequence.svg`](images/vision-identify-sequence.svg) ([source](mermaid/vision-identify-sequence.mmd)) | Point to sell: barcode on device first, then Muse Spark reads the label and Tally matches it to the merchant's items (catalogue only on a miss); confirming remembers the reading. |
+
+## Stock-take agent
+
+See [`architecture/stocktake-agent.md`](../architecture/stocktake-agent.md).
+
+| Diagram | Description |
+|---|---|
+| [`stocktake-agent-sequence.svg`](images/stocktake-agent-sequence.svg) ([source](mermaid/stocktake-agent-sequence.mmd)) | Async run: first pass, then the Muse Spark tool loop (zoom, catalogue search, SAM count, store check, record), step trace for polling, human confirm. |
 
 ## Database
 

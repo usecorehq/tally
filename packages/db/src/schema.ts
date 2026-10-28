@@ -22,10 +22,12 @@
 
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgSchema,
   text,
@@ -297,6 +299,216 @@ export const stockMovements = tally.table(
   ],
 );
 
+// ─── Vision (camera recognition) ─────────────────────────────────────────
+// A shelf scan and what Muse Spark / SAM 3.1 found in it. Tally keeps its own
+// readings and only Qore IDs + match scores from the catalogue (no names or
+// prices): catalogue data stays in Qore Catalog. See docs/architecture/vision-recognition.md.
+
+export const visionScans = tally.table(
+  "vision_scans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("open"),
+    // sha256 of the uploaded bytes; the photo itself is not stored in the database.
+    imageSha256: text("image_sha256").notNull(),
+    imageBytes: integer("image_bytes").notNull(),
+    readModel: text("read_model").notNull(),
+    countModel: text("count_model").notNull(),
+    catalogueAvailable: boolean("catalogue_available").notNull(),
+    readMs: integer("read_ms").notNull(),
+    samMs: integer("sam_ms").notNull(),
+    matchMs: integer("match_ms").notNull(),
+    createdBy: uuid("created_by").notNull(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("vision_scans_business_id_key").on(t.businessId, t.id),
+    check("vision_scans_status", sql`status in ('open', 'confirmed')`),
+    check("vision_scans_confirmed_consistent", sql`(status = 'confirmed') = (confirmed_at is not null)`),
+    check("vision_scans_image_sha256_format", sql`image_sha256 ~ '^[0-9a-f]{64}$'`),
+    index("vision_scans_business_created_idx").on(t.businessId, t.createdAt.desc()),
+  ],
+);
+
+export const visionDetections = tally.table(
+  "vision_detections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    scanId: uuid("scan_id").notNull(),
+    // Order in the scan; with scan_id it is the catalogue feedback clientRef.
+    position: integer("position").notNull(),
+    // As read by Muse Spark ('' = not legible).
+    brand: text("brand").notNull(),
+    name: text("name").notNull(),
+    pack: text("pack").notNull(),
+    look: text("look").notNull(),
+    confidence: text("confidence").notNull(),
+    sparkCount: integer("spark_count").notNull(),
+    samCount: integer("sam_count"),
+    count: integer("count").notNull(),
+    countSource: text("count_source").notNull(),
+    // [{x1,y1,x2,y2}] on the 0–1000 grid of the uploaded image.
+    boxes: jsonb("boxes").$type<{ x1: number; y1: number; x2: number; y2: number }[]>().notNull(),
+    // [{qid, score}], best first: catalogue ids and match scores only.
+    candidates: jsonb("candidates").$type<{ qid: string; score: number }[]>().notNull(),
+    // The business's item this looks like at scan time, and how it was found.
+    inventoryItemId: uuid("inventory_item_id"),
+    inventoryMatch: text("inventory_match"),
+    // The merchant's decision on confirm; all null until decided.
+    action: text("action"),
+    // Catalogue feedback outcome sent for it.
+    outcome: text("outcome"),
+    confirmedQid: text("confirmed_qid"),
+    // The item that was restocked, restored or created.
+    itemId: uuid("item_id"),
+    quantity: integer("quantity"),
+    decidedBy: uuid("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    feedbackSentAt: timestamp("feedback_sent_at", { withTimezone: true }),
+    // Stock-take agent: how this line was resolved (tool calls behind it); null for a quick scan.
+    evidence: jsonb("evidence").$type<{ turn: number; tool: string; summary: string }[]>(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "vision_detections_scan_fk",
+      columns: [t.businessId, t.scanId],
+      foreignColumns: [visionScans.businessId, visionScans.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "vision_detections_inventory_item_fk",
+      columns: [t.businessId, t.inventoryItemId],
+      foreignColumns: [inventoryItems.businessId, inventoryItems.id],
+    }),
+    unique("vision_detections_scan_position_key").on(t.scanId, t.position),
+    unique("vision_detections_business_id_key").on(t.businessId, t.id),
+    check("vision_detections_position_nonneg", sql`position >= 0`),
+    check("vision_detections_confidence", sql`confidence in ('high', 'medium', 'low')`),
+    check("vision_detections_count_source", sql`count_source in ('sam', 'spark')`),
+    check("vision_detections_counts_nonneg", sql`spark_count >= 0 and count >= 0 and (sam_count is null or sam_count >= 0)`),
+    check(
+      "vision_detections_inventory_match",
+      sql`(inventory_item_id is null) = (inventory_match is null) and (inventory_match is null or inventory_match in ('reading', 'catalogue', 'name'))`,
+    ),
+    check("vision_detections_name_length", sql`char_length(name) between 1 and 200`),
+    foreignKey({
+      name: "vision_detections_item_fk",
+      columns: [t.businessId, t.itemId],
+      foreignColumns: [inventoryItems.businessId, inventoryItems.id],
+    }),
+    check("vision_detections_action", sql`action is null or action in ('restock', 'restore', 'add', 'skip')`),
+    check("vision_detections_outcome", sql`outcome is null or outcome in ('accepted', 'corrected', 'new_item', 'removed')`),
+    check("vision_detections_confirmed_qid_format", sql.raw(`confirmed_qid is null or confirmed_qid ~ '${QID_REGEX}'`)),
+    check("vision_detections_quantity_nonneg", sql`quantity is null or quantity >= 0`),
+    check(
+      "vision_detections_decision_consistent",
+      sql`(action is null) = (decided_at is null) and (action is null) = (outcome is null) and (action is null) = (decided_by is null)
+        and (action = 'skip') = (outcome = 'removed') and (action is distinct from 'skip') = (item_id is not null or action is null)`,
+    ),
+  ],
+);
+
+/**
+ * A stock-take agent run: Muse Spark working through one shelf photo with
+ * tools until every product is resolved or flagged. The result lands as a
+ * normal vision_scan (scan_id) so the merchant confirms it the same way.
+ */
+export const visionAgentRuns = tally.table(
+  "vision_agent_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    // Set when the run saves its scan (done, or fallback to the quick scan).
+    scanId: uuid("scan_id"),
+    status: text("status").notNull().default("running"),
+    model: text("model").notNull(),
+    turns: integer("turns").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    // Why the run ended early (budget, model error); never a key or upstream body.
+    error: text("error"),
+    startedBy: uuid("started_by").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("vision_agent_runs_business_id_key").on(t.businessId, t.id),
+    foreignKey({
+      name: "vision_agent_runs_scan_fk",
+      columns: [t.businessId, t.scanId],
+      foreignColumns: [visionScans.businessId, visionScans.id],
+    }),
+    check("vision_agent_runs_status", sql`status in ('running', 'done', 'fallback', 'failed')`),
+    check("vision_agent_runs_finished_consistent", sql`(status = 'running') = (finished_at is null)`),
+    check("vision_agent_runs_counts_nonneg", sql`turns >= 0 and input_tokens >= 0 and output_tokens >= 0`),
+    index("vision_agent_runs_business_started_idx").on(t.businessId, t.startedAt.desc()),
+  ],
+);
+
+/** The run's audit trail: what the agent thought, which tools it called, what came back. */
+export const visionAgentSteps = tally.table(
+  "vision_agent_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    runId: uuid("run_id").notNull(),
+    turn: integer("turn").notNull(),
+    kind: text("kind").notNull(),
+    tool: text("tool"),
+    args: jsonb("args").$type<Record<string, unknown>>(),
+    // Short, human-readable; never image data.
+    summary: text("summary").notNull(),
+    ms: integer("ms"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "vision_agent_steps_run_fk",
+      columns: [t.businessId, t.runId],
+      foreignColumns: [visionAgentRuns.businessId, visionAgentRuns.id],
+    }).onDelete("cascade"),
+    check("vision_agent_steps_kind", sql`kind in ('baseline', 'thought', 'tool', 'result')`),
+    check("vision_agent_steps_turn_nonneg", sql`turn >= 0`),
+    check("vision_agent_steps_tool_consistent", sql`(kind = 'tool') = (tool is not null)`),
+    index("vision_agent_steps_run_idx").on(t.runId, t.createdAt),
+  ],
+);
+
+/**
+ * What the camera read for an item the merchant confirmed ("Lady B · Custard
+ * Powder · 2kg" → their item), so the next scan recognises it even when Qore
+ * Catalog doesn't know the product. One reading maps to one item per business.
+ */
+export const inventoryItemReadings = tally.table(
+  "inventory_item_readings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    // Normalised "brand|name|pack" (lower-case, single spaces).
+    readingKey: text("reading_key").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "inventory_item_readings_item_fk",
+      columns: [t.businessId, t.itemId],
+      foreignColumns: [inventoryItems.businessId, inventoryItems.id],
+    }).onDelete("cascade"),
+    unique("inventory_item_readings_business_key").on(t.businessId, t.readingKey),
+    check("inventory_item_readings_key_length", sql`char_length(reading_key) between 3 and 400`),
+    index("inventory_item_readings_item_idx").on(t.businessId, t.itemId),
+  ],
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────
 
 export type Business = typeof businesses.$inferSelect;
@@ -313,3 +525,13 @@ export type SaleItem = typeof saleItems.$inferSelect;
 export type NewSaleItem = typeof saleItems.$inferInsert;
 export type SalePayment = typeof salePayments.$inferSelect;
 export type NewSalePayment = typeof salePayments.$inferInsert;
+export type VisionScan = typeof visionScans.$inferSelect;
+export type NewVisionScan = typeof visionScans.$inferInsert;
+export type VisionDetection = typeof visionDetections.$inferSelect;
+export type NewVisionDetection = typeof visionDetections.$inferInsert;
+export type InventoryItemReading = typeof inventoryItemReadings.$inferSelect;
+export type NewInventoryItemReading = typeof inventoryItemReadings.$inferInsert;
+export type VisionAgentRun = typeof visionAgentRuns.$inferSelect;
+export type NewVisionAgentRun = typeof visionAgentRuns.$inferInsert;
+export type VisionAgentStep = typeof visionAgentSteps.$inferSelect;
+export type NewVisionAgentStep = typeof visionAgentSteps.$inferInsert;

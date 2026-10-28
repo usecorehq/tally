@@ -22,11 +22,16 @@ One store per business, Naira only, no VAT. Money is `numeric(12,2)`; Drizzle re
 |---|---|
 | `businesses` | A merchant's shop: owner (`auth.users`), name, Qore Catalog vertical + sub-type, `sale_counter` |
 | `business_members` | Who can use the shop: `owner` or `staff` |
-| `inventory_items` | What the shop sells: optional `core_qid` link to Qore Catalog, name/variant/pack, price, cost, `quantity_on_hand`, `source` (template, photo, manual) |
+| `inventory_items` | What the shop sells: optional `core_qid` link to Qore Catalog, name/variant/pack, price, cost, `quantity_on_hand`, `source` (template, photo, manual). Removing an item sets `archived_at`; rows are never deleted |
 | `stock_movements` | Append-only log of every stock change: `opening`, `restock`, `sale`, `adjustment`, `void` |
 | `sales` | One checkout: per-business `sale_number`, `completed` or `voided`, `subtotal − discount = total`, `paid_amount` |
 | `sale_items` | Lines of a sale, with `item_name` and `unit_price` copied as sold |
 | `sale_payments` | Money received for a sale: amount and method (`cash`, `transfer`, `card`, `other`); recorded, not processed |
+| `vision_scans` | One shelf photo recognised by the camera flow: status (`open`, `confirmed`), image sha256 and size (the photo itself isn't in the database), models and timings |
+| `vision_detections` | One product found in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates as Qore IDs + scores only, the item the merchant seems to stock, and the merchant's decision (`restock`, `restore`, `add`, `skip`) with its feedback outcome |
+| `vision_agent_runs` | A stock-take agent run: status (`running`, `done`, `fallback`, `failed`), model, turns, tokens, error, the resulting scan |
+| `vision_agent_steps` | The run's audit trail: one row per step (`baseline`, `thought`, `tool`) with tool, arguments and a short summary |
+| `inventory_item_readings` | What the camera read for an item the merchant confirmed (`brand\|name\|pack`), so later scans recognise it; one reading → one item per business |
 
 Child tables carry `business_id` and use composite foreign keys (`(business_id, x_id)`), so no row can point at another business's data.
 

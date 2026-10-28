@@ -4,7 +4,21 @@
 
 A merchant creates a business by picking a Qore Catalog sub-type, then turns that sub-type's template into a starter inventory. Every keep/swap/add/remove decision goes back to Qore Catalog as feedback, which is how the catalogue learns what Nigerian shops actually stock.
 
-Built: the API (`apps/api/src/modules/businesses`), the mp screens (`apps/mp/app/onboarding`) and the mobile screens (`apps/mobile/lib/features/business`: `SetupBusinessPage`, `StarterItemsPage`). Mobile sends the same body as mp — `toStarterItem` in `starter_items.dart` is a port of mp's, with tests for every outcome — and adds **Skip for now** (no starter list sent). Mobile creates the business only when step 2 finishes or is skipped, so **Back** to step 1 can still change the name and type (picks are kept unless the type changes); a failed starter submit retries against the business already created, never a second one.
+Built: the API (`apps/api/src/modules/businesses`), the mp wizard (`apps/mp/app/onboarding`) and the mobile screens (see [Mobile](#mobile)).
+
+## mp wizard
+
+A port of Qorelly's `/setup` wizard, with business types read from Qore Catalog instead of a hardcoded list:
+
+1. **Business type**: the verticals from `GET /api/catalog/verticals`, then a sub-type picker for the chosen vertical. Icons come from a map of known vertical codes; an unknown code gets a neutral grid icon.
+2. **Details**: the business name, under a summary card of the chosen type.
+3. **Starter items**: the sub-type's template (it needs no business), then a review. "Start fresh" skips it.
+
+Nothing is saved until **Finish setup** or **Skip & finish**: one server action creates the business, then applies the starter items, so going back never leaves a half-made business. If the business is created but the starter request fails, the wizard keeps the merchant's choices and a retry resends only the items. `/onboarding/<id>/items` does the starter step for a business that already exists.
+
+## Mobile
+
+`apps/mobile/lib/features/business`: `SetupBusinessPage` (name, industry and sub-type), then `StarterItemsPage`. Mobile sends the same starter body as mp — `toStarterItem` in `starter_items.dart` is a port of mp's, with tests for every outcome — and adds **Skip for now** (no starter list sent). Like mp, it creates the business only when step 2 finishes or is skipped, so **Back** to step 1 can still change the name and type (picks are kept unless the type changes); a failed starter submit retries against the business already created, never a second one.
 
 ## Routes (all need a Supabase JWT)
 

@@ -1,16 +1,20 @@
-import { cn } from "@tally/ui";
+import Link from "next/link";
+import { Button, QorellyLoader, SolarIcon, cn } from "@tally/ui";
 
-export const ONBOARDING_STEPS = ["Your business", "Starter items", "Confirm"] as const;
+export const ONBOARDING_STEPS = ["Business type", "Details", "Starter items"] as const;
 
 /** Qorelly /setup wizard shell: step header + segmented progress, centred column, sticky footer. */
 export function OnboardingShell({
   step,
   children,
   footer,
+  closeHref,
 }: {
   step: 1 | 2 | 3;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /** Shown when the merchant already has a business ("Add a business"), so they can leave setup. */
+  closeHref?: string;
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -25,10 +29,17 @@ export function OnboardingShell({
             </p>
             <div className="mt-2 flex max-w-xs gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={3} aria-valuenow={step}>
               {ONBOARDING_STEPS.map((label, i) => (
-                <span key={label} className={cn("h-1 flex-1 rounded-full", i < step ? "bg-primary" : "bg-gray-200")} />
+                <span key={label} className={cn("h-1 flex-1 rounded-full transition-colors duration-300", i < step ? "bg-primary" : "bg-gray-200")} />
               ))}
             </div>
           </div>
+          {closeHref && (
+            <Button asChild variant="ghost" size="icon" className="text-gray-500">
+              <Link href={closeHref} aria-label="Close setup">
+                <SolarIcon name="Close-Circle" iconStyle="Outline" size={22} />
+              </Link>
+            </Button>
+          )}
         </div>
       </header>
 
@@ -49,5 +60,25 @@ export function StepHeading({ title, subtitle }: { title: string; subtitle: stri
       <h1 className="text-3xl font-bold tracking-tight text-gray-900">{title}</h1>
       <p className="mt-2 text-base text-gray-500">{subtitle}</p>
     </div>
+  );
+}
+
+/** Qorelly's full-screen hold while setup saves. */
+export function SavingScreen({ message }: { message: string }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-white">
+      <QorellyLoader className="h-8 w-8 text-primary" />
+      <p className="text-sm text-gray-600">{message}</p>
+    </div>
+  );
+}
+
+/** Back in the sticky footer: a quiet text button, as in Qorelly V1. */
+export function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button type="button" variant="ghost" size="cta" className="text-gray-500 hover:text-gray-700" onClick={onClick}>
+      <SolarIcon name="Alt-Arrow-Left" iconStyle="Outline" size={16} className="text-gray-400" />
+      Back
+    </Button>
   );
 }

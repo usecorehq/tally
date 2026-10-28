@@ -1,0 +1,939 @@
+{
+  "info": {
+    "name": "Tally API (staging)",
+    "description": "Tally's backend: businesses and inventory, onboarding from Qore Catalog templates, and camera recognition (shelf scans, stock-take, point-to-sell identify). All routes are under `/api`.\n\n**Auth**: a Supabase access token (shared Qorelly project) sent as `Authorization: Bearer`. Run *Auth → Sign in* first: it stores `accessToken` for every request. Use a **test account**. Never put real credentials in a shared copy of this collection (fill `email` / `password` in your local Postman only, as secret variables).\n\n**Setup**: set `baseUrl` (staging `https://tally-api.qorecatalogue.com`, local `http://localhost:4100`), `supabaseUrl`, `supabaseAnonKey` (the project's public anon/publishable key), `email`, `password`.\n\n**Flow**: Sign in → Catalog: verticals → Businesses: create (saves `businessId`) → Catalog: templates → Businesses: starter inventory → Vision: shelf scan (attach a photo) → Vision: confirm scan. Requests save the ids they create (`businessId`, `scanId`, `runId`, `itemId`, `identifyReading`) for the next steps.\n\nCatalogue data comes from Qore Catalog (prices indicative, whole Naira). Tally never exposes its Qore Catalog key.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4100"
+    },
+    {
+      "key": "supabaseUrl",
+      "value": "https://iarynkpgyvjyvqvbdftp.supabase.co"
+    },
+    {
+      "key": "supabaseAnonKey",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "businessId",
+      "value": ""
+    },
+    {
+      "key": "itemId",
+      "value": ""
+    },
+    {
+      "key": "scanId",
+      "value": ""
+    },
+    {
+      "key": "runId",
+      "value": ""
+    },
+    {
+      "key": "qid",
+      "value": "QC-D4MP-3XTA-Y"
+    },
+    {
+      "key": "identifyReading",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Sign in (Supabase, test account)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabaseAnonKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{supabaseUrl}}/auth/v1/token?grant_type=password",
+              "host": [
+                "{{supabaseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "token"
+              ],
+              "query": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Signs in with email + password against the shared Supabase project and stores the access token in `accessToken`. Tokens expire (about 1 hour): run this again on 401.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json(); if (b.access_token) pm.collectionVariables.set('accessToken', b.access_token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Public liveness probe; also reports whether Qore Catalog is reachable.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Catalog (via Qore Catalog)",
+      "item": [
+        {
+          "name": "Verticals and sub-types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/verticals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "verticals"
+              ]
+            },
+            "description": "Public (needed before signup). Business types and sub-types; codes are what `subtypeCode` takes. Cached 10 min.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sub-type templates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/subtypes/supermarket/templates?suggestions=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "subtypes",
+                "supermarket",
+                "templates"
+              ],
+              "query": [
+                {
+                  "key": "suggestions",
+                  "value": "2",
+                  "description": "0-5 product suggestions per item"
+                }
+              ]
+            },
+            "description": "Starter template items for a sub-type. `suggestions` (0-5) adds catalogue products per item, with indicative prices. Cached 10 min."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/products?q=peak milk&limit=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "peak milk",
+                  "description": "2-200 chars"
+                },
+                {
+                  "key": "limit",
+                  "value": "5",
+                  "description": "1-100"
+                }
+              ]
+            },
+            "description": "Search the catalogue (semantic + typo-tolerant)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json(); const v = b.items && b.items[0] && b.items[0].qid; if (v) pm.collectionVariables.set('qid', typeof v === 'string' ? v : JSON.stringify(v));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/products/{{qid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "products",
+                "{{qid}}"
+              ]
+            },
+            "description": "One product with indicative price and variants. A merged product returns { qid, status: 'merged', mergedInto }."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Businesses & inventory",
+      "item": [
+        {
+          "name": "Create business",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses"
+              ]
+            },
+            "description": "Creates a business; you become its owner. `subtypeCode` must exist in Qore Catalog (see Verticals). Saves `businessId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Supermarket (Postman)\",\n  \"subtypeCode\": \"supermarket\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201/200', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const b = pm.response.json(); const v = b.id || (b.business && b.business.id); if (v) pm.collectionVariables.set('businessId', typeof v === 'string' ? v : JSON.stringify(v));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My businesses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses"
+              ]
+            },
+            "description": "Businesses you belong to, with your role."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get business",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}"
+              ]
+            },
+            "description": "One business (members only)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Inventory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/inventory",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "inventory"
+              ]
+            },
+            "description": "The business's inventory, by name. Saves the first item's id as `itemId`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json(); const v = (Array.isArray(b) ? b : (b.items || []))[0]?.id; if (v) pm.collectionVariables.set('itemId', typeof v === 'string' ? v : JSON.stringify(v));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Starter inventory (onboarding)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/inventory/starter",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "inventory",
+                "starter"
+              ]
+            },
+            "description": "Applies the onboarding template step: kept items become inventory with opening stock; every decision is sent to Qore Catalog as feedback. Safe to retry (clientRef). Prices are Naira strings.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"clientRef\": \"tpl-postman-1\",\n      \"templateItemName\": \"Garri\",\n      \"outcome\": \"accepted\",\n      \"suggestedQid\": \"{{qid}}\",\n      \"suggestedScore\": 0.62,\n      \"name\": \"Golden Penny Garri 1kg\",\n      \"price\": \"2600\",\n      \"openingQuantity\": 10\n    },\n    {\n      \"clientRef\": \"tpl-postman-2\",\n      \"templateItemName\": \"Spaghetti\",\n      \"outcome\": \"new_item\",\n      \"name\": \"Local Spaghetti 500g\",\n      \"price\": \"1200\",\n      \"openingQuantity\": 20\n    },\n    {\n      \"clientRef\": \"tpl-postman-3\",\n      \"templateItemName\": \"Beans\",\n      \"outcome\": \"removed\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Find by barcode",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/inventory/barcode/6156000024013",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "inventory",
+                "barcode",
+                "6156000024013"
+              ]
+            },
+            "description": "Scan to find. 404 when no active item has this barcode."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Link barcode",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/inventory/{{itemId}}/barcode",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "inventory",
+                "{{itemId}}",
+                "barcode"
+              ]
+            },
+            "description": "Link a barcode to an item (null unlinks). 409 when another item already has it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"6156000024013\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove (archive) item",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/inventory/{{itemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "inventory",
+                "{{itemId}}"
+              ]
+            },
+            "description": "Archives, never deletes: keeps Qore ID, name, price, history; a later shelf scan offers to restore it."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Vision",
+      "item": [
+        {
+          "name": "Shelf scan (photo → products)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/vision/shelf-scans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "vision",
+                "shelf-scans"
+              ]
+            },
+            "description": "Attach a shelf photo in `image` (JPEG/PNG/WebP, ≤ 4 MB, ~1600 px long edge). Muse Spark reads the products, Qore Catalog matches them; each detection says if it's in stock, archived (restore) or new. Takes a few seconds. Saves `scanId` when returned.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": [],
+                  "description": "Shelf photo"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json(); const v = b.scanId || b.id; if (v) pm.collectionVariables.set('scanId', typeof v === 'string' ? v : JSON.stringify(v));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get shelf scan",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/vision/shelf-scans/{{scanId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "vision",
+                "shelf-scans",
+                "{{scanId}}"
+              ]
+            },
+            "description": "A stored scan: detections, counts, candidate Qore IDs and scores, inventory match and decisions."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Confirm shelf scan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/vision/shelf-scans/{{scanId}}/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "vision",
+                "shelf-scans",
+                "{{scanId}}",
+                "confirm"
+              ]
+            },
+            "description": "One decision per detection: restock (itemId), restore (archived itemId), add (name + price, qid when from the catalogue), or skip. Use detection ids from the scan. Catalogue matches are sent to Qore Catalog as feedback.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decisions\": [\n    {\n      \"detectionId\": \"<detection id from the scan>\",\n      \"action\": \"add\",\n      \"qid\": \"{{qid}}\",\n      \"name\": \"Peak Full Cream Milk Powder 400g\",\n      \"price\": \"4500\",\n      \"quantity\": 6\n    },\n    {\n      \"detectionId\": \"<detection id>\",\n      \"action\": \"restock\",\n      \"itemId\": \"{{itemId}}\",\n      \"quantity\": 3\n    },\n    {\n      \"detectionId\": \"<detection id>\",\n      \"action\": \"skip\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start stock-take (agent)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/vision/stocktakes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "vision",
+                "stocktakes"
+              ]
+            },
+            "description": "Thorough stock-take of a shelf photo (same image rules). Returns at once with `runId`; poll *Get stock-take*. About 1-2 minutes.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": [],
+                  "description": "Shelf photo"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json(); const v = b.runId; if (v) pm.collectionVariables.set('runId', typeof v === 'string' ? v : JSON.stringify(v));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get stock-take",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/vision/stocktakes/{{runId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "vision",
+                "stocktakes",
+                "{{runId}}"
+              ]
+            },
+            "description": "Status (running, done, fallback, failed), the agent's steps so far, and when done the result in the shelf-scan shape. Confirm it with *Confirm shelf scan*."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json(); const v = b.scanId || (b.result && (b.result.scanId || b.result.id)); if (v) pm.collectionVariables.set('scanId', typeof v === 'string' ? v : JSON.stringify(v));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Identify (point-to-sell)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/vision/identify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "vision",
+                "identify"
+              ]
+            },
+            "description": "Which of my items is this? One product photo in `image` (≤ 1 MB, ~640 px). Matches the merchant's items first, Qore Catalog only when nothing in store matches. Nothing is stored; ~3 s. Try the barcode first. Saves the reading for *Identify confirm*.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": [],
+                  "description": "Product photo"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json(); const v = b.reading; if (v) pm.collectionVariables.set('identifyReading', typeof v === 'string' ? v : JSON.stringify(v));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Identify confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/businesses/{{businessId}}/vision/identify/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "businesses",
+                "{{businessId}}",
+                "vision",
+                "identify",
+                "confirm"
+              ]
+            },
+            "description": "The merchant confirmed which item it is: remembers the reading so the next identify is instant. `reading` = exactly what identify returned. 404 when the item isn't active.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reading\": {{identifyReading}},\n  \"itemId\": \"{{itemId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

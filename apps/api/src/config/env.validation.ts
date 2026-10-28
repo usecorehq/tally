@@ -48,6 +48,34 @@ class EnvVars {
   @IsString()
   QORE_CATALOG_API_KEY!: string;
 
+  // ── Meta Model API (camera recognition) ──
+  @IsString()
+  @IsOptional()
+  META_MODEL_BASE_URL: string = "https://api.meta.ai/v1";
+
+  /** Bearer key (LLM_…). Optional: without it only the vision routes are unavailable. */
+  @IsString()
+  @IsOptional()
+  META_MODEL_API_KEY?: string;
+
+  // ── Cloudflare R2 (tally-media; all four or crops are skipped) ──
+  @IsString()
+  @IsOptional()
+  R2_ACCOUNT_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  R2_ACCESS_KEY_ID?: string;
+
+  /** Token scoped to the tally-media bucket only. */
+  @IsString()
+  @IsOptional()
+  R2_SECRET_ACCESS_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  R2_BUCKET?: string;
+
   @IsArray()
   @IsString({ each: true })
   @IsOptional()

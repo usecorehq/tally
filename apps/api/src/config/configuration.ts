@@ -24,6 +24,21 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
       baseUrl: env.QORE_CATALOG_BASE_URL ?? "http://localhost:3100",
       apiKey: env.QORE_CATALOG_API_KEY!,
     },
+
+    meta: {
+      /** Meta Model API (Muse Spark, SAM 3.1) for camera recognition. Server-only key. */
+      baseUrl: env.META_MODEL_BASE_URL ?? "https://api.meta.ai/v1",
+      /** Unset → vision routes return 503; the rest of the API runs as normal. */
+      apiKey: env.META_MODEL_API_KEY,
+    },
+
+    r2: {
+      /** Cloudflare R2 (tally-media bucket) for Tally's own files: product crops. Server-only. */
+      accountId: env.R2_ACCOUNT_ID,
+      accessKeyId: env.R2_ACCESS_KEY_ID,
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+      bucket: env.R2_BUCKET,
+    },
   };
 }
 

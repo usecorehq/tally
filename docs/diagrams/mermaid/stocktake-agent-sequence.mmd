@@ -1,0 +1,39 @@
+%%{init: {"theme": "neutral"} }%%
+sequenceDiagram
+    autonumber
+    actor M as Merchant
+    participant P as mobile / mp
+    participant A as Tally apps/api
+    participant S as Meta Model API
+    participant Q as Qore Catalog
+    participant D as Postgres (tally)
+
+    M->>P: photograph shelf (thorough stock-take)
+    P->>A: POST /api/businesses/:id/vision/stocktakes [multipart, Bearer JWT]
+    A->>D: insert vision_agent_runs (running)
+    A-->>P: 202 {runId}
+    Note over A,D: In the background
+    A->>S: first pass: muse-spark-1.3 read + sam-3.1 counts
+    A->>Q: POST /v1/match (first pass)
+    A->>D: step: baseline
+    loop until submit_stocktake, no more tool calls, or 12 turns / 150 s
+        A->>S: muse-spark-1.3 + tools, photo + checklist + history<br/>[store: false, encrypted reasoning replay]
+        S-->>A: thoughts + tool calls (several per turn)
+        par tools run together
+            A->>A: zoom → close-up image back to the model
+        and
+            A->>Q: search_catalogue → /v1/match, retry wording
+        and
+            A->>S: count_units → sam-3.1
+        and
+            A->>A: find_in_store / record_line (checked)
+        end
+        A->>D: steps: thought + each tool call
+    end
+    A->>D: save scan + detections with evidence, finish run (done / fallback)
+    loop every 1–2 s
+        P->>A: GET …/stocktakes/:runId
+        A-->>P: status, live step trace, result when done
+    end
+    M->>P: review, confirm
+    P->>A: POST …/shelf-scans/:scanId/confirm (human sign-off)
