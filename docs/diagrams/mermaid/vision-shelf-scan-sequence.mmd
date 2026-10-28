@@ -8,7 +8,7 @@ sequenceDiagram
     participant Q as Qore Catalog
     participant D as Postgres (tally)
 
-    Note over M,D: BUILT: steps 1-9 and 11 (stateless read, SAM count, match). PLANNED: storing scans, confirm.
+    Note over M,D: BUILT. PLANNED: crops to R2 and POST /v1/images after feedback.
     M->>P: photograph shelf
     P->>P: scale to 1600 px, JPEG ~400 KB
     P->>A: POST /api/businesses/:id/vision/shelf-scans [multipart, Bearer JWT]
@@ -22,10 +22,10 @@ sequenceDiagram
         Q-->>A: candidates + indicative ₦ price (plausible ones kept)
     end
     A->>D: insert vision_scans + vision_detections
-    A-->>P: detections with counts, boxes, candidates
-    M->>P: accept / correct / add own / remove, set qty + price
+    A-->>P: scanId + detections (counts, boxes, candidates, inventory match)
+    M->>P: per item: restock / restore / add to store / skip, set qty (+ name, price)
     P->>A: POST …/shelf-scans/:scanId/confirm {decisions[]}
-    A->>D: new → inventory_items (source photo) + opening movement<br/>stocked → restock movement
-    A->>Q: POST /v1/feedback, source "photo" (keyed by detection id)
-    Note over A,Q: Best-effort: a catalogue failure never fails the confirm.
-    A-->>P: {created, restocked, removed, invalid, feedback}
+    A->>D: one transaction: add → inventory_items (source photo) + opening movement<br/>restock / restore → restock movement, remember reading
+    A->>Q: POST /v1/feedback, source "photo" (clientRef scanId:position)
+    Note over A,Q: Best-effort: a catalogue failure never undoes stock, unsent feedback retries on the next confirm.
+    A-->>P: {created, restocked, restored, skipped, invalid, feedback}

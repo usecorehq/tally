@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  Body,
   Controller,
+  Get,
   HttpCode,
   Param,
   ParseFilePipeBuilder,
@@ -14,6 +16,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { BusinessParams } from "../businesses/businesses.dto";
 import { VisionExceptionFilter } from "./vision-errors";
+import { ConfirmBody, ScanParams } from "./vision.dto";
 import { VisionService } from "./vision.service";
 
 export const MAX_SHELF_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -71,5 +74,35 @@ export class VisionController {
   ) {
     if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
     return this.vision.recogniseShelf(businessId, user.sub, file.buffer);
+  }
+
+  @Get("shelf-scans/:scanId")
+  @ApiOperation({ summary: "A stored shelf scan: detections, counts, candidate Qore IDs + scores, inventory match and decisions." })
+  getScan(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
+    return this.vision.getScan(businessId, user.sub, scanId);
+  }
+
+  @Post("shelf-scans/:scanId/confirm")
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      "Apply the merchant's decisions: restock an item, restore a removed one, add their own copy (never a duplicate), or skip. Remembers each reading for later scans and sends photo feedback to Qore Catalog. Safe to retry.",
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        created: 2,
+        restocked: 3,
+        restored: 0,
+        skipped: 1,
+        alreadyDecided: 0,
+        invalid: [],
+        scanConfirmed: true,
+        feedback: { sent: 6, recorded: 6, duplicates: 0 },
+      },
+    },
+  })
+  confirm(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams, @Body() body: ConfirmBody) {
+    return this.vision.confirm(businessId, user.sub, scanId, body.decisions);
   }
 }

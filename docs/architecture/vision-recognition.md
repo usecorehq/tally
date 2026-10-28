@@ -2,7 +2,7 @@
 
 > Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg).
 >
-> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, and storing each scan. **Planned:** crops in R2, confirm → inventory + feedback, and point to sell. Planned endpoint shapes may change before they ship.
+> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, and confirm → inventory + feedback. **Planned:** crops in R2 and their upload to Qore Catalog, and point to sell. Planned endpoint shapes may change before they ship.
 
 The merchant points the phone camera at products and Tally recognises them. There are two flows:
 
@@ -49,13 +49,16 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
 
 1. The device scales the photo to a 1600 px long edge and encodes it as JPEG (quality ~80, about 400 KB). It sends the image as multipart.
 2. The API runs Muse Spark on the image, then SAM for each product in parallel.
-3. The API sends all distinct products to `POST /v1/match` in one call and keeps the top 3 candidates per product. A product the business already stocks (same Qore ID) is marked as a restock.
+3. The API sends all distinct products to `POST /v1/match` in one call and keeps the plausible candidates per product. It then checks the business's own inventory (see below).
 4. The API stores the scan and its detections, then returns them.
-5. The merchant accepts, corrects, adds as their own item, or removes each detection, and sets the quantity and price.
-6. On confirm:
-   - A new product becomes an `inventory_items` row (`source = 'photo'`) with an `opening` stock movement.
-   - A product the business already stocks gets a `restock` movement.
-   - Every decision goes to Qore Catalog as feedback, keyed by the detection id. Retries are safe, and as in [onboarding](onboarding.md), a catalogue outage never fails the confirm.
+5. For each detection the merchant picks an action and sets the quantity: restock the matching item, restore an item they removed, add it to the store (from a catalogue candidate or as a new item, with name and price prefilled), or skip it.
+6. On confirm (one transaction):
+   - `add` creates the merchant's copy (`source = 'photo'`, with the Qore ID when picked from the catalogue) and an `opening` stock movement. It never duplicates an active item with the same Qore ID or name: that item is restocked instead. The catalogue picture is not copied; it is shown from Qore Catalog by Qore ID.
+   - `restock` adds a `restock` movement. With a `qid`, a hand-typed item is linked to that product so later scans match exactly.
+   - `restore` un-archives the item (keeping its name, price and history), then restocks it.
+   - Every non-skip decision remembers the reading for that item (`inventory_item_readings`).
+   - Then every decided line goes to Qore Catalog as `source: "photo"` feedback, clientRef `<scanId>:<position>`. As in [onboarding](onboarding.md), a catalogue outage never undoes the stock changes; unsent feedback goes out on the next confirm of the scan.
+   - Retries are safe: decided detections are left alone, and stock movements are keyed by detection id.
 
 ## Point to sell
 
@@ -132,18 +135,52 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
   5. `null`: not in store. Offer the catalogue candidates ("Add to my store"), or a new item named from the label when there are none.
 - An empty shelf returns `detections: []`.
 
+### `GET /api/businesses/:id/vision/shelf-scans/:scanId` (built)
+
+The stored scan with its detections in position order: what was read, the counts, boxes, `candidates` as `[{ qid, score }]` (no names or prices; fetch them from `GET /api/catalog/products/:qid`), the inventory match, and each decision (`action`, `outcome`, `confirmedQid`, `itemId`, `quantity`, `decidedAt`, `feedbackSentAt`). 404 when the scan isn't this business's.
+
+### `POST /api/businesses/:id/vision/shelf-scans/:scanId/confirm` (built)
+
+```json
+{
+  "decisions": [
+    { "detectionId": "…", "action": "restock", "itemId": "…", "quantity": 6 },
+    { "detectionId": "…", "action": "restock", "itemId": "…", "qid": "QC-7K2M-9XQ4-R", "quantity": 2 },
+    { "detectionId": "…", "action": "restore", "itemId": "…", "quantity": 4 },
+    { "detectionId": "…", "action": "add", "qid": "QC-7K2M-9XQ4-R", "name": "Peak Milk 400g", "price": "4500", "quantity": 12 },
+    { "detectionId": "…", "action": "add", "name": "Lady B Custard 2kg", "price": "6800", "quantity": 3 },
+    { "detectionId": "…", "action": "skip" }
+  ]
+}
+```
+
+- **`action`:**
+  - `restock`: needs `itemId`, an active item. Usually the detection's `inventoryItemId`; with `qid` on a hand-typed item it also links the item.
+  - `restore`: needs `itemId`, an archived item.
+  - `add`: needs `name` and `price` (Naira string). Add `qid` when the merchant picked a catalogue candidate.
+  - `skip`: nothing else.
+- **`quantity`:** whole units to add, required unless `skip`; `0` changes no stock.
+- **Limits:** 1–50 decisions per request.
+- **Returns 200** `{ created, restocked, restored, skipped, alreadyDecided, invalid: [{ detectionId, reason }], scanConfirmed, feedback }`.
+  - A decision that can't apply is listed in `invalid` and the others still apply. Reasons include: item archived, item not archived, linked to another product, another active item already has that product or barcode, not in this scan.
+  - `scanConfirmed` is true once every detection is decided.
+  - `feedback` is `{ sent, recorded, duplicates }`, or `{ sent: 0, error }` when Qore Catalog was down.
+- **Errors:** 400 for an invalid body, 403 for a non-member, 404 for an unknown scan.
+
+### Removing an item (built)
+
+`DELETE /api/businesses/:id/inventory/:itemId` archives the item; nothing is ever deleted. It keeps its Qore ID, name, price and stock history, so a later scan of the same product offers to restore it. 404 when no active item has that id.
+
 ### Planned
 
 | Route | Body | Returns |
 |---|---|---|
-| `GET /api/businesses/:id/vision/shelf-scans/:scanId` | none | The same shape, plus each detection's decision |
-| `POST /api/businesses/:id/vision/shelf-scans/:scanId/confirm` | `{ decisions: [{ detectionId, outcome, qid?, name?, price, quantity }] }` | `{ created, restocked, removed, invalid, feedback }` |
 | `POST /api/businesses/:id/vision/identify` | multipart `image` (≤ 300 KB) | `{ match: { itemId, name, price, confidence } \| null }` |
 
 Notes on the fields:
 
 - Boxes use 0–1000 coordinates of the uploaded image.
-- `outcome` is one of `accepted`, `corrected`, `new_item`, `removed`, as in onboarding.
+- Feedback `outcome` is derived from the action: the top candidate confirmed is `accepted`, another Qore ID is `corrected`, no Qore ID is `new_item`, and `skip` is `removed`.
 - `price` is an indicative catalogue price in whole Naira. It is not a sale amount.
 
 Errors:
@@ -165,8 +202,8 @@ Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–2
 Migration `0004_add_vision_scans`, all in the `tally` schema. Child rows carry `business_id` and use composite foreign keys, like the rest of the schema. Tally keeps its own readings and only Qore IDs + match scores from the catalogue: no catalogue names or prices.
 
 - **`vision_scans`** (built): business, status (`open`, `confirmed`), the photo's sha256 and size, model ids, time per stage, `created_by`.
-- **`vision_detections`** (built): the scan and position; brand, name, pack and look as read; Spark's and SAM's counts; boxes and confidence; candidates as `[{qid, score}]`; the item it looks like and how it was found. *Planned:* the merchant's decision (outcome, confirmed Qore ID, item, quantity, when feedback was sent).
-- **`inventory_item_readings`** (built table, written on confirm, which is planned): `brand|name|pack` as read → the merchant's item. One reading maps to one item per business.
+- **`vision_detections`** (built): the scan and position; brand, name, pack and look as read; Spark's and SAM's counts; boxes and confidence; candidates as `[{qid, score}]`; the item it looks like and how it was found. The merchant's decision (migration `0005_add_vision_decisions`): action, feedback outcome, confirmed Qore ID, item, quantity, who decided and when, and when feedback was sent.
+- **`inventory_item_readings`** (written on confirm): `brand|name|pack` as read → the merchant's item. One reading maps to one item per business.
 
 Identify calls are not stored.
 

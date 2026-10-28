@@ -113,6 +113,22 @@ export class BusinessesService {
     return item;
   }
 
+  /**
+   * Remove an item from the shop: archive it, never delete. The row keeps its
+   * Qore ID, name, price and stock history, so a later shelf scan of the same
+   * product offers to restore it instead of creating a duplicate.
+   */
+  async archiveItem(businessId: string, userId: string, itemId: string): Promise<schema.InventoryItem> {
+    await this.getForMember(businessId, userId);
+    const [item] = await this.db
+      .update(inventoryItems)
+      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(inventoryItems.businessId, businessId), eq(inventoryItems.id, itemId), isNull(inventoryItems.archivedAt)))
+      .returning();
+    if (!item) throw new NotFoundException(`No item ${itemId}`);
+    return item;
+  }
+
   /** Link a barcode to an item (null unlinks). One active item per barcode per business. */
   async setBarcode(businessId: string, userId: string, itemId: string, code: string | null): Promise<schema.InventoryItem> {
     await this.getForMember(businessId, userId);
@@ -207,8 +223,9 @@ export class BusinessesService {
    * The catalogue takes up to 100 feedback items per call and validates a batch
    * as a whole, so on a 400 the batch is resent item by item: one bad item must
    * not drop everyone else's feedback. Retries are safe (deduped by clientRef).
+   * Also used by the shelf-scan confirm.
    */
-  private async sendFeedback(items: FeedbackItem[]): Promise<StarterResult["feedback"]> {
+  async sendFeedback(items: FeedbackItem[]): Promise<StarterResult["feedback"]> {
     const result = { sent: 0, recorded: 0, duplicates: 0 };
     const send = async (batch: FeedbackItem[]) => {
       const res = await this.catalog.client.sendFeedback(batch);

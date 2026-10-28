@@ -23,6 +23,22 @@ const token = jwt.sign({ sub: USER, role: "authenticated", aud: "authenticated" 
 const auth = { Authorization: `Bearer ${token}` };
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64)]);
 const path = `/api/businesses/${BIZ}/vision/shelf-scans`;
+const SCAN = "00000000-0000-4000-8000-0000000000c1";
+const DET = "00000000-0000-4000-8000-0000000000d1";
+const pending = {
+  detectionId: DET,
+  scanId: SCAN,
+  position: 0,
+  brand: "Peak",
+  name: "Full Cream Milk Powder",
+  pack: "400g",
+  candidates: [{ qid: "QC-7K2M-9XQ4-R", score: 0.88 }],
+  outcome: "accepted" as const,
+  confirmedQid: "QC-7K2M-9XQ4-R",
+  quantity: 6,
+  itemName: "Peak Milk 400g",
+  price: "4500.00",
+};
 
 const sparkReply = (products: unknown[]) =>
   new Response(
@@ -53,11 +69,27 @@ const metaApi = (spark: () => Response, sam: () => Response) => async (_url: unk
   JSON.parse(String(init?.body)).model === "sam-3.1" ? sam() : spark();
 
 async function app(apiKey: string | undefined) {
-  const businesses = { listInventory: jest.fn(async () => [{ id: "item-a", name: "Peak 400g", variantLabel: null, coreQid: "QC-A" }]) };
+  const businesses = {
+    listInventory: jest.fn(async () => [{ id: "item-a", name: "Peak 400g", variantLabel: null, coreQid: "QC-A" }]),
+    getForMember: jest.fn(async () => ({ id: BIZ, subtypeCode: "supermarket", role: "owner" })),
+    sendFeedback: jest.fn(async () => ({ sent: 1, recorded: 1, duplicates: 0 }) as { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string }),
+  };
   const repo = {
     readings: jest.fn(async () => [] as { itemId: string; readingKey: string }[]),
     saveScan: jest.fn(async () => "scan-1"),
     archivedLinkedItems: jest.fn(async () => [] as { id: string; name: string; variantLabel: string | null; coreQid: string | null }[]),
+    getScan: jest.fn(async () => ({ id: SCAN, detections: [] })),
+    confirm: jest.fn(async () => ({
+      created: 1,
+      restocked: 0,
+      restored: 0,
+      skipped: 0,
+      alreadyDecided: 0,
+      invalid: [],
+      scanConfirmed: true,
+      pendingFeedback: [pending],
+    })),
+    markFeedbackSent: jest.fn(async () => undefined),
   };
   const catalog = {
     client: {
@@ -251,5 +283,95 @@ describe("VisionController without META_MODEL_API_KEY", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
     await nest.close();
+  });
+});
+
+describe("VisionController confirm + get (HTTP)", () => {
+  let nest: INestApplication;
+  let ctx: Awaited<ReturnType<typeof app>>;
+  const confirmPath = `${path}/${SCAN}/confirm`;
+  const add = { detectionId: DET, action: "add", qid: "QC-7K2M-9XQ4-R", name: "Peak Milk 400g", price: "4500", quantity: 6 };
+
+  beforeAll(async () => {
+    ctx = await app("LLM_000_not-a-real-key");
+    nest = ctx.nest;
+  });
+  afterAll(() => nest.close());
+  beforeEach(() => {
+    ctx.repo.confirm.mockClear();
+    ctx.repo.markFeedbackSent.mockClear();
+    ctx.businesses.sendFeedback.mockClear();
+  });
+
+  it.each([
+    ["get", `${path}/${SCAN}`],
+    ["post", confirmPath],
+  ] as const)("%s %s needs a Supabase JWT", async (method, p) => {
+    await request(nest.getHttpServer())[method](p).expect(401);
+  });
+
+  it("get checks membership and returns the stored scan", async () => {
+    const res = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
+    expect(ctx.businesses.getForMember).toHaveBeenCalledWith(BIZ, USER);
+    expect(ctx.repo.getScan).toHaveBeenCalledWith(BIZ, SCAN);
+    expect(res.body).toEqual({ id: SCAN, detections: [] });
+  });
+
+  it("confirm applies the decisions, sends photo feedback and marks it sent", async () => {
+    const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+    expect(ctx.repo.confirm).toHaveBeenCalledWith(BIZ, SCAN, USER, [expect.objectContaining(add)]);
+    expect(ctx.businesses.sendFeedback).toHaveBeenCalledWith([
+      expect.objectContaining({
+        clientRef: `${SCAN}:0`,
+        source: "photo",
+        subtypeCode: "supermarket",
+        outcome: "accepted",
+        confirmedQid: "QC-7K2M-9XQ4-R",
+        quantity: 6,
+        unitPriceNgn: 4500,
+      }),
+    ]);
+    expect(ctx.repo.markFeedbackSent).toHaveBeenCalledWith([DET]);
+    expect(res.body).toEqual({
+      created: 1,
+      restocked: 0,
+      restored: 0,
+      skipped: 0,
+      alreadyDecided: 0,
+      invalid: [],
+      scanConfirmed: true,
+      feedback: { sent: 1, recorded: 1, duplicates: 0 },
+    });
+  });
+
+  it("a catalogue outage keeps the stock changes and leaves feedback pending", async () => {
+    ctx.businesses.sendFeedback.mockResolvedValueOnce({ sent: 0, error: "Catalogue feedback not sent; inventory was saved" });
+    const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+    expect(res.body.feedback).toEqual({ sent: 0, error: "Catalogue feedback not sent; inventory was saved" });
+    expect(ctx.repo.markFeedbackSent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no decisions", { decisions: [] }],
+    ["unknown action", { decisions: [{ ...add, action: "sell" }] }],
+    ["add without a name", { decisions: [{ ...add, name: undefined }] }],
+    ["add with a float price", { decisions: [{ ...add, price: "4500.555" }] }],
+    ["restock without an item", { decisions: [{ detectionId: DET, action: "restock", quantity: 2 }] }],
+    ["restore without an item", { decisions: [{ detectionId: DET, action: "restore", quantity: 2 }] }],
+    ["a fractional quantity", { decisions: [{ ...add, quantity: 1.5 }] }],
+    ["a missing quantity", { decisions: [{ ...add, quantity: undefined }] }],
+    ["a bad qid", { decisions: [{ ...add, qid: "QC-BAD" }] }],
+    ["a non-uuid detection", { decisions: [{ ...add, detectionId: "d1" }] }],
+  ])("confirm rejects %s before touching stock", async (_label, body) => {
+    await request(nest.getHttpServer()).post(confirmPath).set(auth).send(body).expect(400);
+    expect(ctx.repo.confirm).not.toHaveBeenCalled();
+  });
+
+  it("skip needs no quantity", async () => {
+    await request(nest.getHttpServer())
+      .post(confirmPath)
+      .set(auth)
+      .send({ decisions: [{ detectionId: DET, action: "skip" }] })
+      .expect(200);
   });
 });
