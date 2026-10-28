@@ -9,7 +9,7 @@ Tally stores its data in the **`tally` schema of the shared Qorelly Supabase Pos
 | Thing | Where |
 |---|---|
 | Drizzle schema | `packages/db/src/schema.ts` — `export const tally = pgSchema("tally")` |
-| Client | `packages/db/src/client.ts` — `buildTallyDb(url)` on `postgres.js`; `prepare: false` on the Supabase pooler |
+| Client | `packages/db/src/client.ts` — `buildTallyDb(url)` on `postgres.js`; `prepare: false` on the Supabase pooler; at most 5 connections, idle ones closed after 20 s, 15 s connect timeout. The API's `SUPABASE_DB_URL` should use the **transaction pooler, port 6543**: the session pooler (5432) has 15 client slots shared with other Qorelly projects, and idle sessions hold them. `pnpm db:migrate` can keep using 5432 |
 | Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business |
 | Config | `packages/db/drizzle.config.ts`, reads `SUPABASE_DB_URL` from the root `.env`, falling back to `apps/api/.env` |
 | API access | `DrizzleModule` provides the client as `TALLY_DB` |

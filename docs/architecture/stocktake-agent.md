@@ -112,7 +112,17 @@ To compare the agent with the quick scan on your own photos with hand-counted tr
 ## Running it
 
 - **No separate service:** the agent is TypeScript in `apps/api` (`modules/vision/stocktake/`). It calls the Meta Model API over HTTPS, like the rest of the vision module, and needs the same env (`META_MODEL_API_KEY`, `QORE_CATALOG_*`, optionally `R2_*`).
-- **Host:** runs live in the API process, so the API must run on a long-lived host (a container or VM), not short-lived serverless functions. A restart loses runs in progress. On boot, and when such a run is read, runs still `running` after 10 minutes are marked `failed` ("Interrupted: the API restarted during the run"). A job queue is the fix when there is more than one API instance.
+- **Host:** runs live in the API process, so the API must run on a long-lived host (a container or VM), not short-lived serverless functions. A job queue is the fix when there is more than one API instance.
+- **Every run ends.** Each phase is raced against a deadline (`STOCKTAKE_DEADLINES` in `vision.service.ts`), so a hung model call or a database connection that never comes can't leave a run `running`:
+
+  | Phase | Deadline | On timeout |
+  |---|---|---|
+  | First pass | 120 s | `failed`: "First pass failed: First pass took longer than 120 s" |
+  | Whole run (the agent gets what the first pass left) | 240 s | `fallback` to the first pass: "Agent stopped: Run deadline reached" |
+  | Each result or status write | 20 s, status write tried 3 times | `failed`: "Could not save the result: …" |
+  | Restart, or a status write that never landed | — | On boot, and when the run is read, a run still `running` after 5 minutes is marked `failed` ("Interrupted: the API restarted during the run") |
+
+- **Database connections:** the Supabase pooler is shared with other Qorelly projects, and the session-mode pool is 15 clients. A Tally process holding idle session-mode connections can starve a background run of a connection. The API should connect through the **transaction pooler** (port `6543`), and the client keeps at most 5 connections and closes idle ones after 20 s (`packages/db/src/client.ts`).
 
 ## Planned
 
