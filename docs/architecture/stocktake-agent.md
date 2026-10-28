@@ -90,6 +90,8 @@ Migration `0006_add_stocktake_agent`:
 
 At Muse Spark's Standard pricing, a run costs about $0.12 on top of the first pass. Most of that is input: the photo and history are re-sent every turn, so the agent batches tool calls rather than taking many small turns. (A turn with the photo took 5–19 s in an early probe.)
 
+To compare the agent with the quick scan on your own photos with hand-counted truth, see [Vision benchmark](../../apps/api/README.md#vision-benchmark).
+
 ## Running it
 
 - **No separate service:** the agent is TypeScript in `apps/api` (`modules/vision/stocktake/`). It calls the Meta Model API over HTTPS, like the rest of the vision module, and needs the same env (`META_MODEL_API_KEY`, `QORE_CATALOG_*`, optionally `R2_*`).
