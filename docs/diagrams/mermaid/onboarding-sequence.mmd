@@ -9,16 +9,19 @@ sequenceDiagram
 
     W->>A: GET /api/catalog/verticals (public, cached 10 min)
     A->>Q: GET /v1/business-taxonomy
-    M->>W: shop name + sub-type (e.g. supermarket)
-    W->>A: POST /api/businesses {name, subtypeCode} + Bearer JWT
-    A->>A: sub-type must exist in the taxonomy → vertical
-    A->>D: insert business + owner membership (one transaction)
-    A-->>W: 201 business
+    M->>W: business type + sub-type (e.g. supermarket), then shop name
 
     W->>A: GET /api/catalog/subtypes/supermarket/templates?suggestions=2
     A->>Q: GET templates (first call ~5 s, then cached)
     A-->>W: template items with suggested products + prices
     M->>W: keep / swap / add own / remove each item, set prices + opening stock
+    Note over M,W: Nothing is saved yet: Back is free
+
+    M->>W: Finish setup (or Skip & finish)
+    W->>A: POST /api/businesses {name, subtypeCode} + Bearer JWT
+    A->>A: sub-type must exist in the taxonomy → vertical
+    A->>D: insert business + owner membership (one transaction)
+    A-->>W: 201 business
 
     W->>A: POST /api/businesses/:id/inventory/starter {items[] with clientRef}
     A->>A: planStarterInventory → rows + feedback (+ invalid list)
