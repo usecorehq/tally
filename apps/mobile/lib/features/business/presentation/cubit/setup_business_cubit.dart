@@ -16,14 +16,20 @@ class SetupBusinessCubit extends Cubit<SetupBusinessState> {
   final GetBusinessVerticals _getVerticals;
   final CreateBusiness _createBusiness;
 
-  Future<void> load() async {
+  /// [subtypeCode]: an already-created business's type, shown picked.
+  Future<void> load({String? subtypeCode}) async {
     emit(state.copyWith(verticalsStatus: VerticalsStatus.loading));
     final result = await _getVerticals(const NoParams());
     emit(
-      result.fold(
-        (f) => state.copyWith(verticalsStatus: VerticalsStatus.error, verticalsError: f.message),
-        (list) => state.copyWith(verticalsStatus: VerticalsStatus.ready, verticals: list),
-      ),
+      result.fold((f) => state.copyWith(verticalsStatus: VerticalsStatus.error, verticalsError: f.message), (list) {
+        final vertical = list.where((v) => v.subtypes.any((s) => s.code == subtypeCode)).firstOrNull;
+        return state.copyWith(
+          verticalsStatus: VerticalsStatus.ready,
+          verticals: list,
+          verticalCode: vertical?.code,
+          subtypeCode: vertical == null ? null : subtypeCode,
+        );
+      }),
     );
   }
 

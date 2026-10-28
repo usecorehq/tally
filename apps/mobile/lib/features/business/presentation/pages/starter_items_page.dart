@@ -14,23 +14,27 @@ import 'setup_business_page.dart';
 /// Onboarding step 2 (apps/mp's items wizard): pick, confirm, done. [onDone]
 /// opens the app on the new business.
 class StarterItemsPage extends StatelessWidget {
-  const StarterItemsPage({super.key, required this.business, required this.onDone});
+  const StarterItemsPage({super.key, required this.business, required this.onDone, required this.onBack});
   final Business business;
   final VoidCallback onDone;
+
+  /// Back to step 1 (shown read-only: the business exists).
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => sl<StarterItemsCubit>(param1: business)..load(),
-      child: _StarterItemsView(business: business, onDone: onDone),
+      child: _StarterItemsView(business: business, onDone: onDone, onBack: onBack),
     );
   }
 }
 
 class _StarterItemsView extends StatelessWidget {
-  const _StarterItemsView({required this.business, required this.onDone});
+  const _StarterItemsView({required this.business, required this.onDone, required this.onBack});
   final Business business;
   final VoidCallback onDone;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +55,10 @@ class _StarterItemsView extends StatelessWidget {
               body: error,
               action: V15Button('Try again', tone: V15Tone.quiet, onPressed: cubit.load),
             ),
-            _Footer(secondary: AuthTextAction('Skip for now', quiet: true, onTap: onDone)),
+            _Footer(
+              secondary: V15Button('Back', tone: V15Tone.soft, height: 48, onPressed: onBack),
+              primary: AuthTextAction('Skip for now', quiet: true, onTap: onDone),
+            ),
           ),
           StarterItemsState(step: StarterStep.confirm) => (
             _Confirm(business: business, state: state),
@@ -68,7 +75,8 @@ class _StarterItemsView extends StatelessWidget {
           _ => (
             _Pick(state: state),
             _Footer(
-              secondary: AuthTextAction('Skip for now', quiet: true, onTap: onDone),
+              secondary: V15Button('Back', tone: V15Tone.soft, height: 48, onPressed: onBack),
+              skip: AuthTextAction('Skip for now', quiet: true, onTap: onDone),
               primary: V15Button('Continue', height: 48, onPressed: cubit.next),
             ),
           ),
@@ -92,8 +100,11 @@ class _StarterItemsView extends StatelessWidget {
 }
 
 class _Footer extends StatelessWidget {
-  const _Footer({required this.secondary, this.primary});
+  const _Footer({required this.secondary, this.skip, this.primary});
   final Widget secondary;
+
+  /// A quiet way out, beside the primary.
+  final Widget? skip;
   final Widget? primary;
 
   @override
@@ -103,7 +114,7 @@ class _Footer extends StatelessWidget {
       Divider(height: 1, color: V15.of(context).divider),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Row(children: [secondary, const Spacer(), ?primary]),
+        child: Row(children: [secondary, const Spacer(), ?skip, if (skip != null) const SizedBox(width: 8), ?primary]),
       ),
     ],
   );
@@ -223,10 +234,13 @@ class _StarterRowTile extends StatelessWidget {
             ),
           ),
           if (choice.keep) ...[
-            const SizedBox(height: 12),
-            _ProductKey(row: row, choice: choice, onChoose: (qid) => cubit.choose(row.key, qid)),
+            // Nothing in the catalogue for this item: it can only be their own product.
+            if (row.candidates.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _ProductKey(row: row, choice: choice, onChoose: (qid) => cubit.choose(row.key, qid)),
+            ],
             if (choice.isOwn) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: row.candidates.isEmpty ? 12 : 8),
               _SmallField(
                 hint: 'Name, e.g. ${row.templateName}',
                 initial: choice.ownName,

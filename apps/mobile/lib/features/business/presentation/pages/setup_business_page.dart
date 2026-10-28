@@ -26,29 +26,35 @@ const _verticalIcons = <String, (IconData, IconData)>{
 
 /// Step 1: name the business and pick its Qore Catalog type. [onCreated] takes
 /// the new business to the next step.
+///
+/// [existing]: Back from step 2. The business already exists and the API has
+/// no edit route yet, so it is shown read-only and Continue reuses it — a
+/// second create would make a duplicate business.
 class SetupBusinessPage extends StatelessWidget {
-  const SetupBusinessPage({super.key, required this.onCreated});
+  const SetupBusinessPage({super.key, required this.onCreated, this.existing});
   final ValueChanged<Business> onCreated;
+  final Business? existing;
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => sl<SetupBusinessCubit>()..load(),
-      child: _SetupBusinessView(onCreated: onCreated),
+      create: (_) => sl<SetupBusinessCubit>()..load(subtypeCode: existing?.subtypeCode),
+      child: _SetupBusinessView(onCreated: onCreated, existing: existing),
     );
   }
 }
 
 class _SetupBusinessView extends StatefulWidget {
-  const _SetupBusinessView({required this.onCreated});
+  const _SetupBusinessView({required this.onCreated, this.existing});
   final ValueChanged<Business> onCreated;
+  final Business? existing;
 
   @override
   State<_SetupBusinessView> createState() => _SetupBusinessViewState();
 }
 
 class _SetupBusinessViewState extends State<_SetupBusinessView> {
-  final _name = TextEditingController();
+  late final _name = TextEditingController(text: widget.existing?.name);
 
   /// Qorelly rule: Continue stays enabled; pressing it flags what's missing.
   bool _attempted = false;
@@ -69,6 +75,7 @@ class _SetupBusinessViewState extends State<_SetupBusinessView> {
   }
 
   void _submit(SetupBusinessState state) {
+    if (widget.existing case final b?) return widget.onCreated(b);
     setState(() => _attempted = true);
     if (_name.text.trim().isEmpty || state.subtypeCode.isEmpty) return;
     context.read<SetupBusinessCubit>().submit(_name.text);
@@ -98,7 +105,15 @@ class _SetupBusinessViewState extends State<_SetupBusinessView> {
                     ),
                     const SizedBox(height: 24),
                     if (state.error != null) ...[AuthMessage(state.error!), const SizedBox(height: 16)],
+                    if (widget.existing != null) ...[
+                      const AuthMessage(
+                        'Your business is set up. You can change its name and type later.',
+                        tone: AuthTone.success,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     AuthField(
+                      enabled: widget.existing == null,
                       label: 'Business name',
                       hint: 'e.g. Mama Nkechi Supermarket',
                       controller: _name,
@@ -110,7 +125,7 @@ class _SetupBusinessViewState extends State<_SetupBusinessView> {
                     const SizedBox(height: 24),
                     Text('Industry', style: V15.label.copyWith(color: c.gray900)),
                     const SizedBox(height: 8),
-                    _Industries(state: state),
+                    _Industries(state: state, locked: widget.existing != null),
                     if (state.vertical case final v? when v.subtypes.length > 1) ...[
                       const SizedBox(height: 24),
                       Text('What kind of ${v.label.toLowerCase()}?', style: V15.label.copyWith(color: c.gray900)),
@@ -123,7 +138,9 @@ class _SetupBusinessViewState extends State<_SetupBusinessView> {
                             _Choice(
                               label: s.label,
                               selected: s.code == state.subtypeCode,
-                              onTap: () => context.read<SetupBusinessCubit>().pickSubtype(s.code),
+                              onTap: widget.existing != null
+                                  ? null
+                                  : () => context.read<SetupBusinessCubit>().pickSubtype(s.code),
                             ),
                         ],
                       ),
@@ -158,8 +175,11 @@ class _SetupBusinessViewState extends State<_SetupBusinessView> {
 
 /// The industry list: pending rows, a failed read with retry, or one row per type.
 class _Industries extends StatelessWidget {
-  const _Industries({required this.state});
+  const _Industries({required this.state, this.locked = false});
   final SetupBusinessState state;
+
+  /// The business exists: the picked type is shown, the rest can't be tapped.
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -172,7 +192,11 @@ class _Industries extends StatelessWidget {
         ],
         VerticalsStatus.ready => [
           for (final v in state.verticals)
-            _IndustryRow(vertical: v, selected: v.code == state.verticalCode, onTap: () => cubit.pickVertical(v.code)),
+            _IndustryRow(
+              vertical: v,
+              selected: v.code == state.verticalCode,
+              onTap: locked ? null : () => cubit.pickVertical(v.code),
+            ),
         ],
       },
     );
@@ -183,7 +207,7 @@ class _IndustryRow extends StatelessWidget {
   const _IndustryRow({required this.vertical, required this.selected, required this.onTap});
   final BusinessVertical vertical;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +239,7 @@ class _Choice extends StatelessWidget {
   const _Choice({required this.label, required this.selected, required this.onTap});
   final String label;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

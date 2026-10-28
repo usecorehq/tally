@@ -67,11 +67,24 @@ class _Onboarding extends StatefulWidget {
 
 class _OnboardingState extends State<_Onboarding> {
   Business? _created;
+  bool _onStarter = false;
 
   @override
   Widget build(BuildContext context) {
     final created = _created;
-    if (created == null) return SetupBusinessPage(onCreated: (b) => setState(() => _created = b));
-    return StarterItemsPage(business: created, onDone: () => context.read<BusinessCubit>().load());
+    if (created == null || !_onStarter) {
+      return SetupBusinessPage(
+        existing: created,
+        onCreated: (b) => setState(() {
+          _created = b;
+          _onStarter = true;
+        }),
+      );
+    }
+    return StarterItemsPage(
+      business: created,
+      onBack: () => setState(() => _onStarter = false),
+      onDone: () => context.read<BusinessCubit>().load(),
+    );
   }
 }

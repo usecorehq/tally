@@ -298,6 +298,9 @@ class AuthField extends StatelessWidget {
   final String? Function(String?)? validator;
   final ValueChanged<String>? onSubmitted;
   final TextCapitalization textCapitalization;
+
+  /// False: shown, not editable (a value that can't change here).
+  final bool enabled;
   const AuthField({
     super.key,
     required this.label,
@@ -312,6 +315,7 @@ class AuthField extends StatelessWidget {
     this.validator,
     this.onSubmitted,
     this.textCapitalization = TextCapitalization.none,
+    this.enabled = true,
   });
 
   @override
@@ -325,6 +329,7 @@ class AuthField extends StatelessWidget {
         const SizedBox(height: 6),
         TextFormField(
           controller: controller,
+          enabled: enabled,
           keyboardType: keyboardType,
           textInputAction: textInputAction,
           autofillHints: autofillHints,
