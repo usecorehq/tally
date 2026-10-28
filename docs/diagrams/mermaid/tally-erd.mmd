@@ -13,6 +13,7 @@ erDiagram
     BUSINESSES ||--o{ VISION_SCANS : "scans shelves"
     VISION_SCANS ||--o{ VISION_DETECTIONS : finds
     INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "looks like"
+    INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "decided as"
     INVENTORY_ITEMS ||--o{ INVENTORY_ITEM_READINGS : "recognised by"
     BUSINESSES ||--o{ VISION_AGENT_RUNS : "stock-takes"
     VISION_AGENT_RUNS ||--o{ VISION_AGENT_STEPS : "trace"
@@ -99,6 +100,8 @@ erDiagram
         jsonb candidates "Qore IDs + scores only"
         uuid inventory_item_id FK "nullable"
         text inventory_match "reading | catalogue | name"
+        text action "restock | restore | add | skip"
+        uuid item_id FK "decided as, nullable"
     }
     INVENTORY_ITEM_READINGS {
         uuid item_id FK

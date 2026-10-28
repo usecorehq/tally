@@ -91,7 +91,7 @@ Poll every 1–2 s.
 
 ## Data
 
-Migration `0006_add_stocktake_agent`:
+Migration `0006_add_stocktake_agent` (how it ties into scans: [vision schema](vision-schema.md)):
 
 - **`vision_agent_runs`**: business, status, model, turns, input/output tokens, error, who started it, when it started and finished, and the resulting `scan_id`.
 - **`vision_agent_steps`**: one row per step (`baseline`, `thought`, `tool`), with turn, tool, arguments, a short summary (never image data) and time.
