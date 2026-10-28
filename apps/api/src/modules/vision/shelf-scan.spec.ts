@@ -127,9 +127,23 @@ describe("plausible", () => {
     ["brand read, catalogue has no brand", peak, candidate("QC-A", 0.95, 0.5), false],
     // Live semantic-search reads: "Powdered milk" → Nestlé Cream Milk Powder (text 0.70), "RED" → a red wine (0.51).
     ["no brand, meaning-level match", loose, candidate("QC-A", 0.598, 0.5, 0.7), true],
-    ["no brand, at the line", loose, candidate("QC-A", 0.5, 0.5, 0.52), true],
-    ["no brand, weak text even with a high score", loose, candidate("QC-A", 0.76, 0.5, 0.51), false],
+    ["no brand, at the line (\"tomato puree tin\" → Gino tomato paste, 0.501)", loose, candidate("QC-A", 0.5, 0.5, 0.501), true],
+    ["no brand, just under (\"Palm oil\" → a body oil, 0.496)", loose, candidate("QC-A", 0.498, 0.5, 0.496), false],
+    ["no brand, weak text even with a high score", loose, candidate("QC-A", 0.76, 0.5, 0.45), false],
   ] as const)("%s", (_label, product, c, expected) => {
     expect(plausible(product, c)).toBe(expected);
+  });
+});
+
+describe("unbranded reads never count as sure in stock", () => {
+  it("asks even when the catalogue product is stocked and the size agrees", () => {
+    const stocked = indexInventory([{ id: "rice", name: "Big Bull Rice 50kg", variantLabel: null, coreQid: "QC-R" }], []);
+    const rice = { ...loose, name: "Rice", pack: "50kg" };
+    const c = { ...candidate("QC-R", 0.67, 0.5, 0.59), signals: { text: 0.59, brand: 0.5, size: 1 } } as MatchCandidate;
+    expect(buildDetections([rice], [result("0", [c])], stocked, new Map(), () => "d")[0]).toMatchObject({
+      inventoryItemId: "rice",
+      inventoryMatch: "catalogue",
+      inventoryNeedsConfirm: true,
+    });
   });
 });
