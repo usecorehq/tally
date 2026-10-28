@@ -1,8 +1,24 @@
 import { randomUUID } from "node:crypto";
-import type { MatchItem, MatchResult } from "@tally/catalog-client";
+import type { MatchCandidate, MatchItem, MatchResult } from "@tally/catalog-client";
 import type { Box, Confidence, ShelfProduct } from "./shelf-reader";
 
 export const MATCH_CANDIDATES = 3;
+/** Asked of /v1/match (max 10): enough that filtering still leaves the right one. */
+export const MATCH_LIMIT = 10;
+
+/** Without a legible brand, only near-exact name matches are worth showing. */
+export const MIN_UNBRANDED_SCORE = 0.75;
+
+/**
+ * Drop catalogue candidates the merchant shouldn't be offered. /v1/match always
+ * returns its nearest products, so a brand the catalogue lacks comes back as
+ * another brand's lookalike (live: "Lady B Custard Powder" → a laundry detergent).
+ *   brand read     → keep only candidates whose brand matched (signals.brand = 1)
+ *   brand not read → keep only candidates scoring ≥ MIN_UNBRANDED_SCORE
+ */
+export function plausible(product: ShelfProduct, candidate: MatchCandidate): boolean {
+  return product.brand ? candidate.signals.brand === 1 : candidate.score >= MIN_UNBRANDED_SCORE;
+}
 
 export type DetectionCandidate = {
   qid: string;
@@ -42,7 +58,11 @@ export function matchItems(products: ShelfProduct[]): MatchItem[] {
   }));
 }
 
-/** Join Spark's products with their catalogue candidates and the business's inventory (by Qore ID). */
+/**
+ * Join Spark's products with their plausible catalogue candidates and the
+ * business's inventory (by Qore ID). No candidate = the catalogue doesn't have
+ * it; the merchant adds it as their own item, which feeds back as new_item.
+ */
 export function buildDetections(
   products: ShelfProduct[],
   matches: MatchResult[],
@@ -51,8 +71,10 @@ export function buildDetections(
 ): Detection[] {
   const byRef = new Map(matches.map((m) => [m.ref, m]));
   return products.map((p, i) => {
-    const candidates = (byRef.get(String(i))?.candidates ?? []).slice(0, MATCH_CANDIDATES).map(
-      (c): DetectionCandidate => ({
+    const candidates = (byRef.get(String(i))?.candidates ?? [])
+      .filter((c) => plausible(p, c))
+      .slice(0, MATCH_CANDIDATES)
+      .map((c): DetectionCandidate => ({
         qid: c.qid,
         name: c.name,
         brand: c.brand?.name ?? null,
@@ -62,8 +84,7 @@ export function buildDetections(
         score: c.score,
         price: c.price ? { median: c.price.median, min: c.price.min, max: c.price.max } : null,
         inventoryItemId: inventoryByQid.get(c.qid) ?? null,
-      }),
-    );
+      }));
     return {
       id: newId(),
       brand: p.brand,

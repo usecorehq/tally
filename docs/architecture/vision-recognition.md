@@ -100,7 +100,7 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 
 - `brand` and `pack` are `""` when the label isn't legible. `confidence` is `high` (label clearly legible), `medium` (partly) or `low` (inferred from shape or colour).
 - `boxes`: one per visible unit, `count` = `boxes.length`, at most 50 products per photo.
-- `candidates`: up to 3, best first; empty when the catalogue has no match. `price` is `null` when the catalogue has no price.
+- `candidates`: up to 3 plausible matches, best first. When a brand was read, only products of that brand count; without one, only near-exact name matches (score ≥ 0.75). `/v1/match` always returns its nearest products, so without this filter a brand the catalogue lacks comes back as another brand's lookalike. Empty means the catalogue doesn't have it: the merchant adds it as their own item. `price` is `null` when the catalogue has no price.
 - `inventoryItemId` (on a candidate): the business's active item for that product. On the detection it is the top candidate's, so confirming it would restock that item.
 - `catalogueAvailable: false`: Qore Catalog failed; detections come back without candidates rather than failing the scan.
 - `id` is fresh per response until scans are stored; don't keep it.
@@ -131,6 +131,8 @@ Errors:
 | 503 with `Retry-After` | The model API is rate-limited, or `META_MODEL_API_KEY` is not set (no header) |
 | 502 | Model failure |
 | 504 | Timeout: 45 s for a shelf scan, 4 s for identify (planned) |
+
+Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–21 s and the catalogue match about 1 s. Read time grows with the number of units in the frame, because Spark writes one box per unit. Show progress on the device rather than blocking.
 
 ## Data (planned)
 

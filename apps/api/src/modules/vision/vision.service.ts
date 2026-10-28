@@ -11,7 +11,7 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { MetaModelClient } from "./meta-model.client";
 import { parseShelfProducts, SHELF_MODEL, shelfRequest, sniffImageType } from "./shelf-reader";
-import { buildDetections, MATCH_CANDIDATES, matchItems, type Detection } from "./shelf-scan";
+import { buildDetections, MATCH_LIMIT, matchItems, type Detection } from "./shelf-scan";
 import { toVisionHttpException } from "./vision-errors";
 
 const SHELF_TIMEOUT_MS = 45_000;
@@ -71,7 +71,7 @@ export class VisionService {
     let catalogueAvailable = true;
     if (products.length > 0) {
       try {
-        matches = (await this.catalog.client.match({ items: matchItems(products), limit: MATCH_CANDIDATES })).items;
+        matches = (await this.catalog.client.match({ items: matchItems(products), limit: MATCH_LIMIT })).items;
       } catch (err) {
         // Recognition is still useful without prices; the merchant can search the catalogue by hand.
         catalogueAvailable = false;

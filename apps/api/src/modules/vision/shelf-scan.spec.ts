@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
 import type { MatchCandidate, MatchResult } from "@tally/catalog-client";
 import type { ShelfProduct } from "./shelf-reader";
-import { buildDetections, matchItems } from "./shelf-scan";
+import { buildDetections, matchItems, plausible } from "./shelf-scan";
 
 const peak: ShelfProduct = {
   brand: "Peak",
@@ -13,7 +13,7 @@ const peak: ShelfProduct = {
 };
 const loose: ShelfProduct = { ...peak, brand: "", pack: "", name: "Tomato paste", confidence: "low" };
 
-const candidate = (qid: string, score: number): MatchCandidate =>
+const candidate = (qid: string, score: number, brandSignal = 1): MatchCandidate =>
   ({
     qid,
     name: `Product ${qid}`,
@@ -26,7 +26,7 @@ const candidate = (qid: string, score: number): MatchCandidate =>
     category: { path: "a/b", name: "B" },
     price: { currency: "NGN", indicative: true, median: 4500, min: 4200, max: 5100, offers: 3, retailers: 2, observedAt: "2026-10-01" },
     score,
-    signals: { text: 1, brand: 1, size: 1 },
+    signals: { text: 1, brand: brandSignal, size: 1 },
   }) as MatchCandidate;
 
 const result = (ref: string, candidates: MatchCandidate[]): MatchResult => ({
@@ -71,8 +71,30 @@ describe("buildDetections", () => {
     expect(buildDetections([peak], [], new Map(), id)[0]).toMatchObject({ candidates: [], inventoryItemId: null });
   });
 
+  it("drops implausible candidates before keeping the top 3", () => {
+    const matches = [
+      result("0", [candidate("QC-X", 0.95, 0), candidate("QC-A", 0.9), candidate("QC-B", 0.5), candidate("QC-C", 0.4), candidate("QC-D", 0.3)]),
+      result("1", [candidate("QC-E", 0.8, 0.5), candidate("QC-F", 0.7, 0.5)]),
+    ];
+    const [branded, unbranded] = buildDetections([peak, loose], matches, new Map(), id);
+    expect(branded!.candidates.map((c) => c.qid)).toEqual(["QC-A", "QC-B", "QC-C"]);
+    expect(unbranded!.candidates.map((c) => c.qid)).toEqual(["QC-E"]);
+  });
+
   it("passes a null price through", () => {
     const c = { ...candidate("QC-A", 0.9), price: null } as MatchCandidate;
     expect(buildDetections([peak], [result("0", [c])], new Map(), id)[0]!.candidates[0]!.price).toBeNull();
+  });
+});
+
+describe("plausible", () => {
+  it.each([
+    ["brand read, brand matched", peak, candidate("QC-A", 0.4, 1), true],
+    ["brand read, other brand", peak, candidate("QC-A", 0.95, 0), false],
+    ["brand read, catalogue has no brand", peak, candidate("QC-A", 0.95, 0.5), false],
+    ["no brand, strong name match", loose, candidate("QC-A", 0.75, 0.5), true],
+    ["no brand, weak name match", loose, candidate("QC-A", 0.74, 0.5), false],
+  ] as const)("%s", (_label, product, c, expected) => {
+    expect(plausible(product, c)).toBe(expected);
   });
 });

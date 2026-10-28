@@ -11,7 +11,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { MetaModelClient } = require("../dist/modules/vision/meta-model.client.js");
 const { shelfRequest, parseShelfProducts, sniffImageType } = require("../dist/modules/vision/shelf-reader.js");
-const { matchItems, buildDetections, MATCH_CANDIDATES } = require("../dist/modules/vision/shelf-scan.js");
+const { matchItems, buildDetections, MATCH_LIMIT } = require("../dist/modules/vision/shelf-scan.js");
 const { CatalogClient } = require("@tally/catalog-client");
 
 const { META_MODEL_API_KEY, META_MODEL_BASE_URL = "https://api.meta.ai/v1", QORE_CATALOG_BASE_URL, QORE_CATALOG_API_KEY } = process.env;
@@ -39,7 +39,7 @@ for (const file of files) {
     const res = await meta.respond(shelfRequest(image, type), 90_000);
     const products = parseShelfProducts(res.text);
     const readMs = Date.now() - t0;
-    const matches = products.length ? (await catalog.match({ items: matchItems(products), limit: MATCH_CANDIDATES })).items : [];
+    const matches = products.length ? (await catalog.match({ items: matchItems(products), limit: MATCH_LIMIT })).items : [];
     const matchMs = Date.now() - t0 - readMs;
     const detections = buildDetections(products, matches, new Map());
 

@@ -38,7 +38,7 @@ async function app(apiKey: string | undefined) {
   const catalog = {
     client: {
       match: jest.fn(async () => ({
-        items: [{ ref: "0", query: {}, parsedPack: null, candidates: [{ qid: "QC-A", name: "Peak 400g", variantLabel: null, size: null, packQty: 1, brand: null, score: 0.9, price: null }] }],
+        items: [{ ref: "0", query: {}, parsedPack: null, candidates: [{ qid: "QC-A", name: "Peak 400g", variantLabel: null, size: null, packQty: 1, brand: null, score: 0.9, signals: { text: 1, brand: 1, size: 0.5 }, price: null }] }],
       })),
     },
   };
@@ -90,7 +90,7 @@ describe("VisionController shelf-scans (HTTP)", () => {
     const res = await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
 
     expect(businesses.listInventory).toHaveBeenCalledWith(BIZ, USER);
-    expect(catalog.client.match).toHaveBeenCalledWith({ items: [{ ref: "0", brand: "Peak", name: "Full Cream Milk Powder", pack: "400g" }], limit: 3 });
+    expect(catalog.client.match).toHaveBeenCalledWith({ items: [{ ref: "0", brand: "Peak", name: "Full Cream Milk Powder", pack: "400g" }], limit: 10 });
     expect(res.body).toMatchObject({
       model: "muse-spark-1.3",
       catalogueAvailable: true,
