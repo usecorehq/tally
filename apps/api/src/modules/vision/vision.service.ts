@@ -6,9 +6,11 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { createHash } from "node:crypto";
 import type { MatchResult } from "@tally/catalog-client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
+import { indexInventory } from "./inventory-match";
 import { MetaModelClient } from "./meta-model.client";
 import { assignInstances, distinctLooks, parseSamInstances, SAM_MODEL, samRequest, type SamInstance } from "./sam-counter";
 import {
@@ -22,11 +24,14 @@ import {
 } from "./shelf-reader";
 import { buildDetections, MATCH_LIMIT, matchItems, type Detection } from "./shelf-scan";
 import { toVisionHttpException } from "./vision-errors";
+import { VisionRepository } from "./vision.repository";
 
 const SHELF_TIMEOUT_MS = 45_000;
 const SAM_TIMEOUT_MS = 20_000;
 
 export type ShelfScanResult = {
+  /** The stored scan; confirm it to stock the detections. */
+  scanId: string;
   /** Reads the products (Muse Spark). */
   model: string;
   /** Counts each product's units (SAM 3.1). */
@@ -47,6 +52,7 @@ export class VisionService {
     config: ConfigService,
     private readonly businesses: BusinessesService,
     private readonly catalog: CatalogService,
+    private readonly repo: VisionRepository,
   ) {
     const apiKey = config.get<string>("meta.apiKey");
     this.meta = apiKey ? new MetaModelClient(config.getOrThrow<string>("meta.baseUrl"), apiKey) : null;
@@ -57,7 +63,8 @@ export class VisionService {
    * Shelf photo → products (Muse Spark) → unit counts (SAM 3.1) and catalogue
    * candidates with prices (Qore Catalog /v1/match), in parallel → flagged where
    * the business already stocks them.
-   * Stateless for now: nothing is stored and the image is dropped after the call.
+   * The scan and its detections are stored for confirm; the image itself is not
+   * (only its sha256), and is dropped after the call.
    */
   async recogniseShelf(businessId: string, userId: string, image: Buffer): Promise<ShelfScanResult> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
@@ -65,7 +72,12 @@ export class VisionService {
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
 
     // Membership check before any paid model call.
-    const inventory = await this.businesses.listInventory(businessId, userId);
+    // listInventory checks membership; the other two only read this business's rows.
+    const [items, readings, archived] = await Promise.all([
+      this.businesses.listInventory(businessId, userId),
+      this.repo.readings(businessId),
+      this.repo.archivedLinkedItems(businessId),
+    ]);
     const started = Date.now();
 
     let products;
@@ -88,13 +100,28 @@ export class VisionService {
       timed(() => this.match(products)),
     ]);
 
-    const inventoryByQid = new Map(inventory.filter((i) => i.coreQid).map((i) => [i.coreQid!, i.id]));
+    const detections = buildDetections(products, matching.value.matches, indexInventory(items, readings, archived), counting.value);
+    const timings = { readMs, samMs: counting.ms, matchMs: matching.ms };
+    const scanId = await this.repo.saveScan(
+      {
+        businessId,
+        imageSha256: createHash("sha256").update(image).digest("hex"),
+        imageBytes: image.length,
+        readModel: SHELF_MODEL,
+        countModel: SAM_MODEL,
+        catalogueAvailable: matching.value.available,
+        ...timings,
+        createdBy: userId,
+      },
+      detections,
+    );
     return {
+      scanId,
       model: SHELF_MODEL,
       countModel: SAM_MODEL,
-      detections: buildDetections(products, matching.value.matches, inventoryByQid, counting.value),
+      detections,
       catalogueAvailable: matching.value.available,
-      timings: { readMs, samMs: counting.ms, matchMs: matching.ms, totalMs: Date.now() - started },
+      timings: { ...timings, totalMs: Date.now() - started },
     };
   }
 

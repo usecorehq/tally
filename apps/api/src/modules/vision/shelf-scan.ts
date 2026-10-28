@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MatchCandidate, MatchItem, MatchResult } from "@tally/catalog-client";
+import { matchInventory, type InventoryIndex, type InventoryMatch, type StockedMatch } from "./inventory-match";
 import type { Box, Confidence, ShelfProduct } from "./shelf-reader";
 
 export const MATCH_CANDIDATES = 3;
@@ -51,8 +52,18 @@ export type Detection = {
   boxes: Box[];
   confidence: Confidence;
   candidates: DetectionCandidate[];
-  /** Top candidate's inventory item: confirming this detection restocks it. */
+  /** The business's item this looks like: confirming the detection restocks it. */
   inventoryItemId: string | null;
+  /** How that item was found; null when the merchant doesn't seem to stock it. */
+  inventoryMatch: InventoryMatch | null;
+  /** The match is an item the merchant removed: offer to restore it rather than add a duplicate. */
+  inventoryItemArchived: boolean;
+  /**
+   * Ask "Is this your X?" before treating it as in stock: a name match, or a
+   * catalogue match whose size doesn't agree with the label (or the label
+   * showed no size). false only for a remembered reading or a size-agreeing match.
+   */
+  inventoryNeedsConfirm: boolean;
 };
 
 /** One /v1/match item per product, ref = its index, so results map back without relying on order. */
@@ -67,20 +78,21 @@ export function matchItems(products: ShelfProduct[]): MatchItem[] {
 
 /**
  * Join Spark's products with their plausible catalogue candidates and the
- * business's inventory (by Qore ID). No candidate = the catalogue doesn't have
- * it; the merchant adds it as their own item, which feeds back as new_item.
+ * business's own inventory (see inventory-match.ts). No candidate = the
+ * catalogue doesn't have it; the merchant adds it as their own item, which
+ * feeds back as new_item.
  */
 export function buildDetections(
   products: ShelfProduct[],
   matches: MatchResult[],
-  inventoryByQid: Map<string, string>,
+  inventory: InventoryIndex,
   samBoxes: Map<number, Box[]> = new Map(),
   newId: () => string = randomUUID,
 ): Detection[] {
   const byRef = new Map(matches.map((m) => [m.ref, m]));
   return products.map((p, i) => {
-    const candidates = (byRef.get(String(i))?.candidates ?? [])
-      .filter((c) => plausible(p, c))
+    const plausibleCandidates = (byRef.get(String(i))?.candidates ?? []).filter((c) => plausible(p, c));
+    const candidates = plausibleCandidates
       .slice(0, MATCH_CANDIDATES)
       .map((c): DetectionCandidate => ({
         qid: c.qid,
@@ -91,7 +103,7 @@ export function buildDetections(
         packQty: c.packQty,
         score: c.score,
         price: c.price ? { median: c.price.median, min: c.price.min, max: c.price.max } : null,
-        inventoryItemId: inventoryByQid.get(c.qid) ?? null,
+        inventoryItemId: inventory.byQid.get(c.qid) ?? null,
       }));
     return {
       id: newId(),
@@ -102,7 +114,8 @@ export function buildDetections(
       ...counted(p, samBoxes.get(i)),
       confidence: p.confidence,
       candidates,
-      inventoryItemId: candidates[0]?.inventoryItemId ?? null,
+      // All plausible candidates, not just the 3 shown: the merchant's size may rank lower.
+      ...stocked(matchInventory(p, plausibleCandidates.map((c) => ({ qid: c.qid, sizeAgrees: c.signals.size === 1 })), inventory)),
     };
   });
 }
@@ -113,4 +126,12 @@ function counted(p: ShelfProduct, sam: Box[] | undefined): Pick<Detection, "coun
   return samCount
     ? { count: samCount, countSource: "sam", sparkCount: p.count, samCount, boxes: sam! }
     : { count: p.count, countSource: "spark", sparkCount: p.count, samCount, boxes: p.boxes };
+}
+
+function stocked(
+  m: StockedMatch | null,
+): Pick<Detection, "inventoryItemId" | "inventoryMatch" | "inventoryItemArchived" | "inventoryNeedsConfirm"> {
+  return m
+    ? { inventoryItemId: m.itemId, inventoryMatch: m.match, inventoryItemArchived: m.archived, inventoryNeedsConfirm: !m.sure }
+    : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false, inventoryNeedsConfirm: false };
 }

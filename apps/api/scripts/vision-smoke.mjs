@@ -13,6 +13,7 @@ const { MetaModelClient } = require("../dist/modules/vision/meta-model.client.js
 const { shelfRequest, parseShelfProducts, sniffImageType } = require("../dist/modules/vision/shelf-reader.js");
 const { matchItems, buildDetections, MATCH_LIMIT } = require("../dist/modules/vision/shelf-scan.js");
 const { samRequest, parseSamInstances, distinctLooks, assignInstances } = require("../dist/modules/vision/sam-counter.js");
+const { indexInventory } = require("../dist/modules/vision/inventory-match.js");
 const { CatalogClient } = require("@tally/catalog-client");
 
 const { META_MODEL_API_KEY, META_MODEL_BASE_URL = "https://api.meta.ai/v1", QORE_CATALOG_BASE_URL, QORE_CATALOG_API_KEY } = process.env;
@@ -56,7 +57,7 @@ for (const file of files) {
       ).then(() => (samMs = Date.now() - t1)),
       products.length ? catalog.match({ items: matchItems(products), limit: MATCH_LIMIT }).then((r) => ((matchMs = Date.now() - t1), r.items)) : [],
     ]);
-    const detections = buildDetections(products, matches, new Map(), assignInstances(products, byLook));
+    const detections = buildDetections(products, matches, indexInventory([], []), assignInstances(products, byLook));
 
     const units = detections.reduce((n, d) => n + d.count, 0);
     const sparkUnits = detections.reduce((n, d) => n + d.sparkCount, 0);

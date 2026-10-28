@@ -1,7 +1,17 @@
 import { describe, expect, it } from "@jest/globals";
 import type { MatchCandidate, MatchResult } from "@tally/catalog-client";
 import type { ShelfProduct } from "./shelf-reader";
+import { indexInventory } from "./inventory-match";
 import { buildDetections, matchItems, plausible } from "./shelf-scan";
+
+const none = indexInventory([], []);
+const stockedA = indexInventory(
+  [
+    { id: "item-a", name: "Peak 400g", variantLabel: null, coreQid: "QC-A" },
+    { id: "item-c", name: "Other", variantLabel: null, coreQid: "QC-C" },
+  ],
+  [],
+);
 
 const peak: ShelfProduct = {
   brand: "Peak",
@@ -56,20 +66,28 @@ describe("buildDetections", () => {
       result("1", []),
       result("0", [candidate("QC-A", 0.9), candidate("QC-B", 0.8), candidate("QC-C", 0.7), candidate("QC-D", 0.6)]),
     ];
-    const [first, second] = buildDetections([peak, loose], matches, new Map([["QC-A", "item-a"], ["QC-C", "item-c"]]), new Map(), id);
+    const [first, second] = buildDetections([peak, loose], matches, stockedA, new Map(), id);
 
-    expect(first).toMatchObject({ id: "d1", name: "Full Cream Milk Powder", count: 2, inventoryItemId: "item-a" });
+    expect(first).toMatchObject({
+      id: "d1",
+      name: "Full Cream Milk Powder",
+      count: 2,
+      inventoryItemId: "item-a",
+      inventoryMatch: "catalogue",
+      // candidate() sets signals.size = 1
+      inventoryNeedsConfirm: false,
+    });
     expect(first!.candidates.map((c) => [c.qid, c.inventoryItemId])).toEqual([
       ["QC-A", "item-a"],
       ["QC-B", null],
       ["QC-C", "item-c"],
     ]);
     expect(first!.candidates[0]).toMatchObject({ brand: "Peak", price: { median: 4500, min: 4200, max: 5100 } });
-    expect(second).toMatchObject({ id: "d2", candidates: [], inventoryItemId: null });
+    expect(second).toMatchObject({ id: "d2", candidates: [], inventoryItemId: null, inventoryMatch: null });
   });
 
   it("returns detections without candidates when the catalogue gave nothing", () => {
-    expect(buildDetections([peak], [], new Map(), new Map(), id)[0]).toMatchObject({ candidates: [], inventoryItemId: null });
+    expect(buildDetections([peak], [], none, new Map(), id)[0]).toMatchObject({ candidates: [], inventoryItemId: null });
   });
 
   it("drops implausible candidates before keeping the top 3", () => {
@@ -77,7 +95,7 @@ describe("buildDetections", () => {
       result("0", [candidate("QC-X", 0.95, 0), candidate("QC-A", 0.9), candidate("QC-B", 0.5), candidate("QC-C", 0.4), candidate("QC-D", 0.3)]),
       result("1", [candidate("QC-E", 0.8, 0.5), candidate("QC-F", 0.7, 0.5)]),
     ];
-    const [branded, unbranded] = buildDetections([peak, loose], matches, new Map(), new Map(), id);
+    const [branded, unbranded] = buildDetections([peak, loose], matches, none, new Map(), id);
     expect(branded!.candidates.map((c) => c.qid)).toEqual(["QC-A", "QC-B", "QC-C"]);
     expect(unbranded!.candidates.map((c) => c.qid)).toEqual(["QC-E"]);
   });
@@ -87,7 +105,7 @@ describe("buildDetections", () => {
     const [counted, missed, notRun] = buildDetections(
       [peak, loose, { ...peak, name: "Other" }],
       [],
-      new Map(),
+      none,
       new Map([[0, sam], [1, []]]),
       id,
     );
@@ -98,7 +116,7 @@ describe("buildDetections", () => {
 
   it("passes a null price through", () => {
     const c = { ...candidate("QC-A", 0.9), price: null } as MatchCandidate;
-    expect(buildDetections([peak], [result("0", [c])], new Map(), new Map(), id)[0]!.candidates[0]!.price).toBeNull();
+    expect(buildDetections([peak], [result("0", [c])], none, new Map(), id)[0]!.candidates[0]!.price).toBeNull();
   });
 });
 

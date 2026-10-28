@@ -22,10 +22,12 @@
 
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgSchema,
   text,
@@ -297,6 +299,121 @@ export const stockMovements = tally.table(
   ],
 );
 
+// ─── Vision (camera recognition) ─────────────────────────────────────────
+// A shelf scan and what Muse Spark / SAM 3.1 found in it. Tally keeps its own
+// readings and only Qore IDs + match scores from the catalogue (no names or
+// prices): catalogue data stays in Qore Catalog. See docs/architecture/vision-recognition.md.
+
+export const visionScans = tally.table(
+  "vision_scans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("open"),
+    // sha256 of the uploaded bytes; the photo itself is not stored in the database.
+    imageSha256: text("image_sha256").notNull(),
+    imageBytes: integer("image_bytes").notNull(),
+    readModel: text("read_model").notNull(),
+    countModel: text("count_model").notNull(),
+    catalogueAvailable: boolean("catalogue_available").notNull(),
+    readMs: integer("read_ms").notNull(),
+    samMs: integer("sam_ms").notNull(),
+    matchMs: integer("match_ms").notNull(),
+    createdBy: uuid("created_by").notNull(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("vision_scans_business_id_key").on(t.businessId, t.id),
+    check("vision_scans_status", sql`status in ('open', 'confirmed')`),
+    check("vision_scans_confirmed_consistent", sql`(status = 'confirmed') = (confirmed_at is not null)`),
+    check("vision_scans_image_sha256_format", sql`image_sha256 ~ '^[0-9a-f]{64}$'`),
+    index("vision_scans_business_created_idx").on(t.businessId, t.createdAt.desc()),
+  ],
+);
+
+export const visionDetections = tally.table(
+  "vision_detections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    scanId: uuid("scan_id").notNull(),
+    // Order in the scan; with scan_id it is the catalogue feedback clientRef.
+    position: integer("position").notNull(),
+    // As read by Muse Spark ('' = not legible).
+    brand: text("brand").notNull(),
+    name: text("name").notNull(),
+    pack: text("pack").notNull(),
+    look: text("look").notNull(),
+    confidence: text("confidence").notNull(),
+    sparkCount: integer("spark_count").notNull(),
+    samCount: integer("sam_count"),
+    count: integer("count").notNull(),
+    countSource: text("count_source").notNull(),
+    // [{x1,y1,x2,y2}] on the 0–1000 grid of the uploaded image.
+    boxes: jsonb("boxes").$type<{ x1: number; y1: number; x2: number; y2: number }[]>().notNull(),
+    // [{qid, score}], best first: catalogue ids and match scores only.
+    candidates: jsonb("candidates").$type<{ qid: string; score: number }[]>().notNull(),
+    // The business's item this looks like at scan time, and how it was found.
+    inventoryItemId: uuid("inventory_item_id"),
+    inventoryMatch: text("inventory_match"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "vision_detections_scan_fk",
+      columns: [t.businessId, t.scanId],
+      foreignColumns: [visionScans.businessId, visionScans.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "vision_detections_inventory_item_fk",
+      columns: [t.businessId, t.inventoryItemId],
+      foreignColumns: [inventoryItems.businessId, inventoryItems.id],
+    }),
+    unique("vision_detections_scan_position_key").on(t.scanId, t.position),
+    unique("vision_detections_business_id_key").on(t.businessId, t.id),
+    check("vision_detections_position_nonneg", sql`position >= 0`),
+    check("vision_detections_confidence", sql`confidence in ('high', 'medium', 'low')`),
+    check("vision_detections_count_source", sql`count_source in ('sam', 'spark')`),
+    check("vision_detections_counts_nonneg", sql`spark_count >= 0 and count >= 0 and (sam_count is null or sam_count >= 0)`),
+    check(
+      "vision_detections_inventory_match",
+      sql`(inventory_item_id is null) = (inventory_match is null) and (inventory_match is null or inventory_match in ('reading', 'catalogue', 'name'))`,
+    ),
+    check("vision_detections_name_length", sql`char_length(name) between 1 and 200`),
+  ],
+);
+
+/**
+ * What the camera read for an item the merchant confirmed ("Lady B · Custard
+ * Powder · 2kg" → their item), so the next scan recognises it even when Qore
+ * Catalog doesn't know the product. One reading maps to one item per business.
+ */
+export const inventoryItemReadings = tally.table(
+  "inventory_item_readings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    // Normalised "brand|name|pack" (lower-case, single spaces).
+    readingKey: text("reading_key").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "inventory_item_readings_item_fk",
+      columns: [t.businessId, t.itemId],
+      foreignColumns: [inventoryItems.businessId, inventoryItems.id],
+    }).onDelete("cascade"),
+    unique("inventory_item_readings_business_key").on(t.businessId, t.readingKey),
+    check("inventory_item_readings_key_length", sql`char_length(reading_key) between 3 and 400`),
+    index("inventory_item_readings_item_idx").on(t.businessId, t.itemId),
+  ],
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────
 
 export type Business = typeof businesses.$inferSelect;
@@ -313,3 +430,9 @@ export type SaleItem = typeof saleItems.$inferSelect;
 export type NewSaleItem = typeof saleItems.$inferInsert;
 export type SalePayment = typeof salePayments.$inferSelect;
 export type NewSalePayment = typeof salePayments.$inferInsert;
+export type VisionScan = typeof visionScans.$inferSelect;
+export type NewVisionScan = typeof visionScans.$inferInsert;
+export type VisionDetection = typeof visionDetections.$inferSelect;
+export type NewVisionDetection = typeof visionDetections.$inferInsert;
+export type InventoryItemReading = typeof inventoryItemReadings.$inferSelect;
+export type NewInventoryItemReading = typeof inventoryItemReadings.$inferInsert;
