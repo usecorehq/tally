@@ -33,6 +33,14 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 | `PORT` | no | Default `4100` |
 | `CORS_ORIGINS` | no | Comma-separated allowlist |
 
+## Postman
+
+`postman/tally-api.postman_collection.json`: 21 requests (auth, health, catalog, businesses & inventory, vision).
+
+- Import it, then set `baseUrl` (local `http://localhost:4100`, staging `https://tally-api.qorecatalogue.com`), `supabaseAnonKey`, and a **test account's** `email` / `password` as secret variables in your own Postman. Never commit or share real credentials.
+- Run **Auth → Sign in** first. It stores a Supabase access token used as `Authorization: Bearer`; tokens expire after about an hour.
+- Requests save the ids they create (`businessId`, `itemId`, `scanId`, `runId`, the identify reading) for the next steps. Photo requests take a file in the `image` field.
+
 ## Deploy (Coolify)
 
 `apps/api/Dockerfile` builds a production image from the repo root (`docker build -f apps/api/Dockerfile -t tally-api .`). The image holds no secrets and no `.env`; all config comes from runtime env vars.
