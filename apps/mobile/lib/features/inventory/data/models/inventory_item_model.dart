@@ -8,6 +8,7 @@ class InventoryItemModel extends InventoryItem {
     required super.quantityOnHand,
     super.barcode,
     super.coreQid,
+    super.reorderPoint,
   });
 
   factory InventoryItemModel.fromJson(Map<String, dynamic> json) => InventoryItemModel(
@@ -17,5 +18,6 @@ class InventoryItemModel extends InventoryItem {
     quantityOnHand: json['quantityOnHand'] as String,
     barcode: json['barcode'] as String?,
     coreQid: json['coreQid'] as String?,
+    reorderPoint: json['reorderPoint'] as String?,
   );
 }

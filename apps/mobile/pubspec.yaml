@@ -37,3 +37,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    # Design 1.5 icons (Phosphor, MIT: assets/fonts/phosphor/LICENSE), drawn
+    # through lib/core/design/tally_icons.dart.
+    - family: PhosphorLight
+      fonts:
+        - asset: assets/fonts/phosphor/PhosphorLight.ttf
+    - family: PhosphorFill
+      fonts:
+        - asset: assets/fonts/phosphor/PhosphorFill.ttf

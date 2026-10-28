@@ -21,6 +21,7 @@ import 'features/inventory/data/datasources/inventory_remote_data_source.dart';
 import 'features/inventory/data/repositories/inventory_repository_impl.dart';
 import 'features/inventory/domain/repositories/inventory_repository.dart';
 import 'features/inventory/domain/usecases/inventory_usecases.dart';
+import 'features/inventory/presentation/cubit/inventory_list_cubit.dart';
 import 'features/inventory/presentation/cubit/scan_cubit.dart';
 
 final sl = GetIt.instance;
@@ -50,7 +51,7 @@ Future<void> initDependencies() async {
     ..registerLazySingleton(() => GetMyBusinesses(sl()))
     ..registerFactory(() => BusinessCubit(sl()));
 
-  // Inventory (ScanCubit is per business: sl<ScanCubit>(param1: businessId))
+  // Inventory (ScanCubit and InventoryListCubit are per business: sl<…>(param1: businessId))
   sl
     ..registerLazySingleton<InventoryRemoteDataSource>(() => InventoryRemoteDataSourceImpl(sl()))
     ..registerLazySingleton<InventoryRepository>(() => InventoryRepositoryImpl(sl()))
@@ -59,5 +60,8 @@ Future<void> initDependencies() async {
     ..registerLazySingleton(() => LinkBarcode(sl()))
     ..registerFactoryParam<ScanCubit, String, void>(
       (businessId, _) => ScanCubit(businessId: businessId, getInventory: sl(), findByBarcode: sl(), linkBarcode: sl()),
+    )
+    ..registerFactoryParam<InventoryListCubit, String, void>(
+      (businessId, _) => InventoryListCubit(businessId: businessId, getInventory: sl()),
     );
 }

@@ -15,8 +15,10 @@ flowchart TB
         model["Models (extend entities)"]
     end
     di["injection_container.dart<br/>get_it: singletons; blocs/cubits as factories"]
+    kit["core/design<br/>Design 1.5 kit (V15*), Phosphor icons"]
 
     page --> bloc --> uc --> repoC
+    page --> kit
     repoI -. implements .-> repoC
     repoI --> ds --> model
     uc --> ent
@@ -29,5 +31,5 @@ flowchart TB
     classDef planned fill:#ffffff,stroke:#1168bd,color:#1168bd,stroke-dasharray: 5 3
     classDef boundary fill:#ffffff,stroke:#999999,color:#333,stroke-dasharray: 4 3
     class page,bloc,uc,repoC,ent,repoI,ds,model container
-    class di external
+    class di,kit external
     class presentation,domain,data boundary
