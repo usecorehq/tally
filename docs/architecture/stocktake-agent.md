@@ -71,6 +71,7 @@ Poll every 1–2 s.
 
 - `run.status`: `running`, `done`, `fallback` (the agent stopped; `result` is the first pass) or `failed` (`error` says why).
 - `steps`: the trace so far. The app can show it live ("Reading the top shelf…"), and it is the audit trail.
+- On the web, apps/mp's `/stocktake` page polls every 1.5 s and shows the trace as progress (see [Web stock-take](vision-recognition.md#web-stock-take-apps-mp)).
 - `result`: once finished, the scan in the `shelf-scans` shape (`scanId`, `detections`, …), each detection with `evidence: [{ turn, tool, summary }]`. While the result is fresh (an hour) candidates carry names and prices; later it comes from the stored scan, where candidates are Qore IDs + scores only.
 
 ## Data

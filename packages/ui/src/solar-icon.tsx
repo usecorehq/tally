@@ -18,11 +18,14 @@ import BoldDangerCircle from "./icons/Bold/Danger-Circle";
 import BoldDangerTriangle from "./icons/Bold/Danger-Triangle";
 import BoldDelivery from "./icons/Bold/Delivery";
 import BoldFileText from "./icons/Bold/File-Text";
+import BoldGalleryAdd from "./icons/Bold/Gallery-Add";
 import BoldInfoCircle from "./icons/Bold/Info-Circle";
 import BoldMirror from "./icons/Bold/Mirror";
 import BoldPen from "./icons/Bold/Pen";
 import BoldPills from "./icons/Bold/Pills";
+import BoldRefresh from "./icons/Bold/Refresh";
 import BoldShop from "./icons/Bold/Shop";
+import BoldStars from "./icons/Bold/Stars";
 import BoldTag from "./icons/Bold/Tag";
 import BoldWidget5 from "./icons/Bold/Widget-5";
 import OutlineAddCircle from "./icons/Outline/Add-Circle";
@@ -38,15 +41,18 @@ import OutlineDangerCircle from "./icons/Outline/Danger-Circle";
 import OutlineDangerTriangle from "./icons/Outline/Danger-Triangle";
 import OutlineDelivery from "./icons/Outline/Delivery";
 import OutlineFileText from "./icons/Outline/File-Text";
+import OutlineGalleryAdd from "./icons/Outline/Gallery-Add";
 import OutlineInfoCircle from "./icons/Outline/Info-Circle";
 import OutlineMirror from "./icons/Outline/Mirror";
 import OutlinePen from "./icons/Outline/Pen";
 import OutlinePills from "./icons/Outline/Pills";
+import OutlineRefresh from "./icons/Outline/Refresh";
 import OutlineShop from "./icons/Outline/Shop";
+import OutlineStars from "./icons/Outline/Stars";
 import OutlineTag from "./icons/Outline/Tag";
 import OutlineWidget5 from "./icons/Outline/Widget-5";
 
-export const ICON_NAMES = ["Add-Circle", "Alt-Arrow-Down", "Alt-Arrow-Left", "Alt-Arrow-Right", "Box", "Buildings", "Check-Circle", "Chef-Hat", "Close-Circle", "Danger-Circle", "Danger-Triangle", "Delivery", "File-Text", "Info-Circle", "Mirror", "Pen", "Pills", "Shop", "Tag", "Widget-5"] as const;
+export const ICON_NAMES = ["Add-Circle", "Alt-Arrow-Down", "Alt-Arrow-Left", "Alt-Arrow-Right", "Box", "Buildings", "Check-Circle", "Chef-Hat", "Close-Circle", "Danger-Circle", "Danger-Triangle", "Delivery", "File-Text", "Gallery-Add", "Info-Circle", "Mirror", "Pen", "Pills", "Refresh", "Shop", "Stars", "Tag", "Widget-5"] as const;
 export type SolarIconName = (typeof ICON_NAMES)[number];
 type Glyph = (props: SVGProps<SVGSVGElement>) => React.ReactElement;
 
@@ -64,11 +70,14 @@ const BOLD: Record<SolarIconName, Glyph> = {
   "Danger-Triangle": BoldDangerTriangle,
   "Delivery": BoldDelivery,
   "File-Text": BoldFileText,
+  "Gallery-Add": BoldGalleryAdd,
   "Info-Circle": BoldInfoCircle,
   "Mirror": BoldMirror,
   "Pen": BoldPen,
   "Pills": BoldPills,
+  "Refresh": BoldRefresh,
   "Shop": BoldShop,
+  "Stars": BoldStars,
   "Tag": BoldTag,
   "Widget-5": BoldWidget5,
 };
@@ -86,11 +95,14 @@ const OUTLINE: Record<SolarIconName, Glyph> = {
   "Danger-Triangle": OutlineDangerTriangle,
   "Delivery": OutlineDelivery,
   "File-Text": OutlineFileText,
+  "Gallery-Add": OutlineGalleryAdd,
   "Info-Circle": OutlineInfoCircle,
   "Mirror": OutlineMirror,
   "Pen": OutlinePen,
   "Pills": OutlinePills,
+  "Refresh": OutlineRefresh,
   "Shop": OutlineShop,
+  "Stars": OutlineStars,
   "Tag": OutlineTag,
   "Widget-5": OutlineWidget5,
 };
