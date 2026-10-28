@@ -8,18 +8,19 @@ sequenceDiagram
     participant Q as Qore Catalog
     participant D as Postgres (tally)
 
-    Note over M,D: BUILT: steps 1-5, 8-9 and 11 (stateless read + match). PLANNED: SAM counting, storing scans, confirm.
+    Note over M,D: BUILT: steps 1-9 and 11 (stateless read, SAM count, match). PLANNED: storing scans, confirm.
     M->>P: photograph shelf
     P->>P: scale to 1600 px, JPEG ~400 KB
     P->>A: POST /api/businesses/:id/vision/shelf-scans [multipart, Bearer JWT]
-    A->>S: muse-spark-1.3: list products {brand, name, pack, boxes per unit} [JSON schema]
+    A->>S: muse-spark-1.3: list products {brand, name, pack, look, boxes per unit} [JSON schema]
     S-->>A: products
-    par one request per product
-        A->>S: sam-3.1: "<product phrase>" + image
-        S-->>A: instance boxes + masks
+    par one SAM request per distinct look
+        A->>S: sam-3.1: "<look>" e.g. "red box" + image
+        S-->>A: instance boxes (assigned to products by position)
+    and catalogue
+        A->>Q: POST /v1/match (all products, x-api-key)
+        Q-->>A: candidates + indicative ₦ price (plausible ones kept)
     end
-    A->>Q: POST /v1/match (all products, x-api-key)
-    Q-->>A: top candidates + indicative ₦ price
     A->>D: insert vision_scans + vision_detections
     A-->>P: detections with counts, boxes, candidates
     M->>P: accept / correct / add own / remove, set qty + price

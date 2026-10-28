@@ -10,6 +10,7 @@ const product = (over: Record<string, unknown> = {}) => ({
   brand: "Peak",
   name: "Full Cream Milk Powder",
   pack: "400g",
+  look: "Yellow Tin",
   boxes: [box(), box(200)],
   confidence: "high",
   ...over,
@@ -50,6 +51,7 @@ describe("parseShelfProducts", () => {
         brand: "Peak",
         name: "Full Cream Milk Powder",
         pack: "400g",
+        look: "yellow tin",
         count: 2,
         boxes: [
           { x1: 10, y1: 20, x2: 110, y2: 220 },
@@ -68,8 +70,14 @@ describe("parseShelfProducts", () => {
     expect(p!.count).toBe(1);
   });
 
-  it("drops products without a name or without boxes", () => {
-    expect(parseShelfProducts(reply(product({ name: "  " }), product({ boxes: [] })))).toEqual([]);
+  it("drops products without boxes or anything to call them", () => {
+    expect(parseShelfProducts(reply(product({ name: "  ", brand: "", look: "" }), product({ boxes: [] })))).toEqual([]);
+  });
+
+  it("names a product from its brand, else its look, when the name isn't legible", () => {
+    const [byBrand, byLook] = parseShelfProducts(reply(product({ name: "", brand: "ONGA" }), product({ name: "", brand: "", look: "green sachet" })));
+    expect(byBrand).toMatchObject({ name: "ONGA", brand: "ONGA" });
+    expect(byLook).toMatchObject({ name: "Green sachet", brand: "", look: "green sachet" });
   });
 
   it("merges the same product (case/space-insensitive) and keeps the best confidence", () => {

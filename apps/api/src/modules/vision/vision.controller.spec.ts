@@ -31,7 +31,24 @@ const sparkReply = (products: unknown[]) =>
     }),
     { status: 200 },
   );
-const peak = { brand: "Peak", name: "Full Cream Milk Powder", pack: "400g", boxes: [{ x_min: 1, y_min: 1, x_max: 9, y_max: 9 }], confidence: "high" };
+const peak = {
+  brand: "Peak",
+  name: "Full Cream Milk Powder",
+  pack: "400g",
+  look: "yellow tin",
+  boxes: [{ x_min: 100, y_min: 100, x_max: 150, y_max: 200 }],
+  confidence: "high",
+};
+// SAM output for "yellow tin": two units next to Spark's box, one far away (not this product).
+const samText =
+  "<0f>0<|box;x1=200;y1=200;x2=300;y2=400;w=2000;h=2000;c=0.9|><|mask;x=0;y=0;data=1,1,!A|>," +
+  "1<|box;x1=310;y1=200;x2=410;y2=400;w=2000;h=2000;c=0.8|><|mask;x=0;y=0;data=1,1,!A|>," +
+  "2<|box;x1=1800;y1=1800;x2=1900;y2=1950;w=2000;h=2000;c=0.9|><|mask;x=0;y=0;data=1,1,!A|>";
+const samReply = (text: string) =>
+  new Response(JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text }] }] }), { status: 200 });
+/** Route the mocked Meta API by model: Spark gets `spark`, SAM gets `sam`. */
+const metaApi = (spark: () => Response, sam: () => Response) => async (_url: unknown, init?: RequestInit) =>
+  JSON.parse(String(init?.body)).model === "sam-3.1" ? sam() : spark();
 
 async function app(apiKey: string | undefined) {
   const businesses = { listInventory: jest.fn(async () => [{ id: "item-a", coreQid: "QC-A" }]) };
@@ -85,18 +102,49 @@ describe("VisionController shelf-scans (HTTP)", () => {
     await post().attach("image", JPEG, "shelf.jpg").expect(401);
   });
 
-  it("reads, matches and flags stocked products", async () => {
-    fetchSpy.mockResolvedValueOnce(sparkReply([peak]));
+  it("reads, counts with SAM, matches and flags stocked products", async () => {
+    fetchSpy.mockImplementation(metaApi(() => sparkReply([peak]), () => samReply(samText)));
     const res = await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
+
+    const models = fetchSpy.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(models.map((b) => b.model)).toEqual(["muse-spark-1.3", "sam-3.1"]);
+    expect(models[1].input[0].content[0]).toEqual({ type: "input_text", text: "yellow tin" });
 
     expect(businesses.listInventory).toHaveBeenCalledWith(BIZ, USER);
     expect(catalog.client.match).toHaveBeenCalledWith({ items: [{ ref: "0", brand: "Peak", name: "Full Cream Milk Powder", pack: "400g" }], limit: 10 });
     expect(res.body).toMatchObject({
       model: "muse-spark-1.3",
+      countModel: "sam-3.1",
       catalogueAvailable: true,
-      detections: [{ name: "Full Cream Milk Powder", count: 1, inventoryItemId: "item-a", candidates: [{ qid: "QC-A", inventoryItemId: "item-a" }] }],
+      detections: [
+        {
+          name: "Full Cream Milk Powder",
+          look: "yellow tin",
+          count: 2,
+          countSource: "sam",
+          sparkCount: 1,
+          samCount: 2,
+          inventoryItemId: "item-a",
+          candidates: [{ qid: "QC-A", inventoryItemId: "item-a" }],
+        },
+      ],
     });
-    expect(res.body.timings).toEqual({ readMs: expect.any(Number), matchMs: expect.any(Number), totalMs: expect.any(Number) });
+    expect(res.body.detections[0].boxes).toEqual([
+      { x1: 100, y1: 100, x2: 150, y2: 200 },
+      { x1: 155, y1: 100, x2: 205, y2: 200 },
+    ]);
+    expect(res.body.timings).toEqual({
+      readMs: expect.any(Number),
+      samMs: expect.any(Number),
+      matchMs: expect.any(Number),
+      totalMs: expect.any(Number),
+    });
+  });
+
+  it("a SAM failure keeps Spark's count and still returns 200", async () => {
+    fetchSpy.mockImplementation(metaApi(() => sparkReply([peak]), () => new Response("{}", { status: 500 })));
+    const res = await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
+    expect(res.body.detections[0]).toMatchObject({ count: 1, countSource: "spark", sparkCount: 1, samCount: null });
   });
 
   it("an empty shelf skips the catalogue", async () => {
@@ -107,7 +155,7 @@ describe("VisionController shelf-scans (HTTP)", () => {
   });
 
   it("a catalogue failure still returns the detections", async () => {
-    fetchSpy.mockResolvedValueOnce(sparkReply([peak]));
+    fetchSpy.mockImplementation(metaApi(() => sparkReply([peak]), () => samReply("")));
     catalog.client.match.mockRejectedValueOnce(Object.assign(new Error("down"), { status: 503 }));
     const res = await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
     expect(res.body).toMatchObject({ catalogueAvailable: false, detections: [{ candidates: [], inventoryItemId: null }] });

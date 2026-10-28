@@ -2,7 +2,7 @@
 
 > Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg).
 >
-> **Built:** shelf-scan recognition (Muse Spark reads the photo, Qore Catalog matches), stateless: nothing is stored yet. **Planned:** SAM 3.1 counting, storing scans, confirm → inventory + feedback, and point to sell. Planned endpoint shapes may change before they ship.
+> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), stateless: nothing is stored yet. **Planned:** storing scans, confirm → inventory + feedback, and point to sell. Planned endpoint shapes may change before they ship.
 
 The merchant points the phone camera at products and Tally recognises them. There are two flows:
 
@@ -17,7 +17,7 @@ Every confirmation or correction goes back to Qore Catalog as feedback with `sou
 |---|---|---|
 | Barcode read | Device | `mobile_scanner` (built; see [Barcode scan](barcode-scan.md)) |
 | Read the products in a photo (brand, name, pack size, rough count, box) | apps/api → Meta Model API | Muse Spark (`muse-spark-1.3`), structured JSON output |
-| Count and outline each product | apps/api → Meta Model API | SAM 3.1 (`sam-3.1`), one concept prompt per product |
+| Count each product's units | apps/api → Meta Model API | SAM 3.1 (`sam-3.1`), one concept prompt per distinct look |
 | Match to the catalogue, with prices | apps/api → Qore Catalog | `POST /v1/match` |
 | Identify one item against the merchant's inventory | apps/api → Meta Model API | Muse Spark, closed-set prompt |
 | On-device recognition | Device | Planned: a small student model distilled from Muse Spark labels and merchant confirmations |
@@ -29,9 +29,21 @@ All model calls go through apps/api. `META_MODEL_API_KEY` is server-only, like `
 SAM 3.1 segments one concrete noun phrase per request. A generic prompt such as "product" is a weak concept. Cropping each object and reading it separately would cost one model call per crop and lose label resolution. So the order is:
 
 1. One Muse Spark call reads the whole frame. It lists each distinct product with one bounding box per visible unit, on a 0–1000 grid; the count is the number of boxes (Meta's grounding guide: pointing at every instance before counting beats asking for a number). Structured output guarantees the JSON shape.
-2. *(Planned)* SAM 3.1 then counts and outlines the instances of each product. Its masks also drive the confirm screen's overlay.
+2. SAM 3.1 then counts the units. SAM matches what a pack looks like, not its brand text: "Diplomat toothpaste" found nothing on a toothpaste shelf, while "green box" found the Diplomat Aloe boxes. So Spark also gives each product a two-word `look` (one colour + one container: "red box", "yellow bucket"). SAM runs once per distinct look, in parallel with the catalogue match. Each SAM instance counts for the product with that look whose Spark boxes it sits among (within one unit's width). Instances on a unit Spark gave to a different-looking product, or near no product with that look, are dropped.
 
-If SAM finds nothing for a product, the count falls back to Muse Spark's.
+If SAM finds nothing for a product, or its request fails, the count stays Muse Spark's. A SAM failure never fails the scan.
+
+**Measured.** Five photos of Nigerian shops; true counts are hand counts from zoomed crops.
+
+| Product | Spark alone | With SAM | Hand count |
+|---|---|---|---|
+| Close-Up boxes, stacked | 14 | 29 | ~45 |
+| Tomato paste tins | 4 | 18 | 25+ |
+| Mother custard buckets | 6 | 7 | ~7 |
+
+- **Where SAM works, it's far closer:** single-colour rigid packs (boxes, tins, buckets, bottles) in dense stacks, where Spark gives up early.
+- **Where SAM finds nothing,** Spark's count stands: soft packs such as sachets, pouches and bread bags, and two-colour phrases, which return zero.
+- **Known over-count risk:** neighbouring products with the same look (several white toothpaste brands on one shelf) can take each other's units. The merchant confirms every count.
 
 ## Shelf scan
 
@@ -68,15 +80,20 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 ```json
 {
   "model": "muse-spark-1.3",
+  "countModel": "sam-3.1",
   "catalogueAvailable": true,
-  "timings": { "readMs": 6100, "matchMs": 420, "totalMs": 6520 },
+  "timings": { "readMs": 12800, "samMs": 5100, "matchMs": 1300, "totalMs": 17900 },
   "detections": [
     {
       "id": "3f0c2b9e-…",
       "brand": "Peak",
       "name": "Full Cream Milk Powder",
       "pack": "400g",
-      "count": 6,
+      "look": "white box",
+      "count": 9,
+      "countSource": "sam",
+      "sparkCount": 6,
+      "samCount": 9,
       "boxes": [{ "x1": 102, "y1": 210, "x2": 180, "y2": 395 }],
       "confidence": "high",
       "inventoryItemId": null,
@@ -99,7 +116,8 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 ```
 
 - `brand` and `pack` are `""` when the label isn't legible. `confidence` is `high` (label clearly legible), `medium` (partly) or `low` (inferred from shape or colour).
-- `boxes`: one per visible unit, `count` = `boxes.length`, at most 50 products per photo.
+- `count` is SAM's when SAM found this product's units (`countSource: "sam"`), else Spark's. Both raw counts are returned; `samCount` is `null` when SAM didn't run for the product (more than 20 distinct looks, or the SAM request failed). `boxes`: one per counted unit, at most 50 products per photo.
+- `timings`: `samMs` and `matchMs` run in parallel after `readMs`.
 - `candidates`: up to 3 plausible matches, best first. When a brand was read, only products of that brand count; without one, only near-exact name matches (score ≥ 0.75). `/v1/match` always returns its nearest products, so without this filter a brand the catalogue lacks comes back as another brand's lookalike. Empty means the catalogue doesn't have it: the merchant adds it as their own item. `price` is `null` when the catalogue has no price.
 - `inventoryItemId` (on a candidate): the business's active item for that product. On the detection it is the top candidate's, so confirming it would restock that item.
 - `catalogueAvailable: false`: Qore Catalog failed; detections come back without candidates rather than failing the scan.
@@ -132,7 +150,7 @@ Errors:
 | 502 | Model failure |
 | 504 | Timeout: 45 s for a shelf scan, 4 s for identify (planned) |
 
-Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–21 s and the catalogue match about 1 s. Read time grows with the number of units in the frame, because Spark writes one box per unit. Show progress on the device rather than blocking.
+Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–24 s, then SAM takes 3–6 s and the catalogue match about 1–3 s, in parallel. The whole scan takes about 12–30 s. Read time grows with the number of units in the frame, because Spark writes one box per unit. Show progress on the device rather than blocking.
 
 ## Data (planned)
 

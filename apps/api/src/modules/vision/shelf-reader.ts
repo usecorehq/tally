@@ -23,6 +23,8 @@ export type ShelfProduct = {
   name: string;
   /** Size / pack as printed, e.g. "50cl", "400g", "x12"; empty when not legible. */
   pack: string;
+  /** Short visual noun phrase for SAM 3.1: one colour + one container word, no brand, e.g. "red box". */
+  look: string;
   count: number;
   boxes: Box[];
   confidence: Confidence;
@@ -65,10 +67,14 @@ export const SHELF_SCHEMA = {
           brand: { type: "string", description: "Brand as printed on the pack; empty string if not legible." },
           name: { type: "string", description: "Product name without the brand, as printed (e.g. 'Full Cream Milk Powder')." },
           pack: { type: "string", description: "Size or pack as printed (e.g. '400g', '50cl', '1L', 'x12'); empty string if not legible." },
+          look: {
+            type: "string",
+            description: "Exactly one colour word + one container word for what one unit looks like, no brand or text (e.g. 'red box', 'yellow bucket', 'white bottle', 'green tin', 'blue sachet').",
+          },
           boxes: { type: "array", items: BOX_SCHEMA, description: "One box per visible unit of this product." },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
         },
-        required: ["brand", "name", "pack", "boxes", "confidence"],
+        required: ["brand", "name", "pack", "look", "boxes", "confidence"],
         additionalProperties: false,
       },
     },
@@ -84,6 +90,7 @@ const PROMPT = [
   "Give one bounding box per visible unit of that product, as [x_min, y_min, x_max, y_max] on a normalized 0-1000 grid with (0,0) at the top-left of the image. Do not miss any units.",
   "Ignore shelving, price tags, people and anything that is not a product for sale.",
   "confidence: high when the label is clearly legible, medium when partly legible, low when you are inferring from shape or colour.",
+  "look: the unit's main colour and container for a segmentation model, as exactly two words: one colour + one container (e.g. 'red box', 'yellow bucket', 'white bottle'). Never two colours, never a brand.",
 ].join("\n");
 
 /** POST /v1/responses body for one shelf photo. */
@@ -123,9 +130,11 @@ export function parseShelfProducts(text: string): ShelfProduct[] {
 
   const byKey = new Map<string, ShelfProduct>();
   for (const item of items as Record<string, unknown>[]) {
-    const name = clean(item?.name);
+    const brand = clean(item?.brand);
+    const look = clean(item?.look).toLowerCase().slice(0, 60);
+    // Spark sometimes reads only the brand ("ONGA") or nothing legible; the unit still needs counting.
+    const name = clean(item?.name) || brand || capitalise(look);
     if (!name) continue;
-    const brand = clean(item.brand);
     const pack = clean(item.pack);
     const boxes = (Array.isArray(item.boxes) ? item.boxes : []).map(toBox).filter((b): b is Box => b !== null);
     if (boxes.length === 0) continue;
@@ -137,7 +146,7 @@ export function parseShelfProducts(text: string): ShelfProduct[] {
       existing.boxes.push(...boxes);
       if (rank(confidence) > rank(existing.confidence)) existing.confidence = confidence;
     } else {
-      byKey.set(key, { brand, name, pack, count: 0, boxes, confidence });
+      byKey.set(key, { brand, name, pack, look: look || name.toLowerCase(), count: 0, boxes, confidence });
     }
   }
 
@@ -150,6 +159,8 @@ export function parseShelfProducts(text: string): ShelfProduct[] {
 function clean(v: unknown): string {
   return typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 120) : "";
 }
+
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const clamp = (n: number) => Math.min(1000, Math.max(0, Math.round(n)));
 
