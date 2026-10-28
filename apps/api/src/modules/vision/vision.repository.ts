@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, inArray, isNotNull, isNull, ne, schema, sql } from "@tally/db";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, schema, sql } from "@tally/db";
 import { TALLY_DB, type TallyDb } from "../../drizzle/drizzle.module";
 import { outcomeFor, type DecidedDetection } from "./confirm-plan";
 import { readingKey } from "./inventory-match";
@@ -126,6 +126,19 @@ export class VisionRepository {
         finishedAt: new Date(),
       })
       .where(eq(visionAgentRuns.id, runId));
+  }
+
+  /**
+   * Runs still "running" that started before the cutoff: the process that ran
+   * them restarted (runs live in the API process). Marked failed; returns how many.
+   */
+  async failStaleRuns(startedBefore: Date): Promise<number> {
+    const rows = await this.db
+      .update(visionAgentRuns)
+      .set({ status: "failed", error: "Interrupted: the API restarted during the run", finishedAt: new Date() })
+      .where(and(eq(visionAgentRuns.status, "running"), lt(visionAgentRuns.startedAt, startedBefore)))
+      .returning({ id: visionAgentRuns.id });
+    return rows.length;
   }
 
   /** A run and its steps in order; 404 when it isn't this business's. */
