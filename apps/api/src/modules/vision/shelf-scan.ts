@@ -7,18 +7,24 @@ export const MATCH_CANDIDATES = 3;
 /** Asked of /v1/match (max 10): enough that filtering still leaves the right one. */
 export const MATCH_LIMIT = 10;
 
-/** Without a legible brand, only near-exact name matches are worth showing. */
-export const MIN_UNBRANDED_SCORE = 0.75;
+/**
+ * Without a legible brand, the name must match well on meaning: /v1/match's
+ * text signal (trigram + embedding similarity since semantic search). On 30
+ * unbranded shelf reads (Oct 2026) right-type matches scored text >= 0.54
+ * (one at 0.49) and wrong ones <= 0.51 ("RED" → a red wine). Text, not score:
+ * an agreeing size inflates the score of an unbranded match.
+ */
+export const MIN_UNBRANDED_TEXT = 0.52;
 
 /**
  * Drop catalogue candidates the merchant shouldn't be offered. /v1/match always
  * returns its nearest products, so a brand the catalogue lacks comes back as
  * another brand's lookalike (live: "Lady B Custard Powder" → a laundry detergent).
  *   brand read     → keep only candidates whose brand matched (signals.brand = 1)
- *   brand not read → keep only candidates scoring ≥ MIN_UNBRANDED_SCORE
+ *   brand not read → keep only candidates with signals.text ≥ MIN_UNBRANDED_TEXT
  */
 export function plausible(product: ShelfProduct, candidate: MatchCandidate): boolean {
-  return product.brand ? candidate.signals.brand === 1 : candidate.score >= MIN_UNBRANDED_SCORE;
+  return product.brand ? candidate.signals.brand === 1 : candidate.signals.text >= MIN_UNBRANDED_TEXT;
 }
 
 export type DetectionCandidate = {
