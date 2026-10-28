@@ -257,8 +257,8 @@ Config and secrets: `META_MODEL_API_KEY` (server-only, new); `QORE_CATALOG_API_K
 - Sections: hero ("Snap a shelf. Get your stock count.") with app screenshot/mock, how it works in
   three steps (Snap → Muse counts and matches → Confirm), what it works on (Nigerian shelf photo
   examples), powered by Muse + Qore Catalog, CTA (app download / waitlist), footer (Core Technologies LTD).
-- Design: Qorelly web rules — rounded-full buttons, no box shadows, Solar icons (Bold active /
-  Outline inactive), Ciscela serif for marketing headings only. Mobile-first, works at 360px.
+- Design: Qorelly Design V2 (as `@tally/ui`): trays and sheets, 12px buttons, Phosphor icons,
+  Ciscela serif for marketing headings. Mobile-first, works at 360px.
 - Copy rules: no funding claims (grants, credits and prize money are not "funding raised");
   prices, if any, in ₦.
 - Waitlist storage: open question Q7. MVP default is a mailto / external form link, no backend.

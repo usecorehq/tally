@@ -33,7 +33,7 @@ Qorelly's mobile port of web Design V2, so Tally reads as a Qorelly product. Sou
 
 - **Copied unchanged** (re-copy to update): `v15_tokens.dart` (colours, type, radii; `V15.of(context)` resolves dark mode), `v15_theme.dart` (`V15Theme.light()` / `.dark()`), `brand_themes.dart`, `rich/v15_motion.dart`, `rich/v15_pulse_skeleton.dart`.
 - **Ported subset**: `v15_widgets.dart` — tray, sheet, section, tile, button, icon button, pill, row, search, notice, page header, tab bar, skeleton / error / message states. Same names and look as qorelly-mobile, without its Riverpod / go_router / offline ties (Tally uses bloc). Port more pieces from there rather than drawing new ones. Import `core/design/v15_widgets.dart`; it re-exports the tokens, theme and icons.
-- **Icons**: Phosphor (MIT, `assets/fonts/phosphor`) through `tally_icons.dart`, under qorelly-mobile's `IconsOutline` / `IconsFill` names. Outline everywhere, Fill only for the active tab. (Web uses Solar; mobile follows the Qorelly mobile kit.)
+- **Icons**: Phosphor (MIT, `assets/fonts/phosphor`) through `tally_icons.dart`, under qorelly-mobile's `IconsOutline` / `IconsFill` names. Outline everywhere, Fill only for the active tab. (Web draws Phosphor too, through `@tally/ui`'s Solar-named `SolarIcon`.)
 - **Rules carried over**: grey tray holds white sheets; colour only for meaning; sentence case; tabular figures on counts and money; 44 px targets; no FABs. Honest states — pending shows skeletons, a failed read shows `–` and Retry (never `0` or "no items"), the empty state only after a successful empty read.
 
 ## Built so far

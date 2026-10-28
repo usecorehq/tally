@@ -85,7 +85,7 @@ packages/
   db/                Drizzle schema + client for the tally schema, migrations/.
   auth/              NextAuth v5 config over shared Supabase Auth.
   catalog-client/    Qore Catalog API client (x-api-key).
-  ui/                Shared React components (rounded-full, no shadows).
+  ui/                Shared React components: Qorelly Design V2 (trays, sheets, 12px buttons).
   tsconfig/          base.json, node.json, next.json.
 docs/
   architecture/      Why we built it this way.
@@ -187,7 +187,7 @@ git config core.hooksPath .githooks
 
 ## Credits
 
-- **Icons:** [Solar Icon Set](https://www.figma.com/community/file/1166831539721848736) by [480 Design](https://github.com/480-Design/Solar-Icon-Set), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Converted from SVG to React components; no other changes. See [`packages/ui/src/icons/LICENSE.md`](packages/ui/src/icons/LICENSE.md).
+- **Icons (web):** [Phosphor Icons](https://phosphoricons.com), MIT. Compiled to inline SVG data; no other changes. See [`packages/ui/src/icons/LICENSE.md`](packages/ui/src/icons/LICENSE.md).
 - **Mobile icons:** [Phosphor Icons](https://phosphoricons.com) (Light and Fill), [MIT](apps/mobile/assets/fonts/phosphor/LICENSE), as icon fonts ported with Qorelly's mobile design kit.
 - **Font:** [Inter](https://rsms.me/inter/) by Rasmus Andersson, [SIL Open Font License 1.1](https://openfontlicense.org), loaded with `next/font`.
 
