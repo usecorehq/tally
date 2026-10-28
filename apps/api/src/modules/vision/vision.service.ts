@@ -3,6 +3,7 @@ import {
   HttpException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -11,7 +12,8 @@ import type { MatchResult } from "@tally/catalog-client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { feedbackFor } from "./confirm-plan";
-import { indexInventory } from "./inventory-match";
+import { indexInventory, matchInventory, readingKey, type InventoryMatch, type Reading } from "./inventory-match";
+import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
 import { assignInstances, distinctLooks, parseSamInstances, SAM_MODEL, samRequest, type SamInstance } from "./sam-counter";
 import {
@@ -23,13 +25,46 @@ import {
   type ImageType,
   type ShelfProduct,
 } from "./shelf-reader";
-import { buildDetections, MATCH_LIMIT, matchItems, type Detection } from "./shelf-scan";
+import {
+  buildDetections,
+  candidateRefs,
+  MATCH_CANDIDATES,
+  MATCH_LIMIT,
+  matchItems,
+  plausible,
+  toCandidate,
+  type Detection,
+  type DetectionCandidate,
+} from "./shelf-scan";
 import { toVisionHttpException } from "./vision-errors";
 import type { ConfirmDecision } from "./vision.dto";
 import { VisionRepository, type ConfirmResult } from "./vision.repository";
 
 const SHELF_TIMEOUT_MS = 45_000;
 const SAM_TIMEOUT_MS = 20_000;
+const LABEL_TIMEOUT_MS = 10_000;
+
+export type IdentifyResult = {
+  model: string;
+  /** What Muse Spark read off the label; null when nothing was legible. */
+  reading: Reading | null;
+  /** The merchant's item, or null when it isn't in store. */
+  match: {
+    itemId: string;
+    name: string;
+    price: string;
+    quantityOnHand: string | null;
+    inventoryMatch: InventoryMatch;
+    /** An item the merchant removed: offer to restore it. */
+    archived: boolean;
+    /** Ask "Is this your X?" before selling it. */
+    needsConfirm: boolean;
+  } | null;
+  /** Catalogue suggestions when it isn't in store (asked only then). */
+  candidates: DetectionCandidate[];
+  catalogueAvailable: boolean;
+  timings: { readMs: number; matchMs: number; totalMs: number };
+};
 
 export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
   /** Best-effort: a catalogue outage never undoes the stock changes; feedback is retried on the next confirm. */
@@ -129,6 +164,82 @@ export class VisionService {
       detections,
       catalogueAvailable: matching.value.available,
       timings: { ...timings, totalMs: Date.now() - started },
+    };
+  }
+
+  /**
+   * Point-to-sell: one product photo → its label (Muse Spark, minimal
+   * reasoning) → the merchant's own item, matched in Tally (a remembered
+   * reading, then brand + name). Qore Catalog is asked only when nothing in
+   * store matches, so a known item costs one model call. Nothing is stored.
+   */
+  async identify(businessId: string, userId: string, image: Buffer): Promise<IdentifyResult> {
+    if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
+    const type = sniffImageType(image);
+    if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
+
+    const [items, readings, archived] = await Promise.all([
+      this.businesses.listInventory(businessId, userId),
+      this.repo.readings(businessId),
+      this.repo.archivedLinkedItems(businessId),
+    ]);
+    const index = indexInventory(items, readings, archived);
+    const started = Date.now();
+
+    let reading: Reading | null;
+    try {
+      reading = parseLabel((await this.meta.respond(labelRequest(image, type), LABEL_TIMEOUT_MS)).text);
+    } catch (err) {
+      throw err instanceof HttpException ? err : toVisionHttpException(err);
+    }
+    const readMs = Date.now() - started;
+    const result = (match: IdentifyResult["match"], candidates: DetectionCandidate[] = [], catalogueAvailable = true): IdentifyResult => ({
+      model: LABEL_MODEL,
+      reading,
+      match,
+      candidates,
+      catalogueAvailable,
+      timings: { readMs, matchMs: Date.now() - started - readMs, totalMs: Date.now() - started },
+    });
+    if (!reading) return result(null);
+
+    // In store first: a remembered reading or a name match needs no catalogue call.
+    const local = matchInventory(reading, [], index);
+    if (local) return result(this.describe(local, items, archived));
+
+    const { matches, available } = await this.match([{ ...reading, look: "", count: 0, boxes: [], confidence: "low" }]);
+    const plausibleCandidates = (matches[0]?.candidates ?? []).filter((c) => plausible(reading!, c));
+    const stocked = matchInventory(reading, candidateRefs(plausibleCandidates), index);
+    return result(
+      stocked ? this.describe(stocked, items, archived) : null,
+      plausibleCandidates.slice(0, MATCH_CANDIDATES).map((c) => toCandidate(c, index)),
+      available,
+    );
+  }
+
+  /** The merchant confirmed an identify result: remember the reading for that item. */
+  async confirmIdentify(businessId: string, userId: string, reading: Reading, itemId: string): Promise<{ itemId: string; readingKey: string }> {
+    await this.businesses.getForMember(businessId, userId);
+    const key = readingKey(reading);
+    if (!(await this.repo.rememberReading(businessId, itemId, key))) throw new NotFoundException(`No item ${itemId}`);
+    return { itemId, readingKey: key };
+  }
+
+  private describe(
+    m: NonNullable<ReturnType<typeof matchInventory>>,
+    items: { id: string; name: string; price: string; quantityOnHand: string }[],
+    archived: { id: string; name: string; price: string }[],
+  ): IdentifyResult["match"] {
+    const active = items.find((i) => i.id === m.itemId);
+    const item = active ?? archived.find((i) => i.id === m.itemId)!;
+    return {
+      itemId: m.itemId,
+      name: item.name,
+      price: item.price,
+      quantityOnHand: active?.quantityOnHand ?? null,
+      inventoryMatch: m.match,
+      archived: m.archived,
+      needsConfirm: !m.sure,
     };
   }
 

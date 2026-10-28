@@ -5,17 +5,25 @@ sequenceDiagram
     participant P as mobile
     participant A as Tally apps/api
     participant S as Meta Model API
+    participant Q as Qore Catalog
 
-    Note over M,S: PLANNED (tier 1). Tier 0 barcode is built, tier 2 on-device model is planned.
+    Note over M,Q: BUILT: tiers 0 and 1. PLANNED: tier 2, an on-device model.
     M->>P: point camera at item
     alt barcode read (tier 0)
         P->>P: look up cached inventory → item
     else no barcode after ~600 ms, frame steady (tier 1)
         P->>P: scale to 640 px, JPEG ~80 KB
         P->>A: POST /api/businesses/:id/vision/identify [multipart, Bearer JWT]
-        A->>S: muse-spark-1.3, minimal reasoning:<br/>"which of these inventory items, or none?" [cached prefix]
-        S-->>A: {itemId | none, confidence}
-        A-->>P: match or null
+        A->>S: muse-spark-1.3, minimal reasoning: read the label {brand, name, pack}
+        S-->>A: reading (~1.3–3 s)
+        A->>A: match the merchant's items: remembered reading, then brand + name
+        opt nothing in store matched
+            A->>Q: POST /v1/match (x-api-key)
+            Q-->>A: candidates → a stocked Qore ID, or suggestions to add
+        end
+        A-->>P: match (needsConfirm, archived) or null + candidates
     end
     P-->>M: suggestion
-    M->>P: tap to add to sale
+    M->>P: tap to add to sale (or pick the right item)
+    P->>A: POST …/vision/identify/confirm {reading, itemId}
+    A->>A: remember the reading → next time it matches at once

@@ -9,7 +9,7 @@ import request from "supertest";
 import { SupabaseJwtGuard } from "../../common/guards/supabase-jwt.guard";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
-import { MAX_SHELF_IMAGE_BYTES, VisionController } from "./vision.controller";
+import { MAX_IDENTIFY_IMAGE_BYTES, MAX_SHELF_IMAGE_BYTES, VisionController } from "./vision.controller";
 import { VisionRepository } from "./vision.repository";
 import { VisionService } from "./vision.service";
 
@@ -90,6 +90,7 @@ async function app(apiKey: string | undefined) {
       pendingFeedback: [pending],
     })),
     markFeedbackSent: jest.fn(async () => undefined),
+    rememberReading: jest.fn(async () => true),
   };
   const catalog = {
     client: {
@@ -373,5 +374,152 @@ describe("VisionController confirm + get (HTTP)", () => {
       .set(auth)
       .send({ decisions: [{ detectionId: DET, action: "skip" }] })
       .expect(200);
+  });
+});
+
+describe("VisionController identify (HTTP)", () => {
+  let nest: INestApplication;
+  let ctx: Awaited<ReturnType<typeof app>>;
+  // Own spy, created after the earlier describes restored theirs.
+  let fetchSpy: ReturnType<typeof jest.spyOn<typeof global, "fetch">>;
+  const identifyPath = `/api/businesses/${BIZ}/vision/identify`;
+  const label = (brand: string, name: string, pack = "") => () => sparkLabel({ brand, name, pack });
+  const sparkLabel = (l: Record<string, string>) =>
+    new Response(JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(l) }] }] }), {
+      status: 200,
+    });
+  const items = [
+    { id: "closeup", name: "Close-Up Toothpaste 130g", variantLabel: null, coreQid: "QC-CCCC-CCCC-C", price: "3000.00", quantityOnHand: "14.000" },
+    { id: "ladyb", name: "Lady B Custard", variantLabel: null, coreQid: null, price: "6800.00", quantityOnHand: "3.000" },
+  ];
+  const catalogueCandidate = (qid: string, brand: number, size: number) => ({
+    qid,
+    name: `Product ${qid}`,
+    variantLabel: null,
+    size: null,
+    packQty: 1,
+    brand: { slug: "b", name: "B" },
+    score: 0.88,
+    signals: { text: 0.9, brand, size },
+    price: { median: 3000, min: 2800, max: 3200 },
+  });
+
+  beforeAll(async () => {
+    fetchSpy = jest.spyOn(global, "fetch");
+    ctx = await app("LLM_000_not-a-real-key");
+    nest = ctx.nest;
+  });
+  afterAll(async () => {
+    await nest.close();
+    fetchSpy.mockRestore();
+  });
+  beforeEach(() => {
+    fetchSpy.mockReset();
+    ctx.catalog.client.match.mockClear();
+    ctx.businesses.listInventory.mockResolvedValue(items as never);
+    ctx.repo.readings.mockResolvedValue([]);
+  });
+
+  const post = () => request(nest.getHttpServer()).post(identifyPath);
+
+  it("needs a Supabase JWT", async () => {
+    await post().attach("image", JPEG, "p.jpg").expect(401);
+  });
+
+  it("a remembered reading sells straight away with one model call and no catalogue call", async () => {
+    ctx.repo.readings.mockResolvedValueOnce([{ itemId: "closeup", readingKey: "closeup|toothpaste|130g" }]);
+    fetchSpy.mockImplementation(async () => label("Closeup", "Toothpaste", "130g")());
+    const res = await post().set(auth).attach("image", JPEG, "p.jpg").expect(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).reasoning).toEqual({ effort: "minimal" });
+    expect(ctx.catalog.client.match).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({
+      reading: { brand: "Closeup", name: "Toothpaste", pack: "130g" },
+      match: { itemId: "closeup", name: "Close-Up Toothpaste 130g", price: "3000.00", quantityOnHand: "14.000", inventoryMatch: "reading", needsConfirm: false },
+      candidates: [],
+    });
+  });
+
+  it("a hand-typed item matched by name asks first, without a catalogue call", async () => {
+    fetchSpy.mockImplementation(async () => label("Lady B", "Custard")());
+    const res = await post().set(auth).attach("image", JPEG, "p.jpg").expect(200);
+    expect(ctx.catalog.client.match).not.toHaveBeenCalled();
+    expect(res.body.match).toMatchObject({ itemId: "ladyb", inventoryMatch: "name", needsConfirm: true });
+  });
+
+  it("otherwise asks the catalogue; a stocked product with brand and size agreeing is sure", async () => {
+    fetchSpy.mockImplementation(async () => label("Close-Up", "Red Hot", "130g")());
+    ctx.catalog.client.match.mockResolvedValueOnce({
+      items: [{ ref: "0", query: {}, parsedPack: null, candidates: [catalogueCandidate("QC-CCCC-CCCC-C", 1, 1)] }],
+    } as never);
+    const res = await post().set(auth).attach("image", JPEG, "p.jpg").expect(200);
+    expect(ctx.catalog.client.match).toHaveBeenCalledWith({ items: [{ ref: "0", brand: "Close-Up", name: "Red Hot", pack: "130g" }], limit: 10 });
+    expect(res.body.match).toMatchObject({ itemId: "closeup", inventoryMatch: "catalogue", needsConfirm: false });
+  });
+
+  it("not in store: no match, catalogue suggestions to add", async () => {
+    fetchSpy.mockImplementation(async () => label("Pepsodent", "Toothpaste")());
+    ctx.catalog.client.match.mockResolvedValueOnce({
+      items: [{ ref: "0", query: {}, parsedPack: null, candidates: [catalogueCandidate("QC-PPPP-PPPP-P", 1, 0.5), catalogueCandidate("QC-XXXX-XXXX-X", 0, 0.5)] }],
+    } as never);
+    const res = await post().set(auth).attach("image", JPEG, "p.jpg").expect(200);
+    expect(res.body.match).toBeNull();
+    // The other-brand candidate is dropped as implausible.
+    expect(res.body.candidates.map((c: { qid: string }) => c.qid)).toEqual(["QC-PPPP-PPPP-P"]);
+  });
+
+  it("an illegible label returns no match and skips the catalogue", async () => {
+    fetchSpy.mockImplementation(async () => label("", "")());
+    const res = await post().set(auth).attach("image", JPEG, "p.jpg").expect(200);
+    expect(res.body).toMatchObject({ reading: null, match: null, candidates: [] });
+    expect(ctx.catalog.client.match).not.toHaveBeenCalled();
+  });
+
+  it("checks membership before the model, and rejects bad or oversized images", async () => {
+    ctx.businesses.listInventory.mockRejectedValueOnce(new ForbiddenException("Not a member of this business"));
+    await post().set(auth).attach("image", JPEG, "p.jpg").expect(403);
+    await post().set(auth).attach("image", Buffer.from("<svg/>"), "p.jpg").expect(400);
+    await post().set(auth).attach("image", Buffer.alloc(MAX_IDENTIFY_IMAGE_BYTES + 1, 0xff), "p.jpg").expect(413);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("maps a model timeout to 504", async () => {
+    fetchSpy.mockRejectedValueOnce(new DOMException("timed out", "TimeoutError"));
+    await post().set(auth).attach("image", JPEG, "p.jpg").expect(504);
+  });
+
+  describe("confirm", () => {
+    const ITEM = "00000000-0000-4000-8000-0000000000e1";
+    const confirmPath = `${identifyPath}/confirm`;
+
+    it("remembers the reading for the confirmed item", async () => {
+      const res = await request(nest.getHttpServer())
+        .post(confirmPath)
+        .set(auth)
+        .send({ reading: { brand: "Closeup", name: "Toothpaste", pack: "130g" }, itemId: ITEM })
+        .expect(200);
+      expect(ctx.businesses.getForMember).toHaveBeenCalledWith(BIZ, USER);
+      expect(ctx.repo.rememberReading).toHaveBeenCalledWith(BIZ, ITEM, "closeup|toothpaste|130g");
+      expect(res.body).toEqual({ itemId: ITEM, readingKey: "closeup|toothpaste|130g" });
+    });
+
+    it("404 when the item isn't an active item of this business", async () => {
+      ctx.repo.rememberReading.mockResolvedValueOnce(false);
+      await request(nest.getHttpServer())
+        .post(confirmPath)
+        .set(auth)
+        .send({ reading: { brand: "", name: "Toothpaste", pack: "" }, itemId: ITEM })
+        .expect(404);
+    });
+
+    it.each([
+      ["no reading", { itemId: ITEM }],
+      ["empty name", { reading: { brand: "x", name: "", pack: "" }, itemId: ITEM }],
+      ["bad item id", { reading: { brand: "", name: "x", pack: "" }, itemId: "x" }],
+    ])("rejects %s", async (_label, body) => {
+      ctx.repo.rememberReading.mockClear();
+      await request(nest.getHttpServer()).post(confirmPath).set(auth).send(body).expect(400);
+      expect(ctx.repo.rememberReading).not.toHaveBeenCalled();
+    });
   });
 });

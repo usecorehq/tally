@@ -38,13 +38,14 @@ export class VisionRepository {
   /** Items the merchant removed that are linked to a Qore ID: a scan offers to restore them instead of adding a duplicate. */
   archivedLinkedItems(
     businessId: string,
-  ): Promise<{ id: string; name: string; variantLabel: string | null; coreQid: string | null }[]> {
+  ): Promise<{ id: string; name: string; variantLabel: string | null; coreQid: string | null; price: string }[]> {
     return this.db
       .select({
         id: inventoryItems.id,
         name: inventoryItems.name,
         variantLabel: inventoryItems.variantLabel,
         coreQid: inventoryItems.coreQid,
+        price: inventoryItems.price,
       })
       .from(inventoryItems)
       .where(and(eq(inventoryItems.businessId, businessId), isNotNull(inventoryItems.archivedAt), isNotNull(inventoryItems.coreQid)));
@@ -192,6 +193,26 @@ export class VisionRepository {
 
       result.pendingFeedback = await this.pendingFeedback(tx, scanId);
       return result;
+    });
+  }
+
+  /**
+   * Point-to-sell confirm: the merchant said "yes, that's it". Remember the
+   * reading for this active item so the next identify recognises it at once.
+   * Returns false when the item isn't an active item of this business.
+   */
+  async rememberReading(businessId: string, itemId: string, key: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const item = await this.item(tx, businessId, itemId);
+      if (!item || item.archivedAt) return false;
+      await tx
+        .insert(inventoryItemReadings)
+        .values({ businessId, itemId, readingKey: key })
+        .onConflictDoUpdate({
+          target: [inventoryItemReadings.businessId, inventoryItemReadings.readingKey],
+          set: { itemId, updatedAt: new Date() },
+        });
+      return true;
     });
   }
 

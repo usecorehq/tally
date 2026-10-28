@@ -16,10 +16,11 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { BusinessParams } from "../businesses/businesses.dto";
 import { VisionExceptionFilter } from "./vision-errors";
-import { ConfirmBody, ScanParams } from "./vision.dto";
+import { ConfirmBody, IdentifyConfirmBody, ScanParams } from "./vision.dto";
 import { VisionService } from "./vision.service";
 
 export const MAX_SHELF_IMAGE_BYTES = 4 * 1024 * 1024;
+export const MAX_IDENTIFY_IMAGE_BYTES = 1024 * 1024;
 
 type UploadedImage = { buffer: Buffer; size: number };
 
@@ -74,6 +75,60 @@ export class VisionController {
   ) {
     if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
     return this.vision.recogniseShelf(businessId, user.sub, file.buffer);
+  }
+
+  @Post("identify")
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_IDENTIFY_IMAGE_BYTES + 1, files: 1 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ schema: { type: "object", properties: { image: { type: "string", format: "binary" } }, required: ["image"] } })
+  @ApiOperation({
+    summary:
+      "Point-to-sell: which of the merchant's items is this? One product photo (JPEG/PNG/WebP, ≤ 1 MB, ~640 px long edge). Muse Spark reads the label; Tally matches it to the merchant's items, asking Qore Catalog only when nothing in store matches. Nothing is stored. Try the barcode first: this takes ~3 s.",
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        model: "muse-spark-1.3",
+        reading: { brand: "Closeup", name: "Toothpaste", pack: "130g" },
+        match: {
+          itemId: "2c9f…",
+          name: "Close-Up Toothpaste 130g",
+          price: "3000.00",
+          quantityOnHand: "14.000",
+          inventoryMatch: "reading",
+          archived: false,
+          needsConfirm: false,
+        },
+        candidates: [],
+        catalogueAvailable: true,
+        timings: { readMs: 2600, matchMs: 0, totalMs: 2600 },
+      },
+    },
+  })
+  identify(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() { businessId }: BusinessParams,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: MAX_IDENTIFY_IMAGE_BYTES, message: "Image must be 1 MB or smaller" })
+        .build({ errorHttpStatusCode: 413, fileIsRequired: false }),
+    )
+    file: UploadedImage | undefined,
+  ) {
+    if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
+    return this.vision.identify(businessId, user.sub, file.buffer);
+  }
+
+  @Post("identify/confirm")
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      "The merchant confirmed what identify found (or picked the right item): remember the reading for that item, so the next identify recognises it at once. 404 when the item isn't an active item of this business.",
+  })
+  @ApiOkResponse({ schema: { example: { itemId: "2c9f…", readingKey: "closeup|toothpaste|130g" } } })
+  confirmIdentify(@CurrentUser() user: AuthenticatedUser, @Param() { businessId }: BusinessParams, @Body() body: IdentifyConfirmBody) {
+    return this.vision.confirmIdentify(businessId, user.sub, body.reading, body.itemId);
   }
 
   @Get("shelf-scans/:scanId")

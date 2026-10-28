@@ -3,6 +3,7 @@ import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  IsDefined,
   IsIn,
   IsInt,
   IsOptional,
@@ -79,4 +80,33 @@ export class ConfirmBody {
   @ArrayMinSize(1)
   @ArrayMaxSize(MAX_PRODUCTS)
   decisions!: ConfirmDecision[];
+}
+
+export class LabelReading {
+  @ApiProperty({ description: "As returned in identify's reading ('' when not legible)", example: "Closeup" })
+  @IsString()
+  @Length(0, 120)
+  brand!: string;
+
+  @ApiProperty({ example: "Toothpaste" })
+  @IsString()
+  @Length(1, 120)
+  name!: string;
+
+  @ApiProperty({ example: "130g" })
+  @IsString()
+  @Length(0, 120)
+  pack!: string;
+}
+
+export class IdentifyConfirmBody {
+  @ApiProperty({ type: LabelReading, description: "The reading identify returned, unchanged" })
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => LabelReading)
+  reading!: LabelReading;
+
+  @ApiProperty({ description: "The item the merchant confirmed it is (active)" })
+  @IsUUID()
+  itemId!: string;
 }
