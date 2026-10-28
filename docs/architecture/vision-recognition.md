@@ -2,7 +2,7 @@
 
 > Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg). **Planned, not built.** Endpoint shapes may change before they ship.
 
-The merchant points the phone camera at products and Tally recognises them. There are two flows:
+The merchant points the phone camera at products and Tally recognises them. Product side (users, screens, metrics, delivery slices): [photo-to-inventory PRD](../prd-photo-to-inventory.md). There are two flows:
 
 - **Shelf scan (photo → inventory).** Photograph a shelf or a pile of stock. Tally identifies every product in the frame and matches each one to a Qore Catalog product with an indicative ₦ price. The merchant confirms or corrects the results, and the items land in their inventory with counts. Accuracy matters more than speed here.
 - **Point to sell.** Point the camera at one item to find it at the till. Speed matters most here.
