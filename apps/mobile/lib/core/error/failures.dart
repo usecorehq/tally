@@ -17,6 +17,11 @@ class AuthFailure extends Failure {
   const AuthFailure(super.message);
 }
 
+/// Sign-in with an account whose email was never confirmed: send a code.
+class EmailNotConfirmedFailure extends Failure {
+  const EmailNotConfirmedFailure(super.message);
+}
+
 /// The API answered 404: the thing asked for doesn't exist (e.g. an unknown barcode).
 class NotFoundFailure extends Failure {
   const NotFoundFailure(super.message);

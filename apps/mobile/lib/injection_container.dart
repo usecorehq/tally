@@ -7,10 +7,12 @@ import 'core/network/api_client.dart';
 import 'features/auth/data/datasources/auth_remote_data_source.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
+import 'features/auth/domain/usecases/account_usecases.dart';
 import 'features/auth/domain/usecases/get_current_user.dart';
 import 'features/auth/domain/usecases/sign_in.dart';
 import 'features/auth/domain/usecases/sign_out.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
+import 'features/auth/presentation/cubit/account_cubits.dart';
 import 'features/auth/presentation/cubit/sign_in_cubit.dart';
 import 'features/business/data/datasources/business_remote_data_source.dart';
 import 'features/business/data/repositories/business_repository_impl.dart';
@@ -41,8 +43,26 @@ Future<void> initDependencies() async {
     ..registerLazySingleton(() => SignIn(sl()))
     ..registerLazySingleton(() => SignOut(sl()))
     ..registerLazySingleton(() => GetCurrentUser(sl()))
+    ..registerLazySingleton(() => SignUp(sl()))
+    ..registerLazySingleton(() => VerifyEmailCode(sl()))
+    ..registerLazySingleton(() => ResendSignupCode(sl()))
+    ..registerLazySingleton(() => RequestPasswordReset(sl()))
+    ..registerLazySingleton(() => SetNewPassword(sl()))
     ..registerFactory(() => AuthBloc(getCurrentUser: sl(), signOut: sl()))
-    ..registerFactory(() => SignInCubit(sl()));
+    ..registerFactory(() => SignInCubit(sl(), sl()))
+    ..registerFactory(() => SignUpCubit(sl()))
+    ..registerFactory(() => ForgotPasswordCubit(sl()))
+    ..registerFactory(() => NewPasswordCubit(sl()))
+    // The code screen is per email + flow: sl<VerifyCodeCubit>(param1: email, param2: recovery)
+    ..registerFactoryParam<VerifyCodeCubit, String, bool>(
+      (email, recovery) => VerifyCodeCubit(
+        email: email,
+        recovery: recovery,
+        verify: sl(),
+        resendSignup: sl(),
+        resendRecovery: sl(),
+      ),
+    );
 
   // Business
   sl

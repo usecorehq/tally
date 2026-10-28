@@ -28,21 +28,14 @@ const String kV15NoFigure = '–';
 class V15Tray extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
-  const V15Tray({
-    super.key,
-    required this.child,
-    this.padding = const EdgeInsets.all(V15.trayInset),
-  });
+  const V15Tray({super.key, required this.child, this.padding = const EdgeInsets.all(V15.trayInset)});
 
   @override
   Widget build(BuildContext context) {
     final c = V15.of(context);
     return Container(
       padding: padding,
-      decoration: BoxDecoration(
-        color: c.gray100,
-        borderRadius: BorderRadius.circular(V15.trayRadius),
-      ),
+      decoration: BoxDecoration(color: c.gray100, borderRadius: BorderRadius.circular(V15.trayRadius)),
       child: child,
     );
   }
@@ -140,22 +133,20 @@ class V15Tile extends StatelessWidget {
     final c = V15.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: c.gray100,
-        borderRadius: BorderRadius.circular(V15.sheetRadius),
-      ),
+      decoration: BoxDecoration(color: c.gray100, borderRadius: BorderRadius.circular(V15.sheetRadius)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: V15.label.copyWith(color: c.gray500)),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: V15.label.copyWith(color: c.gray500),
+          ),
           const SizedBox(height: 6),
           value == null
               ? const V15PulseSkeleton(width: 48, height: 30)
-              : Text(
-                  value!,
-                  maxLines: 1,
-                  style: V15.tileFigure.copyWith(color: warn ? c.amberFg : c.gray900),
-                ),
+              : Text(value!, maxLines: 1, style: V15.tileFigure.copyWith(color: warn ? c.amberFg : c.gray900)),
         ],
       ),
     );
@@ -171,6 +162,9 @@ class V15Button extends StatelessWidget {
   final double height;
   final IconData? icon;
   final bool expand;
+
+  /// Busy: a spinner in place of the label (same width), no taps.
+  final bool loading;
   const V15Button(
     this.label, {
     super.key,
@@ -179,6 +173,7 @@ class V15Button extends StatelessWidget {
     this.height = 44,
     this.icon,
     this.expand = false,
+    this.loading = false,
   });
 
   @override
@@ -190,8 +185,34 @@ class V15Button extends StatelessWidget {
       V15Tone.soft => (c.gray100, c.gray900, false),
       V15Tone.dark => (c.gray900, c.surface, false),
     };
+    Widget content = Row(
+      mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (icon != null) ...[Icon(icon, size: 18, color: fg), const SizedBox(width: 8)],
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: (height >= 48 ? V15.cardHeading : V15.ui).copyWith(color: fg),
+          ),
+        ),
+      ],
+    );
+    if (loading) {
+      content = Stack(
+        alignment: Alignment.center,
+        children: [
+          // Holds the button's width; still read by screen readers.
+          Opacity(opacity: 0, alwaysIncludeSemantics: true, child: content),
+          SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: fg)),
+        ],
+      );
+    }
     return _Pressable(
-      onTap: onPressed,
+      onTap: loading ? null : onPressed,
+      dimWhenDisabled: !loading,
       child: Container(
         height: height,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -201,21 +222,7 @@ class V15Button extends StatelessWidget {
           border: ring ? Border.all(color: c.ringQuiet) : null,
           boxShadow: ring ? V15.sheetShadow : null,
         ),
-        child: Row(
-          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[Icon(icon, size: 18, color: fg), const SizedBox(width: 8)],
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: (height >= 48 ? V15.cardHeading : V15.ui).copyWith(color: fg),
-              ),
-            ),
-          ],
-        ),
+        child: content,
       ),
     );
   }
@@ -242,10 +249,7 @@ class V15IconButton extends StatelessWidget {
           child: Container(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(
-              color: c.gray100,
-              borderRadius: BorderRadius.circular(kV15ButtonRadius),
-            ),
+            decoration: BoxDecoration(color: c.gray100, borderRadius: BorderRadius.circular(kV15ButtonRadius)),
             child: Icon(icon, size: 20, color: c.gray700),
           ),
         ),
@@ -258,7 +262,10 @@ class V15IconButton extends StatelessWidget {
 class _Pressable extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
-  const _Pressable({required this.child, this.onTap});
+
+  /// Fade to 40% while [onTap] is null (off for a busy button).
+  final bool dimWhenDisabled;
+  const _Pressable({required this.child, this.onTap, this.dimWhenDisabled = true});
 
   @override
   State<_Pressable> createState() => _PressableState();
@@ -277,7 +284,7 @@ class _PressableState extends State<_Pressable> {
     child: AnimatedScale(
       scale: _down && !V15Motion.reduced(context) ? 0.97 : 1,
       duration: const Duration(milliseconds: 120),
-      child: Opacity(opacity: widget.onTap == null ? 0.4 : 1, child: widget.child),
+      child: Opacity(opacity: widget.onTap == null && widget.dimWhenDisabled ? 0.4 : 1, child: widget.child),
     ),
   );
 }
@@ -295,11 +302,36 @@ class V15Pill extends StatelessWidget {
     final c = V15.of(context);
     // (light bg, light text, dot, dark text)
     final (bg, fg, dot, darkFg) = switch (tone) {
-      V15PillTone.green => (const Color(0xFFECFDF5), const Color(0xFF047857), const Color(0xFF10B981), const Color(0xFF6EE7B7)),
-      V15PillTone.amber => (const Color(0xFFFFFBEB), const Color(0xFFB45309), const Color(0xFFF59E0B), const Color(0xFFFCD34D)),
-      V15PillTone.red => (const Color(0xFFFEF2F2), const Color(0xFFDC2626), const Color(0xFFEF4444), const Color(0xFFFCA5A5)),
-      V15PillTone.blue => (const Color(0xFFEFF6FF), const Color(0xFF1D4ED8), const Color(0xFF3B82F6), const Color(0xFF93C5FD)),
-      V15PillTone.violet => (const Color(0xFFF5F3FF), const Color(0xFF6D28D9), const Color(0xFF8B5CF6), const Color(0xFFC4B5FD)),
+      V15PillTone.green => (
+        const Color(0xFFECFDF5),
+        const Color(0xFF047857),
+        const Color(0xFF10B981),
+        const Color(0xFF6EE7B7),
+      ),
+      V15PillTone.amber => (
+        const Color(0xFFFFFBEB),
+        const Color(0xFFB45309),
+        const Color(0xFFF59E0B),
+        const Color(0xFFFCD34D),
+      ),
+      V15PillTone.red => (
+        const Color(0xFFFEF2F2),
+        const Color(0xFFDC2626),
+        const Color(0xFFEF4444),
+        const Color(0xFFFCA5A5),
+      ),
+      V15PillTone.blue => (
+        const Color(0xFFEFF6FF),
+        const Color(0xFF1D4ED8),
+        const Color(0xFF3B82F6),
+        const Color(0xFF93C5FD),
+      ),
+      V15PillTone.violet => (
+        const Color(0xFFF5F3FF),
+        const Color(0xFF6D28D9),
+        const Color(0xFF8B5CF6),
+        const Color(0xFFC4B5FD),
+      ),
       V15PillTone.gray => (c.gray100, c.gray600, c.gray400, c.gray600),
     };
     final isGray = tone == V15PillTone.gray;
@@ -312,7 +344,11 @@ class V15Pill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(width: 6, height: 6, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
@@ -452,12 +488,14 @@ class V15Notice extends StatelessWidget {
     final (bg, ink, bodyInk) = switch (tone) {
       V15NoticeTone.neutral => (c.gray100, c.gray900, c.gray600),
       V15NoticeTone.brand => (c.primaryLight, c.gray900, c.gray700),
-      V15NoticeTone.warn => c.isDark
-          ? (const Color(0x24F59E0B), const Color(0xFFFDE68A), const Color(0xFFFCD34D))
-          : (const Color(0xFFFFFBEB), const Color(0xFF78350F), const Color(0xFF92400E)),
-      V15NoticeTone.error => c.isDark
-          ? (const Color(0x24EF4444), const Color(0xFFFECACA), const Color(0xFFFCA5A5))
-          : (const Color(0xFFFEF2F2), const Color(0xFF7F1D1D), const Color(0xFF991B1B)),
+      V15NoticeTone.warn =>
+        c.isDark
+            ? (const Color(0x24F59E0B), const Color(0xFFFDE68A), const Color(0xFFFCD34D))
+            : (const Color(0xFFFFFBEB), const Color(0xFF78350F), const Color(0xFF92400E)),
+      V15NoticeTone.error =>
+        c.isDark
+            ? (const Color(0x24EF4444), const Color(0xFFFECACA), const Color(0xFFFCA5A5))
+            : (const Color(0xFFFEF2F2), const Color(0xFF7F1D1D), const Color(0xFF991B1B)),
     };
     return Container(
       padding: const EdgeInsets.all(14),
@@ -476,7 +514,10 @@ class V15Notice extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: V15.label.copyWith(color: ink, height: 20 / 13)),
+                Text(
+                  title,
+                  style: V15.label.copyWith(color: ink, height: 20 / 13),
+                ),
                 if (body != null) Text(body!, style: V15.description.copyWith(color: bodyInk)),
               ],
             ),
@@ -603,7 +644,11 @@ class V15TabBar extends StatelessWidget {
         children: [
           Icon(selected ? items[i].$1 : items[i].$2, size: 22, color: color),
           const SizedBox(height: 2),
-          Text(items[i].$3, maxLines: 1, style: V15.micro.copyWith(color: color, fontWeight: FontWeight.w500)),
+          Text(
+            items[i].$3,
+            maxLines: 1,
+            style: V15.micro.copyWith(color: color, fontWeight: FontWeight.w500),
+          ),
         ],
       ),
     );
@@ -663,7 +708,12 @@ class V15ErrorRow extends StatelessWidget {
         children: [
           Icon(IconsOutline.danger_circle, size: 18, color: c.redFg),
           const SizedBox(width: 10),
-          Expanded(child: Text(message, style: V15.ui.copyWith(color: c.gray700, fontWeight: FontWeight.w400))),
+          Expanded(
+            child: Text(
+              message,
+              style: V15.ui.copyWith(color: c.gray700, fontWeight: FontWeight.w400),
+            ),
+          ),
           if (onRetry != null) ...[
             const SizedBox(width: 8),
             V15Button('Retry', tone: V15Tone.quiet, height: 40, onPressed: onRetry),
@@ -693,10 +743,18 @@ class V15MessageState extends StatelessWidget {
           children: [
             V15IconTile(icon),
             const SizedBox(height: 14),
-            Text(title, textAlign: TextAlign.center, style: V15.cardHeading.copyWith(color: c.gray900)),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: V15.cardHeading.copyWith(color: c.gray900),
+            ),
             if (body != null) ...[
               const SizedBox(height: 4),
-              Text(body!, textAlign: TextAlign.center, style: V15.description.copyWith(color: c.gray500)),
+              Text(
+                body!,
+                textAlign: TextAlign.center,
+                style: V15.description.copyWith(color: c.gray500),
+              ),
             ],
             if (action != null) ...[const SizedBox(height: 18), action!],
           ],

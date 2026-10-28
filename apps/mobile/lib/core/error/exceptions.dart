@@ -8,6 +8,9 @@ class ServerException implements Exception {
 }
 
 class AuthException implements Exception {
-  const AuthException(this.message);
+  const AuthException(this.message, {this.emailNotConfirmed = false});
   final String message;
+
+  /// Right password, but the account's email was never confirmed.
+  final bool emailNotConfirmed;
 }

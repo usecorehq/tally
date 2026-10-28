@@ -1,6 +1,8 @@
 part of 'sign_in_cubit.dart';
 
-enum SignInStatus { initial, submitting, success, failure }
+/// [unconfirmed]: right password, email never confirmed — a code was sent;
+/// the page opens the code screen.
+enum SignInStatus { initial, submitting, success, failure, unconfirmed }
 
 class SignInState extends Equatable {
   const SignInState({this.status = SignInStatus.initial, this.user, this.error});
