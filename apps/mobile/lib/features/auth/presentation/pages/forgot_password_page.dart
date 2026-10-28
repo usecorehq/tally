@@ -17,7 +17,10 @@ class ForgotPasswordPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(create: (_) => sl<ForgotPasswordCubit>(), child: _ForgotPasswordView(email: email));
+    return BlocProvider(
+      create: (_) => sl<ForgotPasswordCubit>(),
+      child: _ForgotPasswordView(email: email),
+    );
   }
 }
 

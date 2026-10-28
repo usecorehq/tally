@@ -11,10 +11,8 @@ class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource _remote;
 
   @override
-  Future<Either<Failure, MerchantUser>> signIn({
-    required String email,
-    required String password,
-  }) => _run(() => _remote.signIn(email: email, password: password));
+  Future<Either<Failure, MerchantUser>> signIn({required String email, required String password}) =>
+      _run(() => _remote.signIn(email: email, password: password));
 
   @override
   Future<Either<Failure, Unit>> signOut() async {

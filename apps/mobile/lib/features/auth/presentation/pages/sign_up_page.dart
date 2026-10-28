@@ -63,7 +63,9 @@ class _SignUpViewState extends State<_SignUpView> {
           finishSignIn(context, state.user);
         } else {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(builder: (_) => VerifyCodePage(email: normalizeEmail(_email.text), recovery: false)),
+            MaterialPageRoute<void>(
+              builder: (_) => VerifyCodePage(email: normalizeEmail(_email.text), recovery: false),
+            ),
           );
         }
       },
@@ -75,10 +77,7 @@ class _SignUpViewState extends State<_SignUpView> {
             onTap: () => Navigator.of(context).maybePop(),
           ),
           children: [
-            const AuthHeading(
-              title: 'Create your account',
-              subtitle: 'One Qorelly account for Tally and Qorelly',
-            ),
+            const AuthHeading(title: 'Create your account', subtitle: 'One Qorelly account for Tally and Qorelly'),
             const SizedBox(height: 24),
             AutofillGroup(
               child: Form(

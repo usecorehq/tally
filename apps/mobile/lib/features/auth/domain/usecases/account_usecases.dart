@@ -27,12 +27,7 @@ class SignUp implements UseCase<MerchantUser?, SignUpParams> {
 
 /// The first sign-up rule [name] … [password] break (Qorelly's copy), or null.
 /// [email] and [name] are already normalised; [phone] is as typed.
-String? signUpProblem({
-  required String name,
-  required String email,
-  required String phone,
-  required String password,
-}) {
+String? signUpProblem({required String name, required String email, required String phone, required String password}) {
   if (name.isEmpty) return kNameRequiredError;
   if (!isValidEmailShape(email)) return kEmailShapeError;
   if (isDisposableEmail(email)) return kDisposableEmailError;

@@ -35,6 +35,7 @@ class IconsOutline {
   static const IconData alt_arrow_right = IconData(0xe01b, fontFamily: _light); // caret-right
   static const IconData box = IconData(0xe070, fontFamily: _light); // package
   static const IconData camera = IconData(0xe018, fontFamily: _light); // camera
+  static const IconData check = IconData(0xe025, fontFamily: _light); // check
   static const IconData check_circle = IconData(0xe026, fontFamily: _fill); // check-circle
   static const IconData close_circle = IconData(0xe0b4, fontFamily: _light); // x
   static const IconData danger_circle = IconData(0xe0b1, fontFamily: _light); // warning-circle

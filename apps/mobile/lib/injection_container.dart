@@ -16,9 +16,13 @@ import 'features/auth/presentation/cubit/account_cubits.dart';
 import 'features/auth/presentation/cubit/sign_in_cubit.dart';
 import 'features/business/data/datasources/business_remote_data_source.dart';
 import 'features/business/data/repositories/business_repository_impl.dart';
+import 'features/business/domain/entities/business.dart';
 import 'features/business/domain/repositories/business_repository.dart';
 import 'features/business/domain/usecases/get_my_businesses.dart';
+import 'features/business/domain/usecases/setup_usecases.dart';
 import 'features/business/presentation/cubit/business_cubit.dart';
+import 'features/business/presentation/cubit/setup_business_cubit.dart';
+import 'features/business/presentation/cubit/starter_items_cubit.dart';
 import 'features/inventory/data/datasources/inventory_remote_data_source.dart';
 import 'features/inventory/data/repositories/inventory_repository_impl.dart';
 import 'features/inventory/domain/repositories/inventory_repository.dart';
@@ -69,7 +73,16 @@ Future<void> initDependencies() async {
     ..registerLazySingleton<BusinessRemoteDataSource>(() => BusinessRemoteDataSourceImpl(sl()))
     ..registerLazySingleton<BusinessRepository>(() => BusinessRepositoryImpl(sl()))
     ..registerLazySingleton(() => GetMyBusinesses(sl()))
-    ..registerFactory(() => BusinessCubit(sl()));
+    ..registerLazySingleton(() => GetBusinessVerticals(sl()))
+    ..registerLazySingleton(() => CreateBusiness(sl()))
+    ..registerFactory(() => BusinessCubit(sl()))
+    ..registerLazySingleton(() => GetStarterRows(sl()))
+    ..registerLazySingleton(() => SubmitStarterItems(sl()))
+    ..registerFactory(() => SetupBusinessCubit(getVerticals: sl(), createBusiness: sl()))
+    // Onboarding step 2 is per new business: sl<StarterItemsCubit>(param1: business)
+    ..registerFactoryParam<StarterItemsCubit, Business, void>(
+      (business, _) => StarterItemsCubit(business: business, getRows: sl(), submit: sl()),
+    );
 
   // Inventory (ScanCubit and InventoryListCubit are per business: sl<…>(param1: businessId))
   sl

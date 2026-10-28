@@ -26,9 +26,11 @@ class SignInCubit extends Cubit<SignInState> {
       emit(state.copyWith(status: SignInStatus.unconfirmed, error: failure.message));
       return;
     }
-    emit(result.fold(
-      (failure) => state.copyWith(status: SignInStatus.failure, error: failure.message),
-      (user) => state.copyWith(status: SignInStatus.success, user: user),
-    ));
+    emit(
+      result.fold(
+        (failure) => state.copyWith(status: SignInStatus.failure, error: failure.message),
+        (user) => state.copyWith(status: SignInStatus.success, user: user),
+      ),
+    );
   }
 }

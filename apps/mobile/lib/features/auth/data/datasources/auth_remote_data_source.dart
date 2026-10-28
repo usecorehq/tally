@@ -33,11 +33,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   final sb.SupabaseClient _supabase;
 
   @override
-  Future<MerchantUserModel> signIn({required String email, required String password}) =>
-      _guard(() async {
-        final res = await _supabase.auth.signInWithPassword(email: normalizeEmail(email), password: password);
-        return _user(res.user);
-      });
+  Future<MerchantUserModel> signIn({required String email, required String password}) => _guard(() async {
+    final res = await _supabase.auth.signInWithPassword(email: normalizeEmail(email), password: password);
+    return _user(res.user);
+  });
 
   @override
   Future<void> signOut() => _supabase.auth.signOut();
@@ -120,8 +119,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         _ when msg.contains('expired') || msg.contains('invalid') && msg.contains('otp') =>
           'That code is wrong or has expired. Check the latest email or send a new code.',
         _ when msg.contains('same') && msg.contains('password') => 'Choose a password you haven\'t used before.',
-        _ when msg.contains('rate limit') || e.statusCode == '429' =>
-          'Too many attempts. Wait a minute and try again.',
+        _ when msg.contains('rate limit') || e.statusCode == '429' => 'Too many attempts. Wait a minute and try again.',
         _ when msg.contains('password') => e.message,
         _ => 'Something went wrong. Please try again.',
       });

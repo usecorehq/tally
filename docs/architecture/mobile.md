@@ -43,8 +43,9 @@ Qorelly's mobile port of web Design V2, so Tally reads as a Qorelly product. Sou
 - **Scans tab**: *planned* — an honest "no shelf scans yet" until scans exist.
 - **Settings tab**: business switcher, account, sign out.
 
-- **Auth**: session restore, sign in, sign out. See the [mobile auth sequence](../diagrams/images/auth-mobile-sequence.svg).
-- **Business** (`features/business`): loads the user's businesses; `BusinessCubit` holds the selected one. No business yet → points to web onboarding. A failed read shows retry, never "no businesses".
+- **Auth**: session restore, sign in, sign up, emailed code, forgot password → code → new password, sign out — on the kit (`core/design/auth_parts.dart`). Sign-up rules (`auth_rules.dart`, `phone.dart`) are copied unchanged from qorelly-mobile. Signing in with an unconfirmed email sends a fresh code. Pushed auth screens are dropped before `AuthBloc` switches to the app (`finishSignIn`). See [auth.md](auth.md) and the [mobile auth sequence](../diagrams/images/auth-mobile-sequence.svg).
+- **Business** (`features/business`): loads the user's businesses; `BusinessCubit` holds the selected one. A failed read shows retry, never "no businesses".
+- **Onboarding** (no business yet), as mp's: **1. Your business** — name, industry and sub-type from `GET /api/catalog/verticals`; **2. Starter items** — the sub-type's template with up to 2 suggestions each (`…/templates?suggestions=2`, 60 s timeout for the first ~5 s call): keep / swap (sheet) / own product, price and opening stock, then a confirm list, then `POST …/inventory/starter`. Every row is sent, kept or removed, so the catalogue hears each decision. See [onboarding.md](onboarding.md).
 - **Barcode scan** (`features/inventory`), API side in [barcode-scan.md](barcode-scan.md):
   1. On open, `ScanCubit` caches the business's inventory on the device (`GET …/inventory`).
   2. Each scan is normalised (12-digit UPC-A → 13-digit EAN, same rule as the API) and resolved **from the cache first** — instant and offline. A miss asks the API (another device may have linked it) and caches the hit.

@@ -54,7 +54,10 @@ class _NewPasswordViewState extends State<_NewPasswordView> {
       builder: (context, state) => AuthScaffold(
         child: AuthCard(
           children: [
-            const AuthHeading(title: 'Choose a new password', subtitle: 'You\'ll use it to sign in to Tally and Qorelly.'),
+            const AuthHeading(
+              title: 'Choose a new password',
+              subtitle: 'You\'ll use it to sign in to Tally and Qorelly.',
+            ),
             const SizedBox(height: 24),
             AutofillGroup(
               child: Form(
@@ -85,7 +88,13 @@ class _NewPasswordViewState extends State<_NewPasswordView> {
                       validator: (v) => v == _password.text ? null : "Passwords don't match.",
                     ),
                     const SizedBox(height: 24),
-                    V15Button('Save and sign in', height: 48, expand: true, loading: state.submitting, onPressed: _submit),
+                    V15Button(
+                      'Save and sign in',
+                      height: 48,
+                      expand: true,
+                      loading: state.submitting,
+                      onPressed: _submit,
+                    ),
                   ],
                 ),
               ),

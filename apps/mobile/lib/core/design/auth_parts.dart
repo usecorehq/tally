@@ -102,19 +102,28 @@ class AuthCard extends StatelessWidget {
               color: c.surface,
               borderRadius: BorderRadius.circular(V15.sheetLgRadius),
               border: Border.all(color: c.hairline),
-              boxShadow: const [BoxShadow(color: Color(0x1F000000), offset: Offset(0, 8), blurRadius: 24, spreadRadius: -8)],
+              boxShadow: const [
+                BoxShadow(color: Color(0x1F000000), offset: Offset(0, 8), blurRadius: 24, spreadRadius: -8),
+              ],
             ),
             child: Material(
               type: MaterialType.transparency,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
-                children: [const Center(child: TallyMark()), const SizedBox(height: 24), ...children],
+                children: [
+                  const Center(child: TallyMark()),
+                  const SizedBox(height: 24),
+                  ...children,
+                ],
               ),
             ),
           ),
           if (footer != null)
-            Padding(padding: const EdgeInsets.fromLTRB(12, 14, 12, 8), child: Center(child: footer!)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+              child: Center(child: footer!),
+            ),
         ],
       ),
     );
@@ -177,9 +186,14 @@ class AuthMessage extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, size: 16, color: glyph)),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(icon, size: 16, color: glyph),
+            ),
             const SizedBox(width: 10),
-            Expanded(child: Text(message, style: V15.text(13, FontWeight.w400, ink, height: 20 / 13))),
+            Expanded(
+              child: Text(message, style: V15.text(13, FontWeight.w400, ink, height: 20 / 13)),
+            ),
           ],
         ),
       ),

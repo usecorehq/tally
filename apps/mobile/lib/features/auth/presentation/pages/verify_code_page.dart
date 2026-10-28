@@ -103,7 +103,10 @@ class _VerifyCodeViewState extends State<_VerifyCodeView> {
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
               autofillHints: const [AutofillHints.oneTimeCode],
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(kAuthOtpMaxLength)],
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(kAuthOtpMaxLength),
+              ],
               onChanged: (v) {
                 if (v.length == kAuthOtpLength) _verify();
               },

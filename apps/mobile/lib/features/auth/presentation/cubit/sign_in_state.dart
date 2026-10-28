@@ -11,12 +11,7 @@ class SignInState extends Equatable {
   final MerchantUser? user;
   final String? error;
 
-  SignInState copyWith({
-    SignInStatus? status,
-    MerchantUser? user,
-    String? error,
-    bool clearError = false,
-  }) =>
+  SignInState copyWith({SignInStatus? status, MerchantUser? user, String? error, bool clearError = false}) =>
       SignInState(
         status: status ?? this.status,
         user: user ?? this.user,

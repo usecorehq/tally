@@ -16,10 +16,7 @@ class SignInPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => sl<SignInCubit>(),
-      child: const _SignInView(),
-    );
+    return BlocProvider(create: (_) => sl<SignInCubit>(), child: const _SignInView());
   }
 }
 
@@ -55,7 +52,9 @@ class _SignInViewState extends State<_SignInView> {
         if (state.status == SignInStatus.success) finishSignIn(context, state.user);
         if (state.status == SignInStatus.unconfirmed) {
           Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => VerifyCodePage(email: normalizeEmail(_email.text), recovery: false)),
+            MaterialPageRoute<void>(
+              builder: (_) => VerifyCodePage(email: normalizeEmail(_email.text), recovery: false),
+            ),
           );
         }
       },
@@ -112,7 +111,9 @@ class _SignInViewState extends State<_SignInView> {
                         child: AuthTextAction(
                           'Forgot password?',
                           onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(builder: (_) => ForgotPasswordPage(email: normalizeEmail(_email.text))),
+                            MaterialPageRoute<void>(
+                              builder: (_) => ForgotPasswordPage(email: normalizeEmail(_email.text)),
+                            ),
                           ),
                         ),
                       ),

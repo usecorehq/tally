@@ -32,9 +32,7 @@ class SettingsPage extends StatelessWidget {
                   V15Row(
                     title: b.name,
                     subtitle: b.role == 'owner' ? 'Owner' : 'Staff',
-                    trailing: b.id == selected.id
-                        ? Icon(IconsOutline.check_circle, size: 20, color: c.primary)
-                        : null,
+                    trailing: b.id == selected.id ? Icon(IconsOutline.check_circle, size: 20, color: c.primary) : null,
                     onTap: b.id == selected.id ? null : () => context.read<BusinessCubit>().select(b),
                   ),
               ],
@@ -45,9 +43,7 @@ class SettingsPage extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: V15Section(
               title: 'Account',
-              rows: [
-                V15Row(leading: const V15IconTile(IconsOutline.user), title: user.email ?? 'Signed in'),
-              ],
+              rows: [V15Row(leading: const V15IconTile(IconsOutline.user), title: user.email ?? 'Signed in')],
             ),
           ),
           const SizedBox(height: 16),

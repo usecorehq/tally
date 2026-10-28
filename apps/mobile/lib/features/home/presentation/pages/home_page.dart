@@ -4,8 +4,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/design/v15_widgets.dart';
 import '../../../../injection_container.dart';
 import '../../../auth/domain/entities/merchant_user.dart';
-import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../business/presentation/cubit/business_cubit.dart';
+import '../../../business/domain/entities/business.dart';
+import '../../../business/presentation/pages/setup_business_page.dart';
+import '../../../business/presentation/pages/starter_items_page.dart';
 import 'home_shell.dart';
 
 /// Signed in: load the user's businesses, then the tab shell for the selected one.
@@ -24,7 +26,10 @@ class HomePage extends StatelessWidget {
             businesses: businesses,
             selected: selected,
           ),
-          _ => Scaffold(body: SafeArea(child: _BusinessGate(state: state))),
+          BusinessNone() => _BusinessGate(state: state),
+          _ => Scaffold(
+            body: SafeArea(child: _BusinessGate(state: state)),
+          ),
         },
       ),
     );
@@ -45,18 +50,28 @@ class _BusinessGate extends StatelessWidget {
         body: message,
         action: V15Button('Try again', tone: V15Tone.quiet, onPressed: () => context.read<BusinessCubit>().load()),
       ),
-      BusinessNone() => V15MessageState(
-        icon: IconsOutline.box,
-        title: 'Set up your business first',
-        body: 'Create your business and starter inventory in the Tally web app, then come back here.',
-        action: V15Button(
-          'Sign out',
-          tone: V15Tone.quiet,
-          icon: IconsOutline.logout,
-          onPressed: () => context.read<AuthBloc>().add(const AuthSignOutRequested()),
-        ),
-      ),
+      // No business yet: onboarding, as apps/mp's /onboarding.
+      BusinessNone() => const _Onboarding(),
       _ => const Center(child: CircularProgressIndicator()),
     };
+  }
+}
+
+/// Step 1 creates the business, step 2 stocks it; then the app opens on it.
+class _Onboarding extends StatefulWidget {
+  const _Onboarding();
+
+  @override
+  State<_Onboarding> createState() => _OnboardingState();
+}
+
+class _OnboardingState extends State<_Onboarding> {
+  Business? _created;
+
+  @override
+  Widget build(BuildContext context) {
+    final created = _created;
+    if (created == null) return SetupBusinessPage(onCreated: (b) => setState(() => _created = b));
+    return StarterItemsPage(business: created, onDone: () => context.read<BusinessCubit>().load());
   }
 }

@@ -5,10 +5,7 @@ import '../entities/merchant_user.dart';
 
 abstract class AuthRepository {
   /// [EmailNotConfirmedFailure] when the password is right but the email was never confirmed.
-  Future<Either<Failure, MerchantUser>> signIn({
-    required String email,
-    required String password,
-  });
+  Future<Either<Failure, MerchantUser>> signIn({required String email, required String password});
 
   Future<Either<Failure, Unit>> signOut();
 
