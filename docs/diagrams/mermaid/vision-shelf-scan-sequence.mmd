@@ -1,0 +1,30 @@
+%%{init: {"theme": "neutral"} }%%
+sequenceDiagram
+    autonumber
+    actor M as Merchant
+    participant P as mobile / mp
+    participant A as Tally apps/api
+    participant S as Meta Model API
+    participant Q as Qore Catalog
+    participant D as Postgres (tally)
+
+    Note over M,D: PLANNED — not built yet.
+    M->>P: photograph shelf
+    P->>P: scale to 1600 px, JPEG ~400 KB
+    P->>A: POST /api/businesses/:id/vision/shelf-scans [multipart, Bearer JWT]
+    A->>S: muse-spark-1.3: list products {brand, name, pack, count, box} [JSON schema]
+    S-->>A: products
+    par one request per product
+        A->>S: sam-3.1: "<product phrase>" + image
+        S-->>A: instance boxes + masks
+    end
+    A->>Q: POST /v1/match (all products, x-api-key)
+    Q-->>A: top candidates + indicative ₦ price
+    A->>D: insert vision_scans + vision_detections
+    A-->>P: detections with counts, boxes, candidates
+    M->>P: accept / correct / add own / remove, set qty + price
+    P->>A: POST …/shelf-scans/:scanId/confirm {decisions[]}
+    A->>D: new → inventory_items (source photo) + opening movement<br/>stocked → restock movement
+    A->>Q: POST /v1/feedback, source "photo" (keyed by detection id)
+    Note over A,Q: Best-effort: a catalogue failure never fails the confirm.
+    A-->>P: {created, restocked, removed, invalid, feedback}

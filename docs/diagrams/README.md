@@ -34,6 +34,15 @@ See [`architecture/onboarding.md`](../architecture/onboarding.md).
 |---|---|
 | [`onboarding-sequence.svg`](images/onboarding-sequence.svg) ([source](mermaid/onboarding-sequence.mmd)) | Business creation → template → starter inventory + opening stock → catalogue feedback, including retry safety and best-effort feedback. |
 
+## Vision recognition (planned)
+
+See [`architecture/vision-recognition.md`](../architecture/vision-recognition.md).
+
+| Diagram | Description |
+|---|---|
+| [`vision-shelf-scan-sequence.svg`](images/vision-shelf-scan-sequence.svg) ([source](mermaid/vision-shelf-scan-sequence.mmd)) | Shelf photo → Muse Spark → SAM 3.1 per product → catalogue match → confirm → inventory + photo feedback. |
+| [`vision-identify-sequence.svg`](images/vision-identify-sequence.svg) ([source](mermaid/vision-identify-sequence.mmd)) | Point to sell: barcode on device first, then a closed-set Muse Spark identify against the merchant's inventory. |
+
 ## Database
 
 See [`architecture/database.md`](../architecture/database.md) and [`guides/database-migrations.md`](../guides/database-migrations.md).
