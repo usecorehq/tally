@@ -24,7 +24,7 @@ const peak: ShelfProduct = {
 };
 const loose: ShelfProduct = { ...peak, brand: "", pack: "", name: "Tomato paste", confidence: "low" };
 
-const candidate = (qid: string, score: number, brandSignal = 1): MatchCandidate =>
+const candidate = (qid: string, score: number, brandSignal = 1, textSignal = 1): MatchCandidate =>
   ({
     qid,
     name: `Product ${qid}`,
@@ -37,7 +37,7 @@ const candidate = (qid: string, score: number, brandSignal = 1): MatchCandidate 
     category: { path: "a/b", name: "B" },
     price: { currency: "NGN", indicative: true, median: 4500, min: 4200, max: 5100, offers: 3, retailers: 2, observedAt: "2026-10-01" },
     score,
-    signals: { text: 1, brand: brandSignal, size: 1 },
+    signals: { text: textSignal, brand: brandSignal, size: 1 },
   }) as MatchCandidate;
 
 const result = (ref: string, candidates: MatchCandidate[]): MatchResult => ({
@@ -93,7 +93,7 @@ describe("buildDetections", () => {
   it("drops implausible candidates before keeping the top 3", () => {
     const matches = [
       result("0", [candidate("QC-X", 0.95, 0), candidate("QC-A", 0.9), candidate("QC-B", 0.5), candidate("QC-C", 0.4), candidate("QC-D", 0.3)]),
-      result("1", [candidate("QC-E", 0.8, 0.5), candidate("QC-F", 0.7, 0.5)]),
+      result("1", [candidate("QC-E", 0.6, 0.5, 0.7), candidate("QC-F", 0.7, 0.5, 0.45)]),
     ];
     const [branded, unbranded] = buildDetections([peak, loose], matches, none, new Map(), id);
     expect(branded!.candidates.map((c) => c.qid)).toEqual(["QC-A", "QC-B", "QC-C"]);
@@ -125,8 +125,10 @@ describe("plausible", () => {
     ["brand read, brand matched", peak, candidate("QC-A", 0.4, 1), true],
     ["brand read, other brand", peak, candidate("QC-A", 0.95, 0), false],
     ["brand read, catalogue has no brand", peak, candidate("QC-A", 0.95, 0.5), false],
-    ["no brand, strong name match", loose, candidate("QC-A", 0.75, 0.5), true],
-    ["no brand, weak name match", loose, candidate("QC-A", 0.74, 0.5), false],
+    // Live semantic-search reads: "Powdered milk" → Nestlé Cream Milk Powder (text 0.70), "RED" → a red wine (0.51).
+    ["no brand, meaning-level match", loose, candidate("QC-A", 0.598, 0.5, 0.7), true],
+    ["no brand, at the line", loose, candidate("QC-A", 0.5, 0.5, 0.52), true],
+    ["no brand, weak text even with a high score", loose, candidate("QC-A", 0.76, 0.5, 0.51), false],
   ] as const)("%s", (_label, product, c, expected) => {
     expect(plausible(product, c)).toBe(expected);
   });
