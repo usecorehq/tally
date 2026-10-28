@@ -2,7 +2,7 @@
 
 > Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg).
 >
-> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, and confirm → inventory + feedback. **Planned:** crops in R2 and their upload to Qore Catalog, and point to sell. Planned endpoint shapes may change before they ship.
+> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, and point-to-sell identify (tier 1). **Planned:** crops in R2 and their upload to Qore Catalog, and an on-device model. Planned endpoint shapes may change before they ship.
 
 The merchant points the phone camera at products and Tally recognises them. There are two flows:
 
@@ -19,7 +19,7 @@ Every confirmation or correction goes back to Qore Catalog as feedback with `sou
 | Read the products in a photo (brand, name, pack size, rough count, box) | apps/api → Meta Model API | Muse Spark (`muse-spark-1.3`), structured JSON output |
 | Count each product's units | apps/api → Meta Model API | SAM 3.1 (`sam-3.1`), one concept prompt per distinct look |
 | Match to the catalogue, with prices | apps/api → Qore Catalog | `POST /v1/match` |
-| Identify one item against the merchant's inventory | apps/api → Meta Model API | Muse Spark, closed-set prompt |
+| Identify one item at the till | apps/api → Meta Model API, then Tally | Muse Spark (minimal reasoning) reads the label; Tally matches it to the merchant's items |
 | On-device recognition | Device | Planned: a small student model distilled from Muse Spark labels and merchant confirmations |
 
 All model calls go through apps/api. `META_MODEL_API_KEY` is server-only, like `QORE_CATALOG_API_KEY`. The mobile app and the web apps never hold it. Requests use Meta's Standard mode, so merchants' photos are not used to train Meta's models.
@@ -67,10 +67,12 @@ Latency comes from tiers. The cheapest tier that answers wins.
 | Tier | What | Expected |
 |---|---|---|
 | 0 | Barcode on device, from the cached inventory | < 100 ms |
-| 1 | `identify`: one 640 px JPEG (~80 KB), sent once the frame is steady and no barcode has been read for ~600 ms. Muse Spark (minimal reasoning) picks from the merchant's own inventory, or "none". The inventory list leads the prompt so it hits the prompt cache. | To be measured. Meta doesn't publish latency figures. |
-| 2 | On-device student model | Planned |
+| 1 (built) | `identify`: one 640 px JPEG (~80 KB), sent once the frame is steady and no barcode has been read for ~600 ms. Muse Spark (minimal reasoning) reads the label. Tally matches it to the merchant's items: a remembered reading, then brand + name. Qore Catalog is asked only when nothing in store matches. | 1.3–3.0 s for the label read; about 0.5–1 s more when the catalogue is asked |
+| 2 | On-device student model | Planned: the only way under 1 s |
 
-The app shows the result as a suggestion the merchant taps to confirm. A recognised item is never added to a sale without that tap.
+- **Why read the label instead of asking Spark to pick from the item list:** measured on a 640 px Close-Up photo, picking from a 20-item list took 3.3–6.2 s and mostly answered "none". Reading the label took 2.4–3.0 s and got the brand every time.
+- **It learns:** the first time a product is identified it usually needs the catalogue and a "Is this your X?" tap. Once the merchant confirms (`identify/confirm`, or a shelf-scan confirm), the reading is remembered. Live, Close-Up went from 3.7 s via the catalogue, asking first, to 2.7 s via the remembered reading, sure, with no catalogue call.
+- **The tap is always required:** the app shows the result as a suggestion, and a recognised item is never added to a sale without the merchant's tap.
 
 ## API
 
@@ -135,6 +137,41 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
   5. `null`: not in store. Offer the catalogue candidates ("Add to my store"), or a new item named from the label when there are none.
 - An empty shelf returns `detections: []`.
 
+### `POST /api/businesses/:id/vision/identify` (built)
+
+Point-to-sell. Multipart, one field `image`: JPEG, PNG or WebP, at most 1 MB. Send about a 640 px long edge (JPEG ~80 KB). Nothing is stored. Returns 200:
+
+```json
+{
+  "model": "muse-spark-1.3",
+  "reading": { "brand": "Closeup", "name": "Toothpaste", "pack": "130g" },
+  "match": {
+    "itemId": "2c9f…",
+    "name": "Close-Up Toothpaste 130g",
+    "price": "3000.00",
+    "quantityOnHand": "14.000",
+    "inventoryMatch": "reading",
+    "archived": false,
+    "needsConfirm": false
+  },
+  "candidates": [],
+  "catalogueAvailable": true,
+  "timings": { "readMs": 2600, "matchMs": 0, "totalMs": 2600 }
+}
+```
+
+- **`reading`:** what Spark read off the label. `null` when nothing was legible; then `match` is `null` and the catalogue isn't asked.
+- **`match`:** the merchant's item, found with the same rules as a shelf scan (see "Does the merchant already have it?" above). It is `null` when the product isn't in store.
+  - `needsConfirm: true` means ask "Is this your X?" first.
+  - `archived: true` means offer to restore it.
+  - `quantityOnHand` is `null` for an archived item.
+- **`candidates`:** up to 3 plausible catalogue products, filled only when nothing in store matched, so the merchant can add it.
+- **Errors:** the same as shelf scan. 413 is above 1 MB; the timeout (504) is 10 s.
+
+### `POST /api/businesses/:id/vision/identify/confirm` (built)
+
+`{ "reading": <identify's reading, unchanged>, "itemId": "…" }` remembers that reading for that active item, so the next identify recognises it from the reading with no catalogue call. Call it when the merchant confirms a suggestion or picks the right item. Returns `{ itemId, readingKey }`; 404 when the item isn't an active item of this business.
+
 ### `GET /api/businesses/:id/vision/shelf-scans/:scanId` (built)
 
 The stored scan with its detections in position order: what was read, the counts, boxes, `candidates` as `[{ qid, score }]` (no names or prices; fetch them from `GET /api/catalog/products/:qid`), the inventory match, and each decision (`action`, `outcome`, `confirmedQid`, `itemId`, `quantity`, `decidedAt`, `feedbackSentAt`). 404 when the scan isn't this business's.
@@ -171,13 +208,7 @@ The stored scan with its detections in position order: what was read, the counts
 
 `DELETE /api/businesses/:id/inventory/:itemId` archives the item; nothing is ever deleted. It keeps its Qore ID, name, price and stock history, so a later scan of the same product offers to restore it. 404 when no active item has that id.
 
-### Planned
-
-| Route | Body | Returns |
-|---|---|---|
-| `POST /api/businesses/:id/vision/identify` | multipart `image` (≤ 300 KB) | `{ match: { itemId, name, price, confidence } \| null }` |
-
-Notes on the fields:
+### Notes on the fields
 
 - Boxes use 0–1000 coordinates of the uploaded image.
 - Feedback `outcome` is derived from the action: the top candidate confirmed is `accepted`, another Qore ID is `corrected`, no Qore ID is `new_item`, and `skip` is `removed`.
@@ -205,7 +236,7 @@ Migration `0004_add_vision_scans`, all in the `tally` schema. Child rows carry `
 - **`vision_detections`** (built): the scan and position; brand, name, pack and look as read; Spark's and SAM's counts; boxes and confidence; candidates as `[{qid, score}]`; the item it looks like and how it was found. The merchant's decision (migration `0005_add_vision_decisions`): action, feedback outcome, confirmed Qore ID, item, quantity, who decided and when, and when feedback was sent.
 - **`inventory_item_readings`** (written on confirm): `brand|name|pack` as read → the merchant's item. One reading maps to one item per business.
 
-Identify calls are not stored.
+Identify calls are not stored; only a confirmed reading is (`inventory_item_readings`).
 
 ## Try it
 

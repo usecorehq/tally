@@ -41,7 +41,7 @@ See [`architecture/vision-recognition.md`](../architecture/vision-recognition.md
 | Diagram | Description |
 |---|---|
 | [`vision-shelf-scan-sequence.svg`](images/vision-shelf-scan-sequence.svg) ([source](mermaid/vision-shelf-scan-sequence.mmd)) | Shelf photo → Muse Spark → SAM 3.1 per product → catalogue match → confirm → inventory + photo feedback. |
-| [`vision-identify-sequence.svg`](images/vision-identify-sequence.svg) ([source](mermaid/vision-identify-sequence.mmd)) | Point to sell: barcode on device first, then a closed-set Muse Spark identify against the merchant's inventory. |
+| [`vision-identify-sequence.svg`](images/vision-identify-sequence.svg) ([source](mermaid/vision-identify-sequence.mmd)) | Point to sell: barcode on device first, then Muse Spark reads the label and Tally matches it to the merchant's items (catalogue only on a miss); confirming remembers the reading. |
 
 ## Database
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MatchCandidate, MatchItem, MatchResult } from "@tally/catalog-client";
-import { matchInventory, type InventoryIndex, type InventoryMatch, type StockedMatch } from "./inventory-match";
+import { matchInventory, type CandidateRef, type InventoryIndex, type InventoryMatch, type StockedMatch } from "./inventory-match";
 import type { Box, Confidence, ShelfProduct } from "./shelf-reader";
 
 export const MATCH_CANDIDATES = 3;
@@ -25,7 +25,7 @@ export const MIN_UNBRANDED_TEXT = 0.5;
  *   brand read     → keep only candidates whose brand matched (signals.brand = 1)
  *   brand not read → keep only candidates with signals.text ≥ MIN_UNBRANDED_TEXT
  */
-export function plausible(product: ShelfProduct, candidate: MatchCandidate): boolean {
+export function plausible(product: Pick<ShelfProduct, "brand">, candidate: MatchCandidate): boolean {
   return product.brand ? candidate.signals.brand === 1 : candidate.signals.text >= MIN_UNBRANDED_TEXT;
 }
 
@@ -100,19 +100,7 @@ export function buildDetections(
   const byRef = new Map(matches.map((m) => [m.ref, m]));
   return products.map((p, i) => {
     const plausibleCandidates = (byRef.get(String(i))?.candidates ?? []).filter((c) => plausible(p, c));
-    const candidates = plausibleCandidates
-      .slice(0, MATCH_CANDIDATES)
-      .map((c): DetectionCandidate => ({
-        qid: c.qid,
-        name: c.name,
-        brand: c.brand?.name ?? null,
-        variantLabel: c.variantLabel,
-        size: c.size,
-        packQty: c.packQty,
-        score: c.score,
-        price: c.price ? { median: c.price.median, min: c.price.min, max: c.price.max } : null,
-        inventoryItemId: inventory.byQid.get(c.qid) ?? null,
-      }));
+    const candidates = plausibleCandidates.slice(0, MATCH_CANDIDATES).map((c) => toCandidate(c, inventory));
     return {
       id: newId(),
       brand: p.brand,
@@ -123,10 +111,7 @@ export function buildDetections(
       confidence: p.confidence,
       candidates,
       // All plausible candidates, not just the 3 shown: the merchant's size may rank lower.
-      // Sure only when the label's brand and size both agree; an unbranded read always asks.
-      ...stocked(
-        matchInventory(p, plausibleCandidates.map((c) => ({ qid: c.qid, sizeAgrees: c.signals.brand === 1 && c.signals.size === 1 })), inventory),
-      ),
+      ...stocked(matchInventory(p, candidateRefs(plausibleCandidates), inventory)),
     };
   });
 }
@@ -145,4 +130,23 @@ function stocked(
   return m
     ? { inventoryItemId: m.itemId, inventoryMatch: m.match, inventoryItemArchived: m.archived, inventoryNeedsConfirm: !m.sure }
     : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false, inventoryNeedsConfirm: false };
+}
+
+export function toCandidate(c: MatchCandidate, inventory: InventoryIndex): DetectionCandidate {
+  return {
+    qid: c.qid,
+    name: c.name,
+    brand: c.brand?.name ?? null,
+    variantLabel: c.variantLabel,
+    size: c.size,
+    packQty: c.packQty,
+    score: c.score,
+    price: c.price ? { median: c.price.median, min: c.price.min, max: c.price.max } : null,
+    inventoryItemId: inventory.byQid.get(c.qid) ?? null,
+  };
+}
+
+/** Sure only when the label's brand and size both agree; an unbranded read always asks. */
+export function candidateRefs(candidates: MatchCandidate[]): CandidateRef[] {
+  return candidates.map((c) => ({ qid: c.qid, sizeAgrees: c.signals.brand === 1 && c.signals.size === 1 }));
 }
