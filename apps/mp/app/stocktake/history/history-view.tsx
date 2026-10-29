@@ -17,7 +17,7 @@ import {
   type PillTone,
 } from "@tally/ui";
 import { entrySummary, entryTitle } from "../entry-text";
-import { formatDay, formatTime, lagosDay } from "../format";
+import { formatDay, formatWhen, lagosDay } from "../format";
 import { LoadFailed } from "../load-failed";
 import { newHref, sessionHref } from "../urls";
 import type { HistoryEntry } from "../types";
@@ -124,12 +124,16 @@ function EntryRow({ entry: e, businessId }: { entry: HistoryEntry; businessId: s
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-gray-900">{entryTitle(e)}</p>
         <p className="mt-0.5 break-words text-[13px] text-gray-500">
-          <span className="tabular-nums">{e.kind === "stocktake" ? "Stock-take" : "Quick scan"} · {formatTime(e.startedAt)}</span> · {entrySummary(e)}
+          {e.kind === "stocktake" ? "Stock-take" : "Quick scan"} · {entrySummary(e)}
         </p>
       </div>
-      <Pill tone={status.tone} className="shrink-0">
-        {status.label}
-      </Pill>
+      {/* When it ran, above its status: readable at a glance without the day heading. */}
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <time dateTime={e.startedAt} className="whitespace-nowrap text-xs tabular-nums text-gray-500">
+          {formatWhen(e.startedAt)}
+        </time>
+        <Pill tone={status.tone}>{status.label}</Pill>
+      </div>
       <SolarIcon name="Alt-Arrow-Right" iconStyle="Outline" size={16} className="shrink-0 text-gray-400 max-sm:hidden" />
     </Link>
   );

@@ -6,7 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { Skeleton, SolarIcon, cn } from "@tally/ui";
 import { recentStocktakes } from "./actions";
 import { entryTitle } from "./entry-text";
-import { formatDay, formatTime } from "./format";
+import { formatWhen } from "./format";
 import { historyHref, newHref, sessionHref } from "./urls";
 import type { HistoryEntry } from "./types";
 
@@ -113,17 +113,20 @@ export function RecentsList({
                   <Link
                     href={sessionHref(data.businessId, e.id)}
                     aria-current={on ? "page" : undefined}
-                    title={`${entryTitle(e)} · ${formatDay(e.startedAt)} ${formatTime(e.startedAt)}`}
+                    title={`${entryTitle(e)} · ${formatWhen(e.startedAt)}`}
                     className={cn(
-                      "flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors",
+                      "flex items-start gap-2 rounded-xl px-3 py-2 text-sm transition-colors",
                       on ? "bg-surface text-gray-900 ring-1 ring-hairline/[0.06]" : "text-gray-700 hover:bg-gray-200/60 hover:text-gray-900",
                     )}
                   >
-                    <span className="min-w-0 flex-1 truncate">{entryTitle(e)}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{entryTitle(e)}</span>
+                      <span className="block truncate text-xs tabular-nums text-gray-500">{formatWhen(e.startedAt)}</span>
+                    </span>
                     {/* Only the states that need the merchant get a mark. */}
-                    {e.status === "running" && <span aria-label="Running" className="size-2 shrink-0 animate-pulse rounded-full bg-primary" />}
-                    {e.status === "review" && (e.lines ?? 0) > 0 && <span aria-label="Ready to review" className="size-2 shrink-0 rounded-full bg-amber-500" />}
-                    {e.status === "failed" && <span aria-label="Failed" className="size-2 shrink-0 rounded-full bg-red-500" />}
+                    {e.status === "running" && <span aria-label="Running" className="mt-1.5 size-2 shrink-0 animate-pulse rounded-full bg-primary" />}
+                    {e.status === "review" && (e.lines ?? 0) > 0 && <span aria-label="Ready to review" className="mt-1.5 size-2 shrink-0 rounded-full bg-amber-500" />}
+                    {e.status === "failed" && <span aria-label="Failed" className="mt-1.5 size-2 shrink-0 rounded-full bg-red-500" />}
                   </Link>
                 </li>
               );
