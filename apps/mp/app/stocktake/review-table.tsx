@@ -22,6 +22,7 @@ import {
 } from "@tally/ui";
 import { confirmScan } from "./actions";
 import { STOCKTAKE_CHANGED } from "./recents";
+import { describeCells, MIN_UNREAD_CELLS, unreadCells } from "./coverage";
 import { cropThumbs } from "./image";
 import { pickFromCandidate, ProductPicker, type Pick } from "./product-picker";
 import type { ActionResult, Candidate, ConfirmResult, Decision, Detection, ShelfScanResult } from "./types";
@@ -240,6 +241,12 @@ export function ReviewTable({
             message="Some product names and prices couldn't be loaded from the catalogue. Check those lines, or come back later."
           />
         )}
+        {photoUrl && unreadCells(rows).length >= MIN_UNREAD_CELLS && rows.length > 0 && (
+          <FormMessage
+            variant="warning"
+            message={`Nothing was read in parts of this photo (shaded: ${describeCells(unreadCells(rows))}). If there are products there, take a closer photo of those shelves.`}
+          />
+        )}
         {(decidedEarlier > 0 || (!photoUrl && rows.length > 0)) && (
           <FormMessage
             variant="info"
@@ -344,10 +351,21 @@ function ShelfPhoto({
   const boxes = rows
     .flatMap((d) => d.boxes.map((b, i) => ({ d, b, key: `${d.id}-${i}` })))
     .sort((p, q) => (q.b.x2 - q.b.x1) * (q.b.y2 - q.b.y1) - (p.b.x2 - p.b.x1) * (p.b.y2 - p.b.y1));
+  const unread = unreadCells(rows);
   return (
     <div className="relative w-fit max-w-full">
       {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
       <img src={url} alt="Shelf photo with each counted unit outlined" className="block max-h-[420px] w-auto max-w-full rounded-[10px] lg:max-h-[calc(100dvh-13rem)]" />
+      {/* Parts of the photo where nothing was read: shaded so the merchant can check them. */}
+      {unread.length >= MIN_UNREAD_CELLS &&
+        unread.map((c) => (
+          <span
+            key={`${c.row}-${c.col}`}
+            aria-hidden
+            className="pointer-events-none absolute border border-dashed border-amber-300/70 bg-black/35"
+            style={{ left: `${c.x1 / 10}%`, top: `${c.y1 / 10}%`, width: `${(c.x2 - c.x1) / 10}%`, height: `${(c.y2 - c.y1) / 10}%` }}
+          />
+        ))}
       {boxes.map(({ d, b, key }) => {
         const on = selected === d.id;
         return (
@@ -481,7 +499,7 @@ function Row({
               // Nothing to choose: show the item being restocked as plain text, not a greyed-out select.
               <p className="flex min-h-11 items-center gap-2 text-sm text-gray-700 sm:min-h-10">
                 <SolarIcon name="Box" iconStyle="Outline" size={16} className="shrink-0 text-gray-400" />
-                <span className="min-w-0 break-words">{storeItem ? candidateName(storeItem) : "Your item in store"}</span>
+                <span className="min-w-0 break-words">{storeItem ? candidateName(storeItem) : (d.inventoryItemName ?? "Your item in store")}</span>
               </p>
             ) : (
               <>

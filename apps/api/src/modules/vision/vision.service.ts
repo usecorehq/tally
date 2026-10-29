@@ -720,6 +720,7 @@ export class VisionService implements OnApplicationBootstrap {
           inventoryItemId: d.inventoryItemId,
           inventoryMatch: d.inventoryMatch as InventoryMatch | null,
           inventoryItemArchived: item?.archived ?? false,
+          inventoryItemName: item?.name ?? null,
           // As at scan time: a remembered reading is sure, a name match asks, a catalogue match is sure only when strong.
           inventoryNeedsConfirm: d.inventoryMatch === "name" || (d.inventoryMatch === "catalogue" && matched?.match !== "strong"),
           review: d.review,
