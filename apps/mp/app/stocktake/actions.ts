@@ -1,7 +1,7 @@
 "use server";
 
 import { api, ApiError } from "@/lib/api";
-import type { ActionResult, ConfirmResult, Decision, ShelfScanResult, StocktakeRun } from "./types";
+import type { ActionResult, CatalogProduct, CatalogProductDetail, ConfirmResult, Decision, ShelfScanResult, StocktakeRun } from "./types";
 
 const vision = (businessId: string) => `/businesses/${encodeURIComponent(businessId)}/vision`;
 
@@ -64,6 +64,28 @@ export async function confirmScan(
       timeoutMs: 60_000,
     });
     return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Catalogue search for the product picker (signed-in route; the catalogue key stays in apps/api). */
+export async function searchCatalogue(q: string): Promise<ActionResult<CatalogProduct[]>> {
+  try {
+    const data = await api<{ items: CatalogProduct[] }>(`/catalog/products?q=${encodeURIComponent(q)}&limit=10`);
+    return { ok: true, data: data.items };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** One catalogue product with its price and its other sizes; a merged product is followed once. */
+export async function catalogueProduct(qid: string): Promise<ActionResult<CatalogProductDetail>> {
+  try {
+    let data = await api<CatalogProductDetail | { qid: string; status: "merged"; mergedInto: string }>(`/catalog/products/${encodeURIComponent(qid)}`);
+    // Every product has a status ("active", …); only a merged one has mergedInto.
+    if ("mergedInto" in data) data = await api<CatalogProductDetail>(`/catalog/products/${encodeURIComponent(data.mergedInto)}`);
+    return { ok: true, data: data as CatalogProductDetail };
   } catch (err) {
     return fail(err);
   }

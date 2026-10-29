@@ -7,7 +7,6 @@ import {
   EmptyState,
   FormMessage,
   Input,
-  NativeSelect,
   Notice,
   PageHeader,
   Pill,
@@ -23,12 +22,13 @@ import {
 } from "@tally/ui";
 import { confirmScan } from "./actions";
 import { cropThumbs } from "./image";
+import { pickFromCandidate, ProductPicker, type Pick } from "./product-picker";
 import type { ActionResult, Candidate, ConfirmResult, Decision, Detection, ShelfScanResult } from "./types";
 
 type Action = "restock" | "restore" | "add" | "skip";
-type RowState = { action: Action; quantity: string; choice: string; name: string; price: string };
+/** pick: null until the merchant chooses (a flagged or low-match line pre-fills nothing). */
+type RowState = { action: Action; quantity: string; pick: Pick | null; name: string; price: string };
 
-const NEW = "new";
 const NAIRA = /^\d{1,10}(\.\d{1,2})?$/;
 const naira = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 
@@ -48,30 +48,51 @@ function actionsFor(d: Detection): Action[] {
   return ["add", "skip"];
 }
 
-function initialState(d: Detection): RowState {
+/**
+ * The line's starting pick (docs/architecture/vision-recognition.md, "Showing a line"):
+ *   a review reason (the agent couldn't confirm it) → nothing picked, whatever the match;
+ *   a low top match → nothing picked: the merchant chooses a product or "New item";
+ *   medium → picked, with "Is this your item?"; strong → picked;
+ *   no suggestions → a new item named from the label.
+ * Live: an unreadable "Cooking Oil" pre-picked a hair pomade and was confirmed as is.
+ */
+export function initialPick(d: Detection): Pick | null {
   const top = d.candidates[0];
+  if (!top) return { kind: "new" };
+  if (d.review) return null;
+  // A stored scan has no match strength: treat it as medium (picked, but asked).
+  if ((top.match ?? "medium") === "low") return null;
+  return pickFromCandidate(top);
+}
+
+function initialState(d: Detection): RowState {
+  const pick = initialPick(d);
   return {
     action: actionsFor(d)[0]!,
     quantity: String(d.count),
-    choice: top ? top.qid : NEW,
-    name: top ? candidateName(top) : reading(d),
-    price: top?.price ? String(top.price.median) : "",
+    pick,
+    name: pick?.kind === "product" ? pick.name : reading(d),
+    price: pick?.kind === "product" && pick.price ? String(pick.price.median) : "",
   };
 }
 
-function rowProblems(s: RowState) {
-  if (s.action === "skip") return { quantity: false, name: false, price: false };
+/** Adding needs a product or "New item"; a restock or restore uses the store's own item. */
+const needsPick = (s: RowState) => s.action === "add";
+
+function rowProblems(d: Detection, s: RowState) {
+  if (s.action === "skip") return { quantity: false, name: false, price: false, product: false };
   return {
     quantity: !/^\d{1,6}$/.test(s.quantity.trim()),
     name: s.action === "add" && s.name.trim().length === 0,
     price: s.action === "add" && !NAIRA.test(s.price.trim()),
+    product: needsPick(s) && s.pick === null,
   };
 }
 
 function toDecision(d: Detection, s: RowState): Decision {
   if (s.action === "skip") return { detectionId: d.id, action: "skip" };
   const quantity = Number(s.quantity);
-  const qid = s.choice === NEW ? undefined : s.choice;
+  const qid = s.pick?.kind === "product" ? s.pick.qid : undefined;
   if (s.action === "add") return { detectionId: d.id, action: "add", name: s.name.trim(), price: s.price.trim(), quantity, ...(qid && { qid }) };
   return {
     detectionId: d.id,
@@ -94,7 +115,7 @@ function storeStatus(d: Detection): { label: string; tone: "green" | "amber" | "
 }
 
 
-const NO_PROBLEMS = { quantity: false, name: false, price: false };
+const NO_PROBLEMS = { quantity: false, name: false, price: false, product: false };
 
 export function ReviewTable({
   businessId,
@@ -137,7 +158,7 @@ export function ReviewTable({
   }, [photo, rows]);
 
   const update = (id: string, patch: Partial<RowState>) => setState((prev) => ({ ...prev, [id]: { ...prev[id]!, ...patch } }));
-  const invalidIds = rows.filter((d) => Object.values(rowProblems(state[d.id]!)).some(Boolean)).map((d) => d.id);
+  const invalidIds = rows.filter((d) => Object.values(rowProblems(d, state[d.id]!)).some(Boolean)).map((d) => d.id);
   const counts = rows.reduce<Record<Action, number>>(
     (acc, d) => ({ ...acc, [state[d.id]!.action]: acc[state[d.id]!.action] + 1 }),
     { restock: 0, restore: 0, add: 0, skip: 0 },
@@ -237,7 +258,7 @@ export function ReviewTable({
                   s={state[d.id]!}
                   thumb={thumbs[d.id]}
                   selected={selected === d.id}
-                  problems={attempted ? rowProblems(state[d.id]!) : NO_PROBLEMS}
+                  problems={attempted ? rowProblems(d, state[d.id]!) : NO_PROBLEMS}
                   onChange={(patch) => update(d.id, patch)}
                 />
               ))}
@@ -254,7 +275,7 @@ export function ReviewTable({
             {((attempted && invalidIds.length > 0) || error) && (
               <div className="mb-3 space-y-2 sm:mr-2">
                 {attempted && invalidIds.length > 0 && (
-                  <FormMessage message={`${invalidIds.length} line${invalidIds.length === 1 ? " needs" : "s need"} a count, name or price.`} />
+                  <FormMessage message={`${invalidIds.length} line${invalidIds.length === 1 ? " needs" : "s need"} a product, count, name or price.`} />
                 )}
                 <FormMessage message={error} />
               </div>
@@ -344,14 +365,16 @@ function Row({
   s: RowState;
   thumb: string | undefined;
   selected: boolean;
-  problems: { quantity: boolean; name: boolean; price: boolean };
+  problems: { quantity: boolean; name: boolean; price: boolean; product: boolean };
   onChange: (patch: Partial<RowState>) => void;
 }) {
+  const [picking, setPicking] = useState(false);
   const status = storeStatus(d);
   // The product only matters when adding, or when restocking links a hand-typed item; otherwise it's the store's own item.
   const locked = s.action === "restore" || (s.action === "restock" && d.inventoryMatch !== "name");
   const storeItem = d.candidates.find((c) => c.inventoryItemId && c.inventoryItemId === d.inventoryItemId);
-  const picked = locked ? (storeItem ?? d.candidates.find((c) => c.qid === s.choice)) : d.candidates.find((c) => c.qid === s.choice);
+  const pick = s.pick;
+  const asked = pick?.kind === "product" && pick.match === "medium" && !d.inventoryItemId;
   const skipped = s.action === "skip";
   const label = reading(d) || "Unreadable label";
   return (
@@ -426,34 +449,61 @@ function Row({
               // Nothing to choose: show the item being restocked as plain text, not a greyed-out select.
               <p className="flex min-h-11 items-center gap-2 text-sm text-gray-700 sm:min-h-10">
                 <SolarIcon name="Box" iconStyle="Outline" size={16} className="shrink-0 text-gray-400" />
-                <span className="min-w-0 break-words">{picked ? candidateName(picked) : "Your item in store"}</span>
+                <span className="min-w-0 break-words">{storeItem ? candidateName(storeItem) : "Your item in store"}</span>
               </p>
             ) : (
-              <NativeSelect
-                id={`${d.id}-product`}
-                value={s.choice}
-                onChange={(e) => {
-                  const next = d.candidates.find((c) => c.qid === e.target.value);
-                  onChange({
-                    choice: e.target.value,
-                    name: next ? candidateName(next) : reading(d),
-                    ...(next?.price && { price: String(next.price.median) }),
-                  });
-                }}
-                className={cn("h-11 rounded-xl px-3 pr-9 text-sm sm:h-10")}
-              >
-                {d.candidates.map((c) => (
-                  <option key={c.qid} value={c.qid}>
-                    {candidateName(c)}
-                    {c.price ? ` · ~${naira.format(c.price.median)}` : ""}
-                  </option>
-                ))}
-                <option value={NEW}>{d.candidates.length ? "None of these: new item" : "New item (not in catalogue)"}</option>
-              </NativeSelect>
+              <>
+                <button
+                  id={`${d.id}-product`}
+                  type="button"
+                  onClick={() => setPicking(true)}
+                  aria-invalid={problems.product}
+                  className={cn(
+                    "flex min-h-11 w-full items-center gap-2 rounded-xl bg-surface px-3 py-2 text-left text-sm ring-1 ring-hairline/[0.12] transition-colors hover:bg-gray-50 sm:min-h-10",
+                    problems.product && "ring-2 ring-red-500",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 break-words">
+                    {pick?.kind === "product" ? (
+                      <>
+                        <span className="text-gray-900">{pick.name}</span>
+                        {pick.variant && !pick.name.includes(pick.variant) && <span className="text-gray-500"> · {pick.variant}</span>}
+                      </>
+                    ) : pick?.kind === "new" ? (
+                      <span className="text-gray-900">New item (not in catalogue)</span>
+                    ) : (
+                      // Restocking a hand-typed item: a pick only links it to the catalogue.
+                      <span className="text-gray-500">{needsPick(s) ? "Choose a product or “New item”" : "Link a catalogue product (optional)"}</span>
+                    )}
+                  </span>
+                  <SolarIcon name="Alt-Arrow-Right" iconStyle="Outline" size={16} className="shrink-0 text-gray-400" />
+                </button>
+                {asked && (
+                  <Pill tone="amber" className="whitespace-normal">
+                    Is this your item? Check it, or pick another.
+                  </Pill>
+                )}
+                <ProductPicker
+                  open={picking}
+                  onOpenChange={setPicking}
+                  d={d}
+                  current={pick}
+                  thumb={thumb}
+                  onPick={(next) =>
+                    onChange({
+                      pick: next,
+                      name: next.kind === "product" ? next.name : reading(d),
+                      // The catalogue price is a starting point; keep the merchant's own if there is no new one.
+                      ...(next.kind === "product" && next.price && { price: String(next.price.median) }),
+                      ...(next.kind === "new" && { price: s.pick?.kind === "product" ? "" : s.price }),
+                    })
+                  }
+                />
+              </>
             )}
-            {picked?.price && (
+            {pick?.kind === "product" && pick.price && !locked && (
               <p className="text-xs tabular-nums text-gray-500">
-                Catalogue median {naira.format(picked.price.median)} ({naira.format(picked.price.min)}–{naira.format(picked.price.max)})
+                Catalogue median {naira.format(pick.price.median)} ({naira.format(pick.price.min)}–{naira.format(pick.price.max)})
               </p>
             )}
           </div>

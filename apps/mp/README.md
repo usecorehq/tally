@@ -32,10 +32,11 @@ app/inventory/                   inventory (?business=<id>): scan card, search, 
 app/onboarding/                  setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish
   [businessId]/items/            starter items for a business that already exists
 app/stocktake/                   shelf photo → review → confirm (?business=<id>)
-  actions.ts                     server actions: start/poll the stock-take agent, quick scan, confirm
+  actions.ts                     server actions: start/poll the stock-take agent, quick scan, confirm, catalogue search/product
   image.ts                       browser-side resize (2560 px JPEG) and per-product thumbnails
   stocktake-flow.tsx             business + photo picker, live agent trace
   review-table.tsx               one row per detection: count, candidate, store status, action; then the outcome
+  product-picker.tsx             the line's product sheet: suggestions with match strength, other sizes, catalogue search, new item
 app/design/                      dev-only previews of the V2 kit and every page state with fixture data
 lib/format.ts                    ₦ and quantity strings without floats
 ```
