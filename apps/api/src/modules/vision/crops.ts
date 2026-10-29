@@ -73,3 +73,17 @@ export async function catalogueSized(crop: Uint8Array): Promise<boolean> {
   const { width, height } = await cropSize(crop);
   return Math.min(width, height) >= MIN_CROP_SIDE;
 }
+
+/** R2 key for a scan's shelf photo, kept for good as the stock-take's audit record. */
+export const shelfPhotoKey = (scanId: string) => `tally/scans/${scanId}.jpg`;
+
+const MAX_PHOTO_SIDE = 2560;
+
+/** The stored copy of a shelf photo: upright, at most 2560 px, JPEG, with no metadata (EXIF and GPS dropped). */
+export async function storablePhoto(image: Buffer): Promise<Buffer> {
+  return sharp(image)
+    .rotate()
+    .resize({ width: MAX_PHOTO_SIDE, height: MAX_PHOTO_SIDE, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+}

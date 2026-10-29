@@ -204,6 +204,7 @@ async function app(apiKey: string | undefined) {
     put: jest.fn(async (_key: string, _body: Uint8Array, _type: string) => undefined),
     get: jest.fn(async (_key: string) => (await webp(400, 600)) as Uint8Array | null),
     presignedGetUrl: jest.fn(async (key: string, _seconds?: number) => `https://r2.example/${key}?sig=1`),
+    exists: jest.fn(async (_key: string) => false),
   };
   const config: Record<string, unknown> = { "supabase.jwtSecret": SECRET, "meta.apiKey": apiKey, "meta.baseUrl": "https://api.meta.ai/v1" };
   const moduleRef = await Test.createTestingModule({
@@ -331,11 +332,31 @@ describe("VisionController shelf-scans (HTTP)", () => {
       // The tiny one can never become a catalogue picture: say so.
       expect(log).toHaveBeenCalledWith("Scan scan-1: 2 of 3 crops stored, 1 too small to store (< 48 px)");
       log.mockRestore();
-      expect(media.put).toHaveBeenCalledTimes(2);
-      expect(media.put.mock.calls.map(([key]) => key).sort()).toEqual(["tally/crops/scan-1/0.webp", "tally/crops/scan-1/2.webp"]);
+      const crops = media.put.mock.calls.filter(([key]) => key.startsWith("tally/crops/"));
+      expect(crops.map(([key]) => key).sort()).toEqual(["tally/crops/scan-1/0.webp", "tally/crops/scan-1/2.webp"]);
       const [, body, type] = media.put.mock.calls.find(([key]) => key.endsWith("/0.webp"))!;
       expect(type).toBe("image/webp");
       expect((await sharp(Buffer.from(body)).metadata()).format).toBe("webp");
+    } finally {
+      media.enabled = false;
+    }
+  });
+
+  it("keeps the shelf photo in R2 with the scan: upright JPEG, no metadata", async () => {
+    media.enabled = true;
+    media.put.mockClear();
+    try {
+      const photo = await sharp({ create: { width: 1200, height: 900, channels: 3, background: "#c33" } })
+        .jpeg()
+        .withExif({ IFD0: { Copyright: "x" } })
+        .toBuffer();
+      fetchSpy.mockImplementation(metaApi(() => sparkReply([peak]), () => samReply("")));
+      const res = await post().set(auth).attach("image", photo, "shelf.jpg").expect(200);
+      expect(res.body.photoStored).toBe(true);
+      const [, body, type] = media.put.mock.calls.find(([key]) => key === "tally/scans/scan-1.jpg")!;
+      expect(type).toBe("image/jpeg");
+      const meta = await sharp(Buffer.from(body)).metadata();
+      expect([meta.format, meta.width, meta.height, meta.exif]).toEqual(["jpeg", 1200, 900, undefined]);
     } finally {
       media.enabled = false;
     }
@@ -514,6 +535,16 @@ describe("VisionController confirm + get (HTTP)", () => {
         `https://r2.example/tally/crops/${SCAN}/1.webp?sig=1`,
       ]);
       expect(ctx.media.presignedGetUrl).toHaveBeenCalledWith(`tally/crops/${SCAN}/0.webp`, 3600);
+      // Scans from before photos were kept have none.
+      expect(res.body.photoUrl).toBeNull();
+    });
+
+    it("gives the stored shelf photo a presigned URL", async () => {
+      ctx.media.enabled = true;
+      ctx.media.exists.mockResolvedValueOnce(true);
+      const res = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
+      expect(ctx.media.exists).toHaveBeenCalledWith(`tally/scans/${SCAN}.jpg`);
+      expect(res.body.photoUrl).toBe(`https://r2.example/tally/scans/${SCAN}.jpg?sig=1`);
     });
 
     it("another business's scan is a 404", async () => {

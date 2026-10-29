@@ -45,7 +45,7 @@ Identify calls (point to sell) write nothing until the merchant confirms, and th
 | `stock_movements.client_movement_id = 'vision:<detection id>'` | The detection that moved stock | It is the idempotency key, so a retried confirm can't move stock twice. The detection's `item_id` + `quantity` say the same thing from the other side |
 | `<scan_id>:<position>` | The detection, as Qore Catalog's feedback `clientRef` | Sent to `/v1/feedback` and `/v1/images` so retries dedupe on the catalogue side |
 | `tally/crops/<scan_id>/<position>.webp` | The detection's crop in R2 | Object storage; the key is derived, not stored. See [product crops](vision-recognition.md#product-crops) |
-| `vision_scans.image_sha256` | The uploaded photo | The photo itself is never stored, only its hash and size |
+| `tally/scans/<scan_id>.jpg` | The scan's shelf photo in R2 | Object storage, kept for good as the audit record; the key is derived from the scan id. `vision_scans.image_sha256` is the hash of the uploaded bytes |
 | `created_by`, `started_by`, `decided_by` | `auth.users` | Audit columns only. Membership is checked by the API on every call; only `businesses` and `business_members` carry the cross-schema key to `auth.users` |
 
 ## Tenancy: every child carries `business_id`

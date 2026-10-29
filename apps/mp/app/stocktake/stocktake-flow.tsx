@@ -287,10 +287,10 @@ export function Working({
             <span aria-hidden className="pointer-events-none absolute inset-1 animate-pulse rounded-[10px] bg-white/35" />
           </TraySheet>
         ) : (
-          // Opened on another device, or this browser didn't keep the photo.
+          // Opened elsewhere while running: the stored photo arrives with the result.
           <TraySheet className="flex w-[min(360px,100%)] flex-col items-center px-6 py-12 text-center">
             <IconTile icon="Gallery-Add" className="h-12 w-12" />
-            <p className="mt-3 text-sm text-gray-500">The photo stays on the device it was taken on.</p>
+            <p className="mt-3 text-sm text-gray-500">The shelf photo is saved with the stock-take and shows when it&apos;s ready.</p>
           </TraySheet>
         )}
         <TrayFooter>
