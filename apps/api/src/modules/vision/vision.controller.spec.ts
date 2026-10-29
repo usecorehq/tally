@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import sharp from "sharp";
-import { ForbiddenException, INestApplication, NotFoundException, ValidationPipe } from "@nestjs/common";
+import { ForbiddenException, INestApplication, Logger, NotFoundException, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
@@ -325,8 +325,12 @@ describe("VisionController shelf-scans (HTTP)", () => {
       // ~85 x 106 px: under Qore Catalog's 160 px, still kept for Tally's own dataset.
       const small = { ...peak, name: "Small", boxes: [{ x_min: 700, y_min: 100, x_max: 780, y_max: 200 }] };
       fetchSpy.mockImplementation(metaApi(() => sparkReply([big, tiny, small]), () => samReply("")));
+      const log = jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
       const res = await post().set(auth).attach("image", photo, "shelf.jpg").expect(200);
       expect(res.body.cropsStored).toBe(2);
+      // The tiny one can never become a catalogue picture: say so.
+      expect(log).toHaveBeenCalledWith("Scan scan-1: 2 of 3 crops stored, 1 too small to store (< 48 px)");
+      log.mockRestore();
       expect(media.put).toHaveBeenCalledTimes(2);
       expect(media.put.mock.calls.map(([key]) => key).sort()).toEqual(["tally/crops/scan-1/0.webp", "tally/crops/scan-1/2.webp"]);
       const [, body, type] = media.put.mock.calls.find(([key]) => key.endsWith("/0.webp"))!;
@@ -543,7 +547,7 @@ describe("VisionController confirm + get (HTTP)", () => {
       scanConfirmed: true,
       feedback: { sent: 1, recorded: 1, duplicates: 0 },
       // R2 is off in this suite: no crop to send.
-      images: { uploaded: 0, skipped: 1, failed: 0 },
+      images: { uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 1, tooSmall: 0 } },
     });
   });
 
@@ -567,7 +571,7 @@ describe("VisionController confirm + get (HTTP)", () => {
         view: "on_shelf",
         feedbackClientRef: `${SCAN}:0`,
       });
-      expect(res.body.images).toEqual({ uploaded: 1, skipped: 0, failed: 0 });
+      expect(res.body.images).toEqual({ uploaded: 1, skipped: 0, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
     });
 
     it("sends nothing for a new item (no Qore ID) or a line without a stored crop", async () => {
@@ -587,20 +591,34 @@ describe("VisionController confirm + get (HTTP)", () => {
       ctx.media.get.mockResolvedValueOnce(null);
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 2, failed: 0 });
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 2, failed: 0, skippedBy: { noProduct: 1, noCrop: 1, tooSmall: 0 } });
     });
 
     it("keeps a crop under 160 px out of Qore Catalog", async () => {
       ctx.media.get.mockResolvedValueOnce(await webp(120, 300));
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 1, failed: 0 });
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 1 } });
     });
 
-    it("an upload failure is counted, not fatal", async () => {
-      ctx.catalog.client.uploadImage.mockRejectedValueOnce(Object.assign(new Error("store not configured"), { status: 500 }));
+    it("an upload failure is counted, not fatal, and logged with Qore Catalog's reason", async () => {
+      const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+      ctx.catalog.client.uploadImage.mockRejectedValueOnce(
+        Object.assign(new Error(`Catalog POST /v1/images failed: 400 No feedback line ${SCAN}:0 for this key`), { status: 400 }),
+      );
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 0, failed: 1 });
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 0, failed: 1, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
+      expect(warn).toHaveBeenCalledWith(`Crop ${SCAN}:0 rejected by Qore Catalog: Catalog POST /v1/images failed: 400 No feedback line ${SCAN}:0 for this key`);
+      warn.mockRestore();
+    });
+
+    it("logs why each line sent nothing", async () => {
+      const log = jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
+      ctx.media.get.mockResolvedValueOnce(await webp(120, 300));
+      await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+      expect(log).toHaveBeenCalledWith(`Crop ${SCAN}:0 not sent: crop 120×300 is under Qore Catalog's 160 px minimum`);
+      expect(log).toHaveBeenCalledWith("Crops to Qore Catalog: 0 uploaded, 0 failed, 1 skipped (0 no product, 0 no crop, 1 too small)");
+      log.mockRestore();
     });
 
     it("no pictures when feedback didn't go through", async () => {
