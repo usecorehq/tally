@@ -1,8 +1,7 @@
 name: ci
 
-# secrets always runs. web / train / mobile run only when their code changed,
-# or when started by hand: Actions → ci → Run workflow (pick the jobs), or
-#   gh workflow run ci.yml --ref <branch> -f web=true -f train=true -f mobile=true
+# secrets always runs; web / mobile run when their code changed or by hand:
+#   gh workflow run ci.yml --ref <branch> -f web=true -f mobile=true
 on:
   pull_request:
   push:
@@ -13,10 +12,6 @@ on:
         description: "web: typecheck, test, db:check, build"
         type: boolean
         default: true
-      train:
-        description: "train: ruff + pytest"
-        type: boolean
-        default: false
       mobile:
         description: "mobile: analyze, test, dev APK (~5 min)"
         type: boolean
@@ -33,7 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.filter.outputs.web }}
-      train: ${{ steps.filter.outputs.train }}
       mobile: ${{ steps.filter.outputs.mobile }}
     steps:
       - uses: actions/checkout@v4
@@ -44,16 +38,12 @@ jobs:
             web:
               - 'apps/api/**'
               - 'apps/mp/**'
-              - 'apps/console/**'
               - 'packages/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
               - 'scripts/check-db-drift.sh'
-              - '.github/workflows/**'
-            train:
-              - 'services/train/**'
               - '.github/workflows/**'
             mobile:
               - 'apps/mobile/**'
@@ -88,20 +78,6 @@ jobs:
       # schema.ts must match packages/db/migrations (offline, no database).
       - run: pnpm db:check
       - run: pnpm build
-
-  train:
-    needs: changes
-    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' && inputs.train || github.event_name != 'workflow_dispatch' && needs.changes.outputs.train == 'true') }}
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/train
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync --frozen
-      - run: uv run ruff check .
-      - run: uv run pytest -q
 
   mobile:
     needs: changes

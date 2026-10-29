@@ -27,7 +27,7 @@ async function bootstrap() {
   const swaggerCfg = new DocumentBuilder()
     .setTitle("tally-api")
     .setDescription(
-      "Tally backend — merchant POS/inventory + Q Vision console. Auth: paste your Supabase access_token below.",
+      "Tally backend — merchant POS/inventory. Auth: paste your Supabase access_token below.",
     )
     .setVersion("0.0.1")
     .addBearerAuth(
