@@ -2,7 +2,7 @@
   "name": "@tally/api",
   "version": "0.0.1",
   "private": true,
-  "description": "Tally backend — merchant POS/inventory + Q Vision console API.",
+  "description": "Tally backend — merchant POS/inventory API.",
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",

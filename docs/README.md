@@ -20,7 +20,7 @@ Why we made the choices we made. Read these before changing something load-beari
 - **[Vision recognition](architecture/vision-recognition.md)** — Shelf photo → inventory (Muse Spark reads, SAM 3.1 counts, Qore Catalog matches, the merchant confirms) and point-to-sell identify, with the API contract for the mobile app and the web stock-take page in apps/mp. Crops in R2 and an on-device model are *planned*.
 - **[Stock-take agent](architecture/stocktake-agent.md)** — Muse Spark with tools (zoom, catalogue search, SAM count, store check) working through a shelf photo in the background until every line is settled; quick scan as first pass and fallback; the merchant confirms.
 - **[Vision schema](architecture/vision-schema.md)** — How scans, detections, readings and stock-take runs relate; which links are foreign keys and which are values (Qore IDs, R2 crop keys, stock movement keys); who writes each row.
-- **[Q Vision distillation](architecture/qvision-distillation.md)** — *Planned.* Console → API → train service against Qore Catalog, plus the open questions.
+- **[Q Vision](architecture/qvision-distillation.md)**: moved to Qore Catalog.
 
 ### Diagrams
 
@@ -32,7 +32,7 @@ Why we made the choices we made. Read these before changing something load-beari
 - **[Database migrations](guides/database-migrations.md)** — Generate, review, apply on staging, hand to the CTO.
 - **[Keeping docs current](guides/documentation.md)** — What to update when, and how to regenerate diagrams.
 
-Deploy: the API ships as a Docker image to Coolify — see [apps/api README](../apps/api/README.md#deploy-coolify). Deploy guides for console, mp and train are planned.
+Deploy: the API ships as a Docker image to Coolify — see [apps/api README](../apps/api/README.md#deploy-coolify). A deploy guide for mp is planned.
 
 ## Contributing
 

@@ -11,7 +11,7 @@ On the web, the merchant portal's `/stocktake` page runs the shelf scan from an 
 - **Shelf scan (photo → inventory).** Photograph a shelf or a pile of stock. Tally identifies every product in the frame and matches each one to a Qore Catalog product with an indicative ₦ price. The merchant confirms or corrects the results, and the items land in their inventory with counts. Accuracy matters more than speed here.
 - **Point to sell.** Point the camera at one item to find it at the till. Speed matters most here.
 
-Every confirmation or correction goes back to Qore Catalog as feedback with `source: "photo"`. Those labels later train an on-device model (see [Q Vision distillation](qvision-distillation.md)).
+Every confirmation or correction goes back to Qore Catalog as feedback with `source: "photo"`. Qore Catalog uses those labels for recognition training (see [Q Vision](qvision-distillation.md)).
 
 ## Where each model runs
 
@@ -22,7 +22,7 @@ Every confirmation or correction goes back to Qore Catalog as feedback with `sou
 | Count each product's units | apps/api → Meta Model API | SAM 3.1 (`sam-3.1`), one concept prompt per distinct look |
 | Match to the catalogue, with prices | apps/api → Qore Catalog | `POST /v1/match` |
 | Identify one item at the till | apps/api → Meta Model API, then Tally | Muse Spark (minimal reasoning) reads the label; Tally matches it to the merchant's items |
-| On-device recognition | Device | Planned: a small student model distilled from Muse Spark labels and merchant confirmations |
+| On-device recognition | Device | Planned: a model provided by Qore Catalog, trained on Muse Spark labels and merchant confirmations |
 
 All model calls go through apps/api. `META_MODEL_API_KEY` is server-only, like `QORE_CATALOG_API_KEY`. The mobile app and the web apps never hold it. Requests use Meta's Standard mode, so merchants' photos are not used to train Meta's models.
 
@@ -350,6 +350,6 @@ node --env-file=apps/api/.env apps/api/scripts/vision-smoke.mjs shelf1.jpg shelf
 
 ## Open questions
 
-- **Image storage.** Training Q Vision needs the photos. The options are a Supabase Storage bucket (whose objects live outside the `tally` schema) or a separate object store. Until that's decided, images stay in memory and are discarded after the request.
+- **Image storage.** Recognition training (in Qore Catalog) needs the photos. The options are a Supabase Storage bucket (whose objects live outside the `tally` schema) or a separate object store. Until that's decided, images stay in memory and are discarded after the request.
 - **Brand discrimination in SAM.** Can SAM tell brands apart from a branded noun phrase? If not, SAM counts the generic shape ("tin can"), and instances are assigned to products by overlap with Muse Spark's boxes.
 - **Muse Spark accuracy on local packaging** needs measuring on real Nigerian shelf photos before the confirm screen is tuned.

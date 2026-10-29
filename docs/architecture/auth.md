@@ -8,13 +8,13 @@ Tally has no user table of its own. Identity is the shared Qorelly Supabase `aut
 
 | Surface | Session held by | How it gets a token | Code |
 |---|---|---|---|
-| mp, console | NextAuth v5 (encrypted JWT cookie) | Credentials provider → `supabase.auth.signInWithPassword` | `packages/auth`, `apps/*/auth.ts`, `apps/*/proxy.ts` |
+| mp | NextAuth v5 (encrypted JWT cookie) | Credentials provider → `supabase.auth.signInWithPassword` | `packages/auth`, `apps/mp/auth.ts`, `apps/mp/proxy.ts` |
 | mobile | `supabase_flutter` (persisted via shared_preferences by default) | `signInWithPassword`, `signUp` + email code (`verifyOTP`), password reset in `AuthRemoteDataSource` | `apps/mobile/lib/features/auth` |
 | api | — (stateless) | Verifies the `Authorization: Bearer` header | `apps/api/src/common/guards/supabase-jwt.guard.ts` |
 
 ## Why NextAuth in front of Supabase
 
-The web apps use NextAuth so session handling, route protection (`proxy.ts`) and server actions follow the standard Next.js App Router pattern. Supabase stays the identity provider. The Supabase `access_token`, `refresh_token` and `expires_at` live inside the NextAuth JWT; the `jwt` callback refreshes them when fewer than 60 s remain. `session.accessToken` is what server code sends to the API.
+The web app (mp) uses NextAuth so session handling, route protection (`proxy.ts`) and server actions follow the standard Next.js App Router pattern. Supabase stays the identity provider. The Supabase `access_token`, `refresh_token` and `expires_at` live inside the NextAuth JWT; the `jwt` callback refreshes them when fewer than 60 s remain. `session.accessToken` is what server code sends to the API.
 
 If a refresh fails, `session.error` is `"RefreshFailed"` — callers should sign the user out.
 
@@ -32,4 +32,4 @@ Ported from bookmi. Every route requires a valid Supabase user JWT unless the co
 ## Not built yet
 
 - Signup on mp. Mobile signs up with `supabase.auth.signUp` against the shared project, exactly as Qorelly does: `full_name`, E.164 `phone` and `role: owner` in user metadata, which Qorelly's `handle_new_user` trigger turns into its profile row. Tally writes nothing outside the `tally` schema (no profile upsert). Email confirmation is on, so the app asks for the emailed code; an already-registered email (a stand-in user with no identities) is reported, not sent a code.
-- Roles / authorisation beyond "is a signed-in user" (e.g. console restricted to Core Technologies staff).
+- Roles / authorisation beyond "is a signed-in user".
