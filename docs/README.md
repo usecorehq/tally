@@ -24,7 +24,7 @@ Why we made the choices we made. Read these before changing something load-beari
 
 ### Diagrams
 
-- **[Architecture diagrams](diagrams/README.md)** — C4 model, auth sequences, database isolation, migration flow, mobile layers and flavors, system flowchart and journeys.
+- **[Architecture diagrams](diagrams/README.md)** — Process and stock-take overviews, the stock-take, quick scan, history and identify sequences, C4 model, onboarding, database (ERD, migration flow), mobile layers and flavors.
 
 ## Guides
 

@@ -6,7 +6,7 @@
 - **Qore Catalog** (a separate product) owns product images and recognition training; Tally sends it confirmed shelf crops and feedback.
 - **Tally** lives in the `tally` schema of the shared Qorelly Supabase project and reuses Qorelly's `auth.users`.
 
-Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile; shelf photo → inventory (see [vision recognition](docs/architecture/vision-recognition.md) and the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
+Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile; shelf photo → inventory (see [vision recognition](docs/architecture/vision-recognition.md) and [how a stock-take works](docs/diagrams/2.stock-take-agent-highlevel.webp)).
 
 ## Why Tally: stock-taking, before and after
 
@@ -115,7 +115,7 @@ Everything lives under [`docs/`](docs/README.md). Docs ship in the same PR as th
 </tr>
 </table>
 
-More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (web + mobile), database isolation, migration flow, mobile layers and flavors, system flowchart, merchant journey.
+More in **[Architecture diagrams](docs/diagrams/README.md)**: the stock-take agent run, quick scan, stock-take history, identify one product, onboarding, database (ERD, migration flow), mobile layers and flavors.
 
 ### Architecture
 
