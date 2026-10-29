@@ -51,6 +51,7 @@ See [`architecture/stocktake-agent.md`](../architecture/stocktake-agent.md).
 | Diagram | Description |
 |---|---|
 | [`stocktake-agent-sequence.svg`](images/stocktake-agent-sequence.svg) ([source](mermaid/stocktake-agent-sequence.mmd)) | Async run: first pass, then the Muse Spark tool loop (zoom, catalogue search, SAM count, store check, record), step trace for polling, human confirm. |
+| [`stocktake-history-sequence.svg`](images/stocktake-history-sequence.svg) ([source](mermaid/stocktake-history-sequence.mmd)) | Stock-take history and reopening a session: list, stored scan filled back in from Qore Catalog, presigned crops, the photo from the browser. |
 
 ## Database
 

@@ -31,11 +31,18 @@ app/(home)/page.tsx              home (route group, so its loading.tsx covers ho
 app/inventory/                   inventory (?business=<id>): scan card, search, Items / Units / Low stock tiles, stock list
 app/onboarding/                  setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish
   [businessId]/items/            starter items for a business that already exists
-app/stocktake/                   shelf photo → review → confirm (?business=<id>)
-  actions.ts                     server actions: start/poll the stock-take agent, quick scan, confirm, catalogue search/product
+app/stocktake/                   new stock-take: business + photo, then the run continues at its own URL (?business=<id>)
+  [runId]/                       one agent run: progress (polling resumes after a refresh), then review or read-only
+  scan/[scanId]/                 one quick scan: review until confirmed, then read-only
+  history/                       the business's stock-takes and quick scans, newest first, grouped by day
+  actions.ts                     server actions: start/poll the agent, quick scan, reopen a scan, history, confirm, catalogue search/product
+  session.tsx                    a reopened session: run polling, review, confirmed or failed
+  confirmed-view.tsx             a confirmed scan, read-only: each line's decision and when
+  photo-store.ts                 the shelf photo per session in IndexedDB (the API never stores it)
+  urls.ts                        session, history and new stock-take URLs
   image.ts                       browser-side resize (2560 px JPEG) and per-product thumbnails
   stocktake-flow.tsx             business + photo picker, live agent trace
-  review-table.tsx               one row per detection: count, candidate, store status, action; then the outcome
+  review-table.tsx               one row per undecided detection: count, candidate, store status, action; then the outcome
   product-picker.tsx             the line's product sheet: suggestions with match strength, other sizes, catalogue search, new item
 app/design/                      dev-only previews of the V2 kit and every page state with fixture data
 lib/format.ts                    ₦ and quantity strings without floats
@@ -43,7 +50,7 @@ lib/format.ts                    ₦ and quantity strings without floats
 
 UI is Qorelly Design V2 from `@tally/ui`; open `/design` in dev to see every element.
 
-The stock-take page is the web version of the shelf scan: see [Web stock-take](../../docs/architecture/vision-recognition.md#web-stock-take-apps-mp). It needs apps/api with `META_MODEL_API_KEY` set; without it the page shows "Photo recognition isn't set up on this server yet".
+The stock-take page is the web version of the shelf scan: see [Web stock-take](../../docs/architecture/vision-recognition.md#web-stock-take-apps-mp) and [Stock-take history](../../docs/architecture/vision-recognition.md#stock-take-history-built). It needs apps/api with `META_MODEL_API_KEY` set; without it the page shows "Photo recognition isn't set up on this server yet".
 
 Calling the API from server code: `const session = await auth()` then send `Authorization: Bearer ${session.accessToken}`.
 
