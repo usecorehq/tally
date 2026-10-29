@@ -18,9 +18,8 @@ import { STOCKTAKE_DEADLINES, VisionService } from "./vision.service";
 /** A stored crop of the given size, as R2 would return it. */
 const webp = (width: number, height: number) => sharp({ create: { width, height, channels: 3, background: "#c33" } }).webp().toBuffer();
 
-// Real guard, controller and service; the business lookup, the catalogue and
-// the Meta Model API (global fetch) are mocked. Live behaviour is checked with
-// scripts/vision-smoke.mjs.
+// Real guard, controller and service; business lookup, catalogue and Meta Model API (fetch) are mocked.
+// Live behaviour is checked by scripts/vision-smoke.mjs.
 const SECRET = "test-jwt-secret-not-real";
 const USER = "00000000-0000-4000-8000-0000000000aa";
 const BIZ = "00000000-0000-4000-8000-000000000001";

@@ -1,6 +1,5 @@
-// Icons by Solar name, drawn in Phosphor as Qorelly Design V2 does: Light for
-// every name (Bold and Outline both), Fill for a selected state (the active nav
-// item). A check always draws filled. Glyphs: icons/phosphor.ts.
+// Solar icon names drawn in Phosphor as Qorelly Design V2 does: Light for every name, Fill for a selected state.
+// A check always draws filled. Glyphs: icons/phosphor.ts.
 import { createElement } from "react";
 import { cn } from "./lib/cn";
 import { FILL, LIGHT, SOLAR_TO_PHOSPHOR } from "./icons/phosphor";

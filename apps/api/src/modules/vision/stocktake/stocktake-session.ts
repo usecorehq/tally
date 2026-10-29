@@ -1,11 +1,6 @@
 /**
- * The stock-take agent's working state and tools. The agent starts from the
- * quick scan (Spark read + SAM + catalogue) and investigates the lines that
- * need it: zooming into labels, retrying the catalogue with better wording,
- * counting with SAM, checking the merchant's store. Every tool wraps code the
- * quick scan already uses; the final "in stock?" call still goes through the
- * same deterministic rules (inventory-match.ts), so the agent can improve the
- * evidence but cannot invent stock.
+ * Stock-take agent state and tools, starting from the quick scan. Tools wrap quick-scan code and "in stock?"
+ * still goes through inventory-match.ts, so the agent can improve evidence but never invent stock.
  */
 import type { MatchCandidate, MatchResult } from "@tally/catalog-client";
 import { matchInventory, type InventoryIndex, type Reading } from "../inventory-match";
@@ -362,7 +357,7 @@ function readingOf(p: Pick<ShelfProduct, "brand" | "name" | "pack">): string {
   return [p.brand, p.name, p.pack].map(norm).join("|");
 }
 
-/** "Close-Up" = "closeup"; "Peak" vs "Peak Milk" counts as the same brand. */
+/** Ignores case, spaces and punctuation; a brand containing the other (e.g. plus a product word) is the same brand. */
 function sameBrand(read: string, catalogue: string): boolean {
   const a = norm(read);
   const b = norm(catalogue);

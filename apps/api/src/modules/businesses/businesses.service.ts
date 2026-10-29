@@ -114,9 +114,8 @@ export class BusinessesService {
   }
 
   /**
-   * Remove an item from the shop: archive it, never delete. The row keeps its
-   * Qore ID, name, price and stock history, so a later shelf scan of the same
-   * product offers to restore it instead of creating a duplicate.
+   * Archive, never delete: the row keeps its Qore ID, price and stock history, so a later scan offers
+   * to restore it instead of creating a duplicate.
    */
   async archiveItem(businessId: string, userId: string, itemId: string): Promise<schema.InventoryItem> {
     await this.getForMember(businessId, userId);
@@ -150,11 +149,8 @@ export class BusinessesService {
   }
 
   /**
-   * Apply the template step: insert kept items (+ opening stock) in one
-   * transaction, then send every decision to Qore Catalog as feedback.
-   * Re-sending the same request is safe: items already linked to the same Qore
-   * ID are skipped, opening movements are keyed by clientRef, and the catalogue
-   * dedupes feedback by clientRef.
+   * Inserts kept items and opening stock in one transaction, then sends every decision to Qore Catalog as feedback.
+   * Idempotent: linked items are skipped; opening movements and feedback are keyed by clientRef.
    */
   async addStarterInventory(businessId: string, userId: string, input: StarterItem[]): Promise<StarterResult> {
     const business = await this.getForMember(businessId, userId);
@@ -220,10 +216,8 @@ export class BusinessesService {
   }
 
   /**
-   * The catalogue takes up to 100 feedback items per call and validates a batch
-   * as a whole, so on a 400 the batch is resent item by item: one bad item must
-   * not drop everyone else's feedback. Retries are safe (deduped by clientRef).
-   * Also used by the shelf-scan confirm.
+   * The catalogue validates a feedback batch (max 100) as a whole, so a 400 resends item by item:
+   * one bad item must not drop the rest. Retries are safe (deduped by clientRef).
    */
   async sendFeedback(items: FeedbackItem[]): Promise<StarterResult["feedback"]> {
     const result = { sent: 0, recorded: 0, duplicates: 0 };

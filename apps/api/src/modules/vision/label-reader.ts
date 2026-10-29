@@ -1,11 +1,6 @@
 /**
- * Point-to-sell: one product held up to the camera → its label, read by Muse
- * Spark. Pure: builds the request and validates the reply, no IO.
- *
- * Reading the label and matching it in Tally beats asking Spark to pick from the
- * merchant's item list: measured on a 640 px Close-Up photo (Oct 2026), the
- * label read took 2.4–3.0 s and got the brand every time; the pick-from-list
- * prompt took 3.3–6.2 s and mostly answered "none".
+ * Point-to-sell: reads the label of one product held up to the camera (Muse Spark). Pure, no IO.
+ * Reading then matching in Tally was faster and more accurate than asking Spark to pick from the item list.
  */
 import type { Reading } from "./inventory-match";
 import { SHELF_MODEL, type ImageType } from "./shelf-reader";

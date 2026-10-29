@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Fail if packages/db/src/schema.ts and packages/db/migrations disagree.
-#   1. drizzle-kit check — the migration files and snapshots are consistent.
-#   2. drizzle-kit generate into a COPY of migrations/ — if that produces a new
-#      file, someone changed schema.ts without running `pnpm db:generate`.
-# Offline: neither step connects to a database. The real migrations/ folder is
-# never written, so an uncommitted migration on your machine is safe.
+# Fail if schema.ts and packages/db/migrations disagree: drizzle-kit check, then generate into a copy of migrations/.
+# Offline; the real migrations/ folder is never written.
 set -euo pipefail
 cd "$(dirname "$0")/../packages/db"
 

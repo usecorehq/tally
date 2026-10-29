@@ -172,10 +172,8 @@ export class VisionRepository {
   }
 
   /**
-   * Apply the merchant's decisions in one transaction. Each decision is checked
-   * first and lands in `invalid` (with the reason) instead of failing the rest.
-   * Retry-safe: decided detections are left alone, stock movements are keyed
-   * by detection id, and the scan row lock serialises concurrent confirms.
+   * Applies decisions in one transaction; a bad decision lands in `invalid` instead of failing the rest.
+   * Retry-safe: decided detections are skipped, movements are keyed by detection id, and the scan row is locked.
    */
   async confirm(businessId: string, scanId: string, userId: string, decisions: ConfirmDecision[]): Promise<ConfirmResult> {
     return this.db.transaction(async (tx) => {
@@ -277,8 +275,7 @@ export class VisionRepository {
   }
 
   /**
-   * Point-to-sell confirm: the merchant said "yes, that's it". Remember the
-   * reading for this active item so the next identify recognises it at once.
+   * Point-to-sell confirm: remember the reading for this item so the next identify recognises it at once.
    * Returns false when the item isn't an active item of this business.
    */
   async rememberReading(businessId: string, itemId: string, key: string): Promise<boolean> {
