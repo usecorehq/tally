@@ -29,6 +29,25 @@ export function plausible(product: Pick<ShelfProduct, "brand">, candidate: Match
   return product.brand ? candidate.signals.brand === 1 : candidate.signals.text >= MIN_UNBRANDED_TEXT;
 }
 
+/**
+ * How well a catalogue candidate fits what was read, from /v1/match's signals:
+ *   strong → brand and size both agree with the label;
+ *   medium → the brand agrees (size doesn't or wasn't read), or no brand was read but the name matches well;
+ *   low    → it passed the plausibility filter, but only just.
+ * Clients pre-fill only strong and medium; a low top candidate defaults the line to "new item".
+ */
+export type MatchStrength = "strong" | "medium" | "low";
+
+/** No brand read: the name must match at least this well (signals.text) to count as medium. */
+export const MEDIUM_UNBRANDED_TEXT = 0.7;
+
+export function matchStrength(signals: MatchCandidate["signals"]): MatchStrength {
+  if (signals.brand === 1 && signals.size === 1) return "strong";
+  if (signals.brand === 1) return "medium";
+  // brand 0.5 = the label gave no brand; 0 = a different brand (never plausible, but be safe).
+  return signals.brand === 0.5 && signals.text >= MEDIUM_UNBRANDED_TEXT ? "medium" : "low";
+}
+
 export type DetectionCandidate = {
   qid: string;
   name: string;
@@ -41,6 +60,9 @@ export type DetectionCandidate = {
   price: { median: number; min: number; max: number } | null;
   /** This business's active item for this product, when it already stocks it. */
   inventoryItemId: string | null;
+  match: MatchStrength;
+  /** The catalogue's approved picture; null until a curator approves one (show the crop or a placeholder). */
+  image: { url: string; width: number | null; height: number | null } | null;
 };
 
 export type Detection = {
@@ -143,6 +165,8 @@ export function toCandidate(c: MatchCandidate, inventory: InventoryIndex): Detec
     score: c.score,
     price: c.price ? { median: c.price.median, min: c.price.min, max: c.price.max } : null,
     inventoryItemId: inventory.byQid.get(c.qid) ?? null,
+    match: matchStrength(c.signals),
+    image: c.image ?? null,
   };
 }
 
