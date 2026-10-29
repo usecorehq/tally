@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   Injectable,
   Logger,
@@ -130,9 +131,16 @@ export type ScanCandidate = Pick<DetectionCandidate, "qid" | "score"> & Partial<
 /** A stored scan, reopened: the quick-scan detection shape plus each line's decision. */
 export type ScanView = {
   scanId: string;
-  status: "open" | "confirmed";
+  /** discarded: dropped unconfirmed; superseded: another run of the same photo was confirmed. Both read-only. */
+  status: "open" | "confirmed" | "discarded" | "superseded";
   createdAt: Date;
   confirmedAt: Date | null;
+  discardedAt: Date | null;
+  supersededAt: Date | null;
+  /** The first scan of this photo when this one is a rerun; null for the original. */
+  rerunOf: string | null;
+  /** The photo is stored and no run of it has moved stock yet. */
+  canRerun: boolean;
   model: string;
   countModel: string;
   catalogueAvailable: boolean;
@@ -164,7 +172,11 @@ export type HistoryEntry = {
   kind: "stocktake" | "quick";
   runId: string | null;
   scanId: string | null;
-  status: "running" | "review" | "confirmed" | "failed";
+  status: "running" | "review" | "confirmed" | "failed" | "discarded" | "superseded";
+  /** The group's root scan when this is a rerun. */
+  rerunOf: string | null;
+  /** On a root only: its reruns, oldest first. */
+  reruns?: HistoryEntry[];
   /** The agent stopped and the result is the first pass. */
   fallback: boolean;
   startedAt: Date;
@@ -308,13 +320,40 @@ export class VisionService implements OnApplicationBootstrap {
     const type = sniffImageType(image);
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
     await this.businesses.getForMember(businessId, userId);
+    return this.launch(businessId, userId, image, type, null);
+  }
 
-    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL);
-    void this.runStocktake(runId, businessId, userId, image, type).catch(async (err: unknown) => {
+  /**
+   * Rerun a stored stock-take: a new agent run on the photo kept in R2, grouped under the photo's first scan.
+   * 409 when no photo was kept, or when a run of this photo has already moved stock.
+   */
+  async rerun(businessId: string, userId: string, scanId: string): Promise<{ runId: string; status: "running"; rerunOf: string }> {
+    if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
+    await this.businesses.getForMember(businessId, userId);
+    const { root, scanIds } = await this.repo.group(businessId, scanId);
+    if (await this.repo.groupSettled(scanIds)) {
+      throw new ConflictException("A run of this photo is already confirmed. Take new stock to count again.");
+    }
+    const image = this.media.enabled ? await this.media.get(shelfPhotoKey(scanId)).catch(() => null) : null;
+    const type = image ? sniffImageType(Buffer.from(image)) : null;
+    if (!image || !type) throw new ConflictException("This stock-take's photo wasn't kept, so it can't be rerun. Take new stock instead.");
+    const { runId } = await this.launch(businessId, userId, Buffer.from(image), type, root);
+    return { runId, status: "running", rerunOf: root };
+  }
+
+  private async launch(businessId: string, userId: string, image: Buffer, type: ImageType, rerunOf: string | null): Promise<{ runId: string; status: "running" }> {
+    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL, rerunOf);
+    void this.runStocktake(runId, businessId, userId, image, type, rerunOf).catch(async (err: unknown) => {
       this.logger.error(`Stock-take ${runId} crashed: ${(err as Error).message}`);
       await this.finish(runId, { status: "failed", error: `Stock-take crashed: ${(err as Error).message}` });
     });
     return { runId, status: "running" };
+  }
+
+  /** Drop an open stock-take: read-only, kept for audit. 409 when confirmed or superseded. */
+  async discard(businessId: string, userId: string, scanId: string) {
+    await this.businesses.getForMember(businessId, userId);
+    return this.repo.discard(businessId, scanId);
   }
 
   /** The run, its step trace and, once finished, its scan (same shape as a quick scan while it is fresh). */
@@ -339,7 +378,7 @@ export class VisionService implements OnApplicationBootstrap {
   /** Finished results in the quick-scan shape (with candidate names and prices), kept an hour for polling. */
   private readonly stocktakeResults = new TtlCache<ShelfScanResult>(60 * 60 * 1000);
 
-  private async runStocktake(runId: string, businessId: string, userId: string, image: Buffer, type: ImageType): Promise<void> {
+  private async runStocktake(runId: string, businessId: string, userId: string, image: Buffer, type: ImageType, rerunOf: string | null = null): Promise<void> {
     const step = (s: AgentStep | { turn: number; kind: "baseline"; summary: string; ms?: number }) =>
       this.repo.addStep(businessId, runId, s).catch(() => undefined);
     const started = Date.now();
@@ -398,6 +437,8 @@ export class VisionService implements OnApplicationBootstrap {
     const [cropsStored, photoStored] = await Promise.all([
       withDeadline(this.storeCrops(scanId, image, detections), limits.writeMs, "crops").catch(() => 0),
       withDeadline(this.storePhoto(scanId, image), limits.writeMs, "photo").catch(() => false),
+      // A sibling confirmed while this rerun ran: its result can no longer be confirmed.
+      rerunOf ? withDeadline(this.repo.supersedeIfSettled(businessId, scanId), limits.writeMs, "supersede").catch(() => false) : false,
     ]);
     this.stocktakeResults.set(runId, {
       scanId,
@@ -561,7 +602,7 @@ export class VisionService implements OnApplicationBootstrap {
   async history(businessId: string, userId: string, limit: number): Promise<HistoryEntry[]> {
     await this.businesses.getForMember(businessId, userId);
     await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS)).catch(() => 0);
-    const { runs, quick, counts } = await this.repo.history(businessId, limit);
+    const { runs, quick, reruns, counts } = await this.repo.history(businessId, limit);
     const byScan = new Map(counts.map((c) => [c.scanId, c]));
     const tally = (scanId: string | null) => {
       const c = scanId ? byScan.get(scanId) : undefined;
@@ -571,41 +612,54 @@ export class VisionService implements OnApplicationBootstrap {
         preview: previewNames(c?.names),
       };
     };
-    const scanStatus = (s: string | null): HistoryEntry["status"] => (s === "confirmed" ? "confirmed" : "review");
+    const scanStatus = (s: string | null): HistoryEntry["status"] =>
+      s === "confirmed" || s === "discarded" || s === "superseded" ? s : "review";
+    const fromRun = (r: (typeof runs)[number]): HistoryEntry => ({
+      id: r.runId,
+      kind: "stocktake",
+      runId: r.runId,
+      scanId: r.scanId,
+      status: r.runStatus === "running" ? "running" : r.runStatus === "failed" || !r.scanId ? "failed" : scanStatus(r.scanStatus),
+      rerunOf: r.rerunOf ?? null,
+      fallback: r.runStatus === "fallback",
+      startedAt: r.startedAt,
+      confirmedAt: r.confirmedAt,
+      error: r.runStatus === "failed" ? r.error : null,
+      ...tally(r.scanId),
+    });
+    const byRoot = new Map<string, HistoryEntry[]>();
+    for (const r of reruns) byRoot.set(r.rerunOf!, [...(byRoot.get(r.rerunOf!) ?? []), fromRun(r)]);
+    const withReruns = (e: HistoryEntry): HistoryEntry => ({ ...e, reruns: (e.scanId && byRoot.get(e.scanId)) || [] });
     const entries: HistoryEntry[] = [
-      ...runs.map((r): HistoryEntry => ({
-        id: r.runId,
-        kind: "stocktake",
-        runId: r.runId,
-        scanId: r.scanId,
-        status: r.runStatus === "running" ? "running" : r.runStatus === "failed" || !r.scanId ? "failed" : scanStatus(r.scanStatus),
-        fallback: r.runStatus === "fallback",
-        startedAt: r.startedAt,
-        confirmedAt: r.confirmedAt,
-        error: r.runStatus === "failed" ? r.error : null,
-        ...tally(r.scanId),
-      })),
-      ...quick.map((q): HistoryEntry => ({
-        id: q.scanId,
-        kind: "quick",
-        runId: null,
-        scanId: q.scanId,
-        status: scanStatus(q.scanStatus),
-        fallback: false,
-        startedAt: q.startedAt,
-        confirmedAt: q.confirmedAt,
-        error: null,
-        ...tally(q.scanId),
-      })),
+      ...runs.map((r) => withReruns(fromRun(r))),
+      ...quick.map((q) =>
+        withReruns({
+          id: q.scanId,
+          kind: "quick",
+          runId: null,
+          scanId: q.scanId,
+          status: scanStatus(q.scanStatus),
+          rerunOf: null,
+          fallback: false,
+          startedAt: q.startedAt,
+          confirmedAt: q.confirmedAt,
+          error: null,
+          ...tally(q.scanId),
+        }),
+      ),
     ];
-    return entries.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime()).slice(0, limit);
+    // Threads: a group sorts by its newest run, so a fresh rerun brings it to the top.
+    const activity = (e: HistoryEntry) => Math.max(e.startedAt.getTime(), ...(e.reruns ?? []).map((x) => x.startedAt.getTime()));
+    return entries.sort((a, b) => activity(b) - activity(a)).slice(0, limit);
   }
 
   /** Product details by Qore ID for reopened scans; catalogue data only, so shared across businesses. */
   private readonly productDetails = new TtlCache<CandidateDetails | null>(DETAIL_TTL_MS);
 
   private async scanView(businessId: string, scanId: string, fresh?: Detection[]): Promise<ScanView> {
-    const scan = await this.repo.getScan(businessId, scanId);
+    const [scan, group] = await Promise.all([this.repo.getScan(businessId, scanId), this.repo.group(businessId, scanId)]);
+    // On a failed check, hide Rerun rather than offer one that will be refused.
+    const settled = this.repo.groupSettled(group.scanIds).catch(() => true);
     const qids = [...new Set(scan.detections.flatMap((d) => d.candidates.map((c) => c.qid)))];
     const itemIds = [...new Set(scan.detections.flatMap((d) => [d.inventoryItemId, d.itemId].filter((id): id is string => Boolean(id))))];
     const [items, details] = await Promise.all([this.repo.scanItems(businessId, itemIds, qids), this.candidateDetails(qids, fresh)]);
@@ -627,6 +681,10 @@ export class VisionService implements OnApplicationBootstrap {
       status: scan.status as ScanView["status"],
       createdAt: scan.createdAt,
       confirmedAt: scan.confirmedAt,
+      discardedAt: scan.discardedAt,
+      supersededAt: scan.supersededAt,
+      rerunOf: group.root === scan.id ? null : group.root,
+      canRerun: photoUrl !== null && !(await settled),
       model: scan.readModel,
       countModel: scan.countModel,
       catalogueAvailable: scan.catalogueAvailable,
