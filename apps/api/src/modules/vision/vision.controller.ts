@@ -157,7 +157,7 @@ export class VisionController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      "The merchant confirmed what identify found (or picked the right item): remember the reading for that item, so the next identify recognises it at once. 404 when the item isn't an active item of this business.",
+      "The merchant confirmed what identify found (or picked the right item): remember the reading for that item, so the next identify recognises it at once. A reading without a brand is too vague to remember: readingKey is null. 404 when the item isn't an active item of this business.",
   })
   @ApiOkResponse({ schema: { example: { itemId: "2c9f…", readingKey: "closeup|toothpaste|130g" } } })
   confirmIdentify(@CurrentUser() user: AuthenticatedUser, @Param() { businessId }: BusinessParams, @Body() body: IdentifyConfirmBody) {

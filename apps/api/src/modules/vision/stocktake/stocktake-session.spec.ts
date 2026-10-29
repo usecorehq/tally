@@ -138,6 +138,8 @@ describe("StocktakeSession", () => {
     await s.execute("zoom", '{"line":1}', 1);
     const r = await s.execute("record_line", '{"line":1,"brand":"","name":"Garri","pack":"","unresolved_reason":"label hidden"}', 1);
     expect(r.summary).toBe("recorded unresolved: label hidden");
+    // The merchant sees why, and the line sorts to the top for review.
+    expect(s.detections()[1]!.review).toBe("Agent couldn't confirm: label hidden");
   });
 
   it("rejects bad input without throwing", async () => {

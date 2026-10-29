@@ -86,6 +86,16 @@ Truth file (`shelf1.truth.json` or `shelf1.jpg.truth.json`):
 - **Variance:** The read varies a lot run to run, so run each photo more than once when benchmarking.
 - **Output:** Markdown tables (per photo, totals, per product) on stdout; full JSON (detections, pairs, agent steps) to `--out`, default the OS temp dir. `--out` inside the repo is refused. Keep photos, truth files and results out of the repo.
 
+## Vision review
+
+To see why a scan or stock-take came out the way it did, `scripts/vision-review.mjs` prints each line from the database: what was read, the catalogue candidates with their names, the agent's verdict (recorded, unresolved and why) and the merchant's decision (`accepted` = kept the top pick). Read-only; prints merchant data to the terminal only.
+
+```bash
+pnpm turbo run build --filter=@tally/db --filter=@tally/catalog-client
+node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs <runId or scanId>
+node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs --business "Superbox"   # its latest run
+```
+
 ## Layout
 
 ```
