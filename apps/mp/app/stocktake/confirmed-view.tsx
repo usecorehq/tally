@@ -13,7 +13,33 @@ const DECISION: Record<LineDecision["action"], { label: string; tone: PillTone }
 
 const reading = (d: Detection) => [d.brand, d.name, d.pack].filter(Boolean).join(" ") || "Unreadable label";
 
-/** A confirmed stock-take, read-only: what was decided on each line, and when. */
+/** How a read-only scan ended: the header's eyebrow. */
+function ending(scan: ScanView): React.ReactNode {
+  if (scan.status === "discarded") {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <SolarIcon name="Trash-Bin-Minimalistic" iconStyle="Outline" size={16} />
+        Discarded{scan.discardedAt ? ` ${formatDateTime(scan.discardedAt)}` : ""}, nothing more was applied
+      </span>
+    );
+  }
+  if (scan.status === "superseded") {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <SolarIcon name="Layers" iconStyle="Outline" size={16} />
+        Superseded{scan.supersededAt ? ` ${formatDateTime(scan.supersededAt)}` : ""}: another run of this photo was confirmed
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <SolarIcon name="Check-Circle" iconStyle="Fill" size={16} className="text-emerald-600" />
+      Confirmed{scan.confirmedAt ? ` ${formatDateTime(scan.confirmedAt)}` : ""}
+    </span>
+  );
+}
+
+/** A finished stock-take, read-only (confirmed, discarded or superseded): what was decided on each line, and when. */
 export function ConfirmedView({
   scan,
   businessName,
@@ -38,13 +64,8 @@ export function ConfirmedView({
   return (
     <div className="q-rise max-w-[880px]">
       <PageHeader
-        eyebrow={
-          <span className="inline-flex items-center gap-1.5">
-            <SolarIcon name="Check-Circle" iconStyle="Fill" size={16} className="text-emerald-600" />
-            Confirmed{scan.confirmedAt ? ` ${formatDateTime(scan.confirmedAt)}` : ""}
-          </span>
-        }
-        title={kind === "stocktake" ? "Stock-take" : "Quick scan"}
+        eyebrow={ending(scan)}
+        title={scan.rerunOf ? "Stock-take rerun" : kind === "stocktake" ? "Stock-take" : "Quick scan"}
         subtitle={`${businessName} · started ${formatDateTime(scan.createdAt)} · ${plural(scan.detections.length, "line")}`}
         className="[&_h1]:whitespace-normal"
         actions={actions}

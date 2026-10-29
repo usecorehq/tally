@@ -208,6 +208,8 @@ export function ReviewTable({
     <div className="q-rise">
       <PageHeader
         title="Check what we found"
+        // Rerun and Discard join the header actions: let the title wrap rather than truncate.
+        className="[&_h1]:whitespace-normal"
         subtitle={
           rows.length === 0
             ? `Nothing to confirm for ${businessName}.`
