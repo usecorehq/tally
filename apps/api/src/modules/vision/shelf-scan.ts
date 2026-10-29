@@ -61,7 +61,7 @@ export type Detection = {
   pack: string;
   /** The visual phrase SAM counted with, e.g. "red toothpaste box". */
   look: string;
-  /** samCount when SAM found this product's units, else sparkCount. */
+  /** samCount when SAM found at least half of Spark's units, else sparkCount. */
   count: number;
   countSource: "sam" | "spark";
   sparkCount: number;
@@ -69,6 +69,8 @@ export type Detection = {
   samCount: number | null;
   /** 0–1000 grid of the uploaded image, one per counted unit (SAM's when it counted). */
   boxes: Box[];
+  /** Why the merchant should check this line (e.g. the two counts disagree); null when nothing stands out. */
+  review: string | null;
   confidence: Confidence;
   candidates: DetectionCandidate[];
   /** The business's item this looks like: confirming the detection restocks it. */
@@ -104,6 +106,8 @@ export function buildDetections(
   inventory: InventoryIndex,
   samBoxes: Map<number, Box[]> = new Map(),
   newId: () => string = randomUUID,
+  /** Lines whose SAM count was chosen deliberately (the agent's use_counted): SAM wins regardless. */
+  trustSam: ReadonlySet<number> = new Set(),
 ): Detection[] {
   const byRef = new Map(matches.map((m) => [m.ref, m]));
   return products.map((p, i) => {
@@ -115,7 +119,7 @@ export function buildDetections(
       name: p.name,
       pack: p.pack,
       look: p.look,
-      ...counted(p, samBoxes.get(i)),
+      ...counted(p, samBoxes.get(i), trustSam.has(i)),
       confidence: p.confidence,
       candidates,
       // All plausible candidates, not just the 3 shown: the merchant's size may rank lower.
@@ -124,12 +128,21 @@ export function buildDetections(
   });
 }
 
-/** SAM's count wins when it found at least one unit; zero means SAM missed it, not that it isn't there. */
-function counted(p: ShelfProduct, sam: Box[] | undefined): Pick<Detection, "count" | "countSource" | "sparkCount" | "samCount" | "boxes"> {
+/** SAM's share of Spark's count below which SAM is taken to have missed units (it matches a look, not a label). */
+export const MIN_SAM_SHARE = 0.5;
+
+/** SAM's count wins unless it found under half of Spark's units; then Spark's count and boxes stay, flagged. */
+function counted(
+  p: ShelfProduct,
+  sam: Box[] | undefined,
+  trust = false,
+): Pick<Detection, "count" | "countSource" | "sparkCount" | "samCount" | "boxes" | "review"> {
   const samCount = sam ? sam.length : null;
-  return samCount
-    ? { count: samCount, countSource: "sam", sparkCount: p.count, samCount, boxes: sam! }
-    : { count: p.count, countSource: "spark", sparkCount: p.count, samCount, boxes: p.boxes };
+  if (samCount && (trust || samCount >= p.count * MIN_SAM_SHARE)) {
+    return { count: samCount, countSource: "sam", sparkCount: p.count, samCount, boxes: sam!, review: null };
+  }
+  const review = samCount ? `Counts disagree: read ${p.count}, SAM found ${samCount}. Check the count.` : null;
+  return { count: p.count, countSource: "spark", sparkCount: p.count, samCount, boxes: p.boxes, review };
 }
 
 function stocked(
