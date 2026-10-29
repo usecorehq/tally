@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Button,
   FieldLabel,
@@ -18,35 +20,28 @@ import {
   cn,
   type SolarIconName,
 } from "@tally/ui";
-import { pollStocktake, quickScan, startStocktake } from "./actions";
+import { quickScan, startStocktake } from "./actions";
 import { resizeForScan } from "./image";
 import { PICK_SUBTITLE, PICK_TITLE } from "./copy";
-import { ReviewTable } from "./review-table";
-import type { AgentStep, ShelfScanResult } from "./types";
+import { runKey, savePhoto, scanKey } from "./photo-store";
+import { historyHref, runHref, scanHref } from "./urls";
+import type { AgentStep } from "./types";
 
 export type Business = { id: string; name: string };
 export type Photo = { blob: Blob; url: string; width: number; height: number };
 
-export type Phase =
-  | { name: "pick" }
-  | { name: "working"; mode: "agent" | "quick"; steps: AgentStep[]; startedAt: number }
-  | { name: "review"; result: ShelfScanResult; fallback: boolean };
+export type Phase = { name: "pick" } | { name: "working"; mode: "agent" | "quick"; steps: AgentStep[]; startedAt: number };
 
-const POLL_MS = 1500;
-// The agent's budget is 150 s after a ~20–30 s first pass; stop polling well after that.
-const POLL_GIVE_UP_MS = 6 * 60 * 1000;
-
+/** A new stock-take: business, photo, then the kind of run. Each run continues at its own URL. */
 export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: Business[]; initialBusinessId: string }) {
+  const router = useRouter();
   const [businessId, setBusinessId] = useState(initialBusinessId);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [phase, setPhase] = useState<Phase>({ name: "pick" });
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  // Bumped to cancel an in-flight poll loop (new scan, unmount).
-  const pollGen = useRef(0);
 
-  useEffect(() => () => void pollGen.current++, []);
   useEffect(() => () => {
     if (photo) URL.revokeObjectURL(photo.url);
   }, [photo]);
@@ -75,85 +70,37 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
     return f;
   }
 
+  const kept = () => ({ blob: photo!.blob, width: photo!.width, height: photo!.height });
+
   async function runQuick() {
     setError(null);
     setPhase({ name: "working", mode: "quick", steps: [], startedAt: Date.now() });
     const res = await quickScan(businessId, form());
-    if (res.ok) setPhase({ name: "review", result: res.data, fallback: false });
-    else {
+    if (!res.ok) {
       setError(res.error);
       setPhase({ name: "pick" });
+      return;
     }
+    await savePhoto(scanKey(res.data.scanId), kept());
+    router.push(scanHref(businessId, res.data.scanId));
   }
 
   async function runAgent() {
     setError(null);
-    const gen = ++pollGen.current;
-    const startedAt = Date.now();
-    setPhase({ name: "working", mode: "agent", steps: [], startedAt });
+    setPhase({ name: "working", mode: "agent", steps: [], startedAt: Date.now() });
     const started = await startStocktake(businessId, form());
     if (!started.ok) {
       setError(started.error);
       setPhase({ name: "pick" });
       return;
     }
-
-    while (pollGen.current === gen) {
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      if (pollGen.current !== gen) return;
-      const res = await pollStocktake(businessId, started.data.runId);
-      if (pollGen.current !== gen) return;
-      if (!res.ok) {
-        // A blip while polling isn't fatal; the run keeps going on the server.
-        if (Date.now() - startedAt < POLL_GIVE_UP_MS) continue;
-        setError(res.error);
-        setPhase({ name: "pick" });
-        return;
-      }
-      const { run, steps, result } = res.data;
-      if (run.status === "running") {
-        if (Date.now() - startedAt > POLL_GIVE_UP_MS) {
-          setError("The stock-take is taking much longer than usual. Try again, or use Quick scan.");
-          setPhase({ name: "pick" });
-          return;
-        }
-        setPhase({ name: "working", mode: "agent", steps, startedAt });
-        continue;
-      }
-      if (run.status === "failed" || !result) {
-        setError(`The stock-take failed${run.error ? `: ${run.error}` : ""}. Try again, or use Quick scan.`);
-        setPhase({ name: "pick" });
-        return;
-      }
-      setPhase({ name: "review", result, fallback: run.status === "fallback" });
-      return;
-    }
-  }
-
-  function reset() {
-    pollGen.current++;
-    setPhase({ name: "pick" });
-    setPhoto(null);
-    setError(null);
-    if (fileRef.current) fileRef.current.value = "";
+    // The run continues on the server; its own URL polls it and survives a refresh.
+    await savePhoto(runKey(started.data.runId), kept());
+    router.push(runHref(businessId, started.data.runId));
   }
 
   if (phase.name === "working") {
-    return <Working photo={photo!} phase={phase} businessName={business.name} />;
-  }
-
-  if (phase.name === "review") {
-    return (
-      <ReviewTable
-        businessId={businessId}
-        businessName={business.name}
-        result={phase.result}
-        fallback={phase.fallback}
-        photo={photo!.blob}
-        photoUrl={photo!.url}
-        onRestart={reset}
-      />
-    );
+    return <Working photo={photo} phase={phase} businessName={business.name} />;
   }
 
   return (
@@ -168,6 +115,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
       onFile={onFile}
       onAgent={runAgent}
       onQuick={runQuick}
+      historyHref={historyHref(businessId)}
     />
   );
 }
@@ -184,6 +132,7 @@ export function PickView({
   onFile,
   onAgent,
   onQuick,
+  historyHref,
 }: {
   businesses: Business[];
   businessId: string;
@@ -195,10 +144,16 @@ export function PickView({
   onFile: (file: File | undefined) => void;
   onAgent: () => void;
   onQuick: () => void;
+  historyHref: string;
 }) {
   return (
     <div className="q-rise max-w-[760px]">
-      <PageHeader title={PICK_TITLE} subtitle={PICK_SUBTITLE} className="[&_h1]:whitespace-normal" />
+      <PageHeader
+        title={PICK_TITLE}
+        subtitle={PICK_SUBTITLE}
+        className="[&_h1]:whitespace-normal"
+        actions={<HistoryButton href={historyHref} />}
+      />
 
       <div className="space-y-5">
         {businesses.length > 1 && (
@@ -298,8 +253,16 @@ export function PickView({
   );
 }
 
-/** The run in progress: the photo under a soft pulse, the headline and the agent's trace. */
-export function Working({ photo, phase, businessName }: { photo: Photo; phase: Extract<Phase, { name: "working" }>; businessName: string }) {
+/** The run in progress: the photo under a soft pulse (when this browser has it), the headline and the agent's trace. */
+export function Working({
+  photo,
+  phase,
+  businessName,
+}: {
+  photo: Pick<Photo, "url" | "width" | "height"> | null;
+  phase: Extract<Phase, { name: "working" }>;
+  businessName: string;
+}) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -317,14 +280,22 @@ export function Working({ photo, phase, businessName }: { photo: Photo; phase: E
   return (
     <div className="q-rise grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-8">
       <Tray className="w-fit max-w-full self-start">
-        <TraySheet className="relative overflow-hidden p-1">
-          {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-          <img src={photo.url} alt="Shelf being scanned" className="block max-h-[480px] w-auto max-w-full rounded-[10px] object-contain" />
-          <span aria-hidden className="pointer-events-none absolute inset-1 animate-pulse rounded-[10px] bg-white/35" />
-        </TraySheet>
+        {photo ? (
+          <TraySheet className="relative overflow-hidden p-1">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+            <img src={photo.url} alt="Shelf being scanned" className="block max-h-[480px] w-auto max-w-full rounded-[10px] object-contain" />
+            <span aria-hidden className="pointer-events-none absolute inset-1 animate-pulse rounded-[10px] bg-white/35" />
+          </TraySheet>
+        ) : (
+          // Opened on another device, or this browser didn't keep the photo.
+          <TraySheet className="flex w-[min(360px,100%)] flex-col items-center px-6 py-12 text-center">
+            <IconTile icon="Gallery-Add" className="h-12 w-12" />
+            <p className="mt-3 text-sm text-gray-500">The photo stays on the device it was taken on.</p>
+          </TraySheet>
+        )}
         <TrayFooter>
           <span>{phase.mode === "quick" ? "Quick scan" : "Stock-take agent"}</span>
-          <span className="tabular-nums">{photo.width}×{photo.height}</span>
+          {photo && <span className="tabular-nums">{photo.width}×{photo.height}</span>}
         </TrayFooter>
       </Tray>
 
@@ -433,4 +404,16 @@ function describe(s: AgentStep): { title: string; detail?: string } {
     default:
       return { title: s.tool ?? "Working", detail: s.summary };
   }
+}
+
+/** Opens the business's past stock-takes. */
+export function HistoryButton({ href }: { href: string }) {
+  return (
+    <Button variant="quiet" asChild>
+      <Link href={href}>
+        <SolarIcon name="History" iconStyle="Outline" size={16} />
+        History
+      </Link>
+    </Button>
+  );
 }

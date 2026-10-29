@@ -24,5 +24,15 @@ export const VARIANTS = [
   "outcome-invalid",
   "outcome-feedback-error",
   "outcome-warn",
+  "history",
+  "history-loading",
+  "history-empty",
+  "history-failed",
+  "session-loading",
+  "session-working-no-photo",
+  "session-reopened",
+  "session-confirmed",
+  "session-failed",
+  "session-not-found",
 ] as const;
 export type Variant = (typeof VARIANTS)[number];
