@@ -13,7 +13,7 @@ A **scan** (`vision_scans`) is one shelf photo. Each product found in it is a **
 | Table | One row is | Parent | Written by |
 |---|---|---|---|
 | `vision_scans` | One shelf photo: sha256 and size (never the photo), model ids, time per stage, `open` → `confirmed` | `businesses` | `POST …/vision/shelf-scans`, or a stock-take run when it saves its result |
-| `vision_detections` | One product in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates, the store match, the agent's `review` reason, and then the merchant's decision | `vision_scans` | Inserted with its scan; decision columns set by `POST …/shelf-scans/:scanId/confirm` |
+| `vision_detections` | One product in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates, the store match, the `review` reason (agent verdict or count disagreement), and then the merchant's decision | `vision_scans` | Inserted with its scan; decision columns set by `POST …/shelf-scans/:scanId/confirm` |
 | `inventory_item_readings` | "The camera read `brand\|name\|pack`, and the merchant said it is this item" | `inventory_items` | Scan confirm (every non-skip line with a brand) and `POST …/vision/identify/confirm` |
 | `vision_agent_runs` | One stock-take: status, model, turns, tokens, error, the resulting scan | `businesses` | `POST …/vision/stocktakes` creates it; the background run updates it |
 | `vision_agent_steps` | One step of a run: `baseline` (first pass), `thought` or `tool` with its arguments and a short summary | `vision_agent_runs` | The background run, as it goes |

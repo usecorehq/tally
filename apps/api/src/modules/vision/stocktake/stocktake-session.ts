@@ -5,7 +5,7 @@
 import type { MatchCandidate, MatchResult } from "@tally/catalog-client";
 import { matchInventory, type InventoryIndex, type Reading } from "../inventory-match";
 import type { Box, ShelfProduct } from "../shelf-reader";
-import { buildDetections, candidateRefs, MATCH_CANDIDATES, toCandidate, type Detection } from "../shelf-scan";
+import { buildDetections, candidateRefs, MATCH_CANDIDATES, MIN_SAM_SHARE, toCandidate, type Detection } from "../shelf-scan";
 
 export type Evidence = { turn: number; tool: string; summary: string };
 
@@ -28,6 +28,8 @@ type Line = {
   product: ShelfProduct;
   candidates: MatchCandidate[];
   samBoxes?: Box[];
+  /** The agent chose SAM's count with use_counted, so it stands even when it is low. */
+  trustSam?: boolean;
   /** count_units' latest boxes; only used when record_line asks for them. */
   pendingSam?: Box[];
   /** The Qore ID the agent recorded: kept even if the plausibility filter would drop it. */
@@ -137,7 +139,7 @@ export class StocktakeSession {
       candidates: byRef.get(String(i)) ?? [],
       samBoxes: samBoxes.get(i),
       chosenQid: null,
-      check: first[i]!.confidence !== "high" || !first[i]!.candidates[0] || first[i]!.inventoryNeedsConfirm,
+      check: first[i]!.confidence !== "high" || !first[i]!.candidates[0] || first[i]!.inventoryNeedsConfirm || first[i]!.review !== null,
       firstReading: readingOf(product),
       zoomed: false,
       refusals: 0,
@@ -188,7 +190,8 @@ export class StocktakeSession {
     switch (name) {
       case "zoom": {
         if (this.zooms >= STOCKTAKE_LIMITS.maxZooms) return { output: "Error: zoom budget used up; work with what you have.", summary: "zoom refused: budget" };
-        const box = toBox(args) ?? largest(line.samBoxes?.length ? line.samBoxes : line.product.boxes);
+        // Spark's boxes are where the label was read; SAM's may sit on a look-alike product.
+        const box = toBox(args) ?? largest(line.product.boxes.length ? line.product.boxes : (line.samBoxes ?? []));
         if (!box) return { output: "Error: no box for this line; give one.", summary: "zoom: no box" };
         const image = await this.deps.zoom(box);
         this.zooms++;
@@ -231,7 +234,8 @@ export class StocktakeSession {
         if (!look) return { output: "Error: look is required.", summary: "count: no look" };
         const boxes = await this.deps.countUnits(look, index);
         line.pendingSam = boxes.length > 0 ? boxes : undefined;
-        const current = line.samBoxes?.length ?? line.product.count;
+        const sam = line.samBoxes?.length ?? 0;
+        const current = sam && (line.trustSam || sam >= line.product.count * MIN_SAM_SHARE) ? sam : line.product.count;
         return {
           output: boxes.length
             ? `Counted ${boxes.length} units of "${look}" for line ${index} (current count ${current}). Use it with record_line use_counted: true if it looks right.`
@@ -246,7 +250,10 @@ export class StocktakeSession {
         const problem = this.verifyRecord(line, reading, qid, args.use_counted === true);
         if (problem) return this.refuse(line, index, problem);
         line.product = { ...line.product, brand: reading.brand, name: reading.name || reading.brand, pack: reading.pack };
-        if (args.use_counted === true) line.samBoxes = line.pendingSam;
+        if (args.use_counted === true) {
+          line.samBoxes = line.pendingSam;
+          line.trustSam = true;
+        }
         // The chosen product goes first, so it becomes the line's top candidate.
         if (qid) line.candidates = [line.candidates.find((c) => c.qid === qid)!, ...line.candidates.filter((c) => c.qid !== qid)];
         line.chosenQid = qid || null;
@@ -316,13 +323,13 @@ export class StocktakeSession {
     const products = this.lines.map((l) => l.product);
     const matches: MatchResult[] = this.lines.map((l, i) => ({ ref: String(i), query: { brand: null, name: "", pack: null }, parsedPack: null, candidates: l.candidates }));
     const sam = new Map(this.lines.flatMap((l, i) => (l.samBoxes ? [[i, l.samBoxes] as [number, Box[]]] : [])));
-    return buildDetections(products, matches, this.inventory, sam).map((d, i) => {
+    const trusted = new Set(this.lines.flatMap((l, i) => (l.trustSam ? [i] : [])));
+    return buildDetections(products, matches, this.inventory, sam, undefined, trusted).map((d, i) => {
       const line = this.lines[i]!;
       // The plausibility filter judges candidates against the (possibly rewritten) brand; a product the
       // agent explicitly recorded stays on top, and the merchant still confirms it.
-      const review =
-        line.review ??
-        (!line.recorded ? "Not reviewed by the agent: first-pass result." : line.unresolved ? `Agent couldn't confirm: ${line.unresolved}` : null);
+      const agent = line.review ?? (!line.recorded ? "Not reviewed by the agent: first-pass result." : line.unresolved ? `Agent couldn't confirm: ${line.unresolved}` : null);
+      const review = [agent, d.review].filter(Boolean).join(" ") || null;
       if (line.chosenQid && d.candidates[0]?.qid !== line.chosenQid) {
         const chosen = line.candidates.find((c) => c.qid === line.chosenQid)!;
         const rest = d.candidates.filter((c) => c.qid !== line.chosenQid);

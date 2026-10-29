@@ -112,6 +112,18 @@ describe("buildDetections", () => {
     expect(counted).toMatchObject({ count: 3, countSource: "sam", sparkCount: 2, samCount: 3, boxes: sam });
     expect(missed).toMatchObject({ count: 2, countSource: "spark", sparkCount: 2, samCount: 0, boxes: peak.boxes });
     expect(notRun).toMatchObject({ count: 2, countSource: "spark", samCount: null });
+    expect([counted!.review, missed!.review, notRun!.review]).toEqual([null, null, null]);
+  });
+
+  it("keeps Spark's count and boxes, flagged, when SAM found under half of them", () => {
+    const one = [{ x1: 5, y1: 5, x2: 9, y2: 9 }];
+    const many: ShelfProduct = { ...peak, count: 24 };
+    const half: ShelfProduct = { ...peak, count: 2 };
+    const [low, even, trusted] = buildDetections([many, half, many], [], none, new Map([[0, one], [1, one], [2, one]]), id, new Set([2]));
+    expect(low).toMatchObject({ count: 24, countSource: "spark", sparkCount: 24, samCount: 1, boxes: peak.boxes });
+    expect(low!.review).toBe("Counts disagree: read 24, SAM found 1. Check the count.");
+    expect(even).toMatchObject({ count: 1, countSource: "sam", review: null });
+    expect(trusted).toMatchObject({ count: 1, countSource: "sam", review: null });
   });
 
   it("passes a null price through", () => {

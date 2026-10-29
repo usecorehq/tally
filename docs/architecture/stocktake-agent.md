@@ -57,7 +57,7 @@ The pattern from Meta's agent workshop: checks run inside the tools at fixed poi
 - **No invented products:** `record_line` refuses a Qore ID that wasn't returned for that line, by the first pass or one of its searches.
 - **"In stock" is decided by the same rules everywhere:** the final store match is recomputed with `inventory-match.ts`, the same rules the quick scan and identify use, not taken from the model's word.
 - **Label, not catalogue:** readings must be what's printed on the pack. The merchant sees them, and they are what the catalogue learns from.
-- **Counts:** a SAM count replaces the first-pass count only when the agent asks for it, after comparing.
+- **Counts:** a SAM count from `count_units` replaces the first-pass count only when the agent asks for it (`use_counted`), after comparing; that choice stands even when it is under half of Spark's. A line whose first-pass counts disagree is marked `CHECK`, and zooms default to Spark's boxes (where the label was read), not SAM's.
 - **Tool budgets** stop runaway loops; errors come back to the model as text it can act on, never as exceptions.
 - **No server copy:** the photo travels with `store: false` and stateless encrypted reasoning replay, Meta's recommended path for agents. `previous_response_id` (server-stored history) failed on a live run with "referenced response not found or expired".
 
