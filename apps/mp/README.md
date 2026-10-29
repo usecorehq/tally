@@ -26,15 +26,16 @@ auth.ts                          createTallyAuth() from @tally/auth → handlers
 proxy.ts                         redirects to /login without a session (/design is open outside production)
 app/login/page.tsx               email + password server action
 app/api/auth/[...nextauth]/      NextAuth route handlers
-app/_components/                 AppShell (V2 frame: sidebar nav, white inset panel), TallyMark
+app/_components/                 AppShell (V2 frame: sidebar nav, stock-take recents on /stocktake pages, white inset panel), TallyMark
 app/(home)/page.tsx              home (route group, so its loading.tsx covers home only): the user's businesses (name → inventory, Stock-take action)
 app/inventory/                   inventory (?business=<id>): scan card, search, Items / Units / Low stock tiles, stock list
 app/onboarding/                  setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish
   [businessId]/items/            starter items for a business that already exists
 app/stocktake/                   new stock-take: business + photo, then the run continues at its own URL (?business=<id>)
-  [runId]/                       one agent run: progress (polling resumes after a refresh), then review or read-only
-  scan/[scanId]/                 one quick scan: review until confirmed, then read-only
   history/                       the business's stock-takes and quick scans, newest first, grouped by day
+  history/[id]/                  one session (run or quick scan): progress (polling resumes after a refresh), review, or read-only
+  recents.tsx                    the sidebar's "Take new stock" and Recents on stock-take pages
+  entry-text.ts                  an entry's title (products read) and summary
   actions.ts                     server actions: start/poll the agent, quick scan, reopen a scan, history, confirm, catalogue search/product
   session.tsx                    a reopened session: run polling, review, confirmed or failed
   confirmed-view.tsx             a confirmed scan, read-only: each line's decision and when

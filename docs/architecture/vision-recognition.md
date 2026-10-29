@@ -68,7 +68,7 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
 
 1. Pick one of the user's businesses (`GET /api/businesses`).
 2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to at most a 2560 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation.
-3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then the page moves to the run's own URL, `/stocktake/<runId>`, which polls `GET …/stocktakes/:runId` every 1.5 s and shows the step trace as it grows. **Quick scan** calls `POST …/shelf-scans`, waits, then moves to `/stocktake/scan/<scanId>`.
+3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then the page moves to the run's own URL, `/stocktake/history/<runId>`, which polls `GET …/stocktakes/:runId` every 1.5 s and shows the step trace as it grows. **Quick scan** calls `POST …/shelf-scans`, waits, then moves to `/stocktake/history/<scanId>`.
 4. The review table has one row per undecided detection, `review` lines first: the reading, an editable count, the product (opens the picker; pre-filled by the rules in [Showing a line](#showing-a-line-clients)), the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box, or is the stored crop when this browser doesn't have the photo.
 5. Confirm sends every row to `…/shelf-scans/:scanId/confirm` and shows the outcome: created, restocked, restored, skipped, invalid lines with their reasons, and the feedback sent.
 
@@ -76,8 +76,9 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
 
 Every stock-take is its own session with its own URL (`?business=<id>` picks the business), like a chat history:
 
-- **`/stocktake/history`** lists the business's stock-takes and quick scans from `GET …/vision/stocktakes`, newest first and grouped by day: time, status (running, ready to review, confirmed, failed, or nothing found), line count, and once confirmed how many were added, restocked, restored or skipped. **New stock-take** starts a fresh one.
-- **`/stocktake/<runId>`** and **`/stocktake/scan/<scanId>`** load the session from the API, so a refresh or a link restores it: a running run resumes polling, an open scan opens the review table, a confirmed scan opens a read-only list of each line's decision and when it was made, and a failed run says why.
+- **Sidebar:** on every stock-take page the sidebar shows **Take new stock** and **Recents**: the newest 30 from `GET …/vision/stocktakes`, each titled by the products read (`preview`, e.g. "Peak, Milo, Indomie"), with a dot for running, ready to review or failed. It refreshes on navigation, after a confirm, and every 5 s while one is running. Phones, which have no sidebar, use the **History** button.
+- **`/stocktake/history`** lists them all, grouped by day: title, time, status (running, ready to review, confirmed, failed, or nothing found), line count, and once confirmed how many were added, restocked, restored or skipped.
+- **`/stocktake/history/<id>`** (a run id or a quick scan's id; the page tries the run first) loads the session from the API, so a refresh or a link restores it: a running run resumes polling, an open scan opens the review table, a confirmed scan opens a read-only list of each line's decision and when it was made, and a failed run says why.
 - **The photo stays in the browser.** The API never stores it, so the page keeps a copy in IndexedDB per session (the newest 30). Reopened elsewhere, or with storage blocked, the review shows each line's stored crop instead of the photo with outlines.
 - **Lines confirmed earlier** (a confirm that left some lines invalid) are not shown again; only the undecided ones are confirmed.
 
@@ -253,11 +254,13 @@ Stock-take history: the business's stock-take runs and quick scans (scans no run
 ```json
 [
   { "id": "5b0e…", "kind": "stocktake", "runId": "5b0e…", "scanId": "9a41…", "status": "confirmed", "fallback": false,
-    "startedAt": "…", "confirmedAt": "…", "error": null, "lines": 8, "decided": { "add": 2, "restock": 5, "restore": 0, "skip": 1 } }
+    "startedAt": "…", "confirmedAt": "…", "error": null, "lines": 8, "decided": { "add": 2, "restock": 5, "restore": 0, "skip": 1 },
+    "preview": ["Peak", "Milo", "Indomie"] }
 ]
 ```
 
 - `status`: `running`, `review` (the scan is open), `confirmed`, or `failed` (`error` says why). Runs past their deadline are marked failed before the list is read.
+- `preview`: up to 3 distinct products read (brand, else name), in scan order; the entry's title.
 - `lines` is null while running or when the run failed. `decided` counts lines by the action the merchant chose: an `add` lands as a restock when the item already exists, so it can differ from the confirm response's `created`.
 - Open an entry with `GET …/stocktakes/:runId` (a run) or `GET …/shelf-scans/:scanId` (a quick scan).
 

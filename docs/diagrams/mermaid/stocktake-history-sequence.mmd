@@ -9,14 +9,14 @@ sequenceDiagram
     participant Q as Qore Catalog
     participant R as Cloudflare R2
 
-    M->>B: open /stocktake/history?business=<id>
+    M->>B: open stock-take (sidebar Recents) or /stocktake/history?business=<id>
     B->>P: page request
     P->>A: GET /api/businesses/:id/vision/stocktakes?limit= [Bearer JWT]
     A->>D: mark stale runs failed, then runs + quick scans newest first, line counts by action
-    A-->>P: [{kind, status, lines, decided, …}]
-    P-->>B: history grouped by day
-    M->>B: open an entry → /stocktake/<runId> or /stocktake/scan/<scanId>
-    P->>A: GET …/stocktakes/:runId or GET …/shelf-scans/:scanId
+    A-->>P: [{kind, status, lines, decided, preview, …}]
+    P-->>B: Recents titled by preview, or history grouped by day
+    M->>B: open an entry → /stocktake/history/<id>
+    P->>A: GET …/stocktakes/:id, else (404) GET …/shelf-scans/:id
     A->>D: scan + detections (review, match, decisions) + items they refer to
     par fill the stored scan back in
         A->>Q: GET /v1/products/:qid per candidate [cached 10 min, best-effort]
