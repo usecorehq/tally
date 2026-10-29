@@ -32,9 +32,10 @@ app/inventory/                   inventory (?business=<id>): scan card, search, 
 app/onboarding/                  setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish
   [businessId]/items/            starter items for a business that already exists
 app/stocktake/                   new stock-take: business + photo, then the run continues at its own URL (?business=<id>)
-  history/                       the business's stock-takes and quick scans, newest first, grouped by day
+  history/                       the business's stock-takes and quick scans, newest first, grouped by day, reruns nested
   history/[id]/                  one session (run or quick scan): progress (polling resumes after a refresh), review, or read-only
   recents.tsx                    the sidebar's "Take new stock" and Recents on stock-take pages
+  scan-actions.tsx               Rerun (on the stored photo) and Discard (with a confirm) for a session
   entry-text.ts                  an entry's title (products read) and summary
   actions.ts                     server actions: start/poll the agent, quick scan, reopen a scan, history, confirm, catalogue search/product
   session.tsx                    a reopened session: run polling, review, confirmed or failed

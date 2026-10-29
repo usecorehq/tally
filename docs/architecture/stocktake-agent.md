@@ -91,9 +91,13 @@ Poll every 1–2 s.
 - On the web, apps/mp's `/stocktake/history/<runId>` page polls every 1.5 s and shows the trace as progress, newest step first, and picks polling back up after a refresh (see [Web stock-take](vision-recognition.md#web-stock-take-apps-mp)).
 - `result`: once finished, the stored scan exactly as [`GET …/shelf-scans/:scanId`](vision-recognition.md#get-apibusinessesidvisionshelf-scansscanid-built) returns it: `status`, detections with candidate names and prices, each line's `decision`, `evidence: [{ turn, tool, summary }]` and `review`: `null`, or why the merchant should look closely (the agent couldn't confirm it, escalated, or never reviewed by the agent). Show `review` lines first, and don't pre-select a candidate on them. `review` and each candidate's `match` are stored, so this holds after a refresh or days later. For the first hour the run's in-memory result supplies candidate details, saving the catalogue lookups.
 
+### `POST /api/businesses/:id/vision/shelf-scans/:scanId/rerun`
+
+A new run on a stored photo, grouped under the photo's first scan (`rerun_of_scan_id`). It runs exactly like a new stock-take, with the same deadlines; only the image comes from R2. See [rerun](vision-recognition.md#post-apibusinessesidvisionshelf-scansscanidrerun-built).
+
 ### `GET /api/businesses/:id/vision/stocktakes?limit=`
 
-The history: runs and quick scans, newest first, with status and counts. See [Stock-take history](vision-recognition.md#get-apibusinessesidvisionstocktakeslimit-built).
+The history: runs and quick scans, newest first, with status and counts, reruns grouped under their original. See [Stock-take history](vision-recognition.md#get-apibusinessesidvisionstocktakeslimit-built).
 
 ## Data
 
@@ -102,6 +106,7 @@ Migration `0006_add_stocktake_agent` (how it ties into scans: [vision schema](vi
 - **`vision_agent_runs`**: business, status, model, turns, input/output tokens, error, who started it, when it started and finished, and the resulting `scan_id`.
 - **`vision_agent_steps`**: one row per step (`baseline`, `thought`, `tool`), with turn, tool, arguments, a short summary (never image data) and time.
 - **`vision_detections.evidence`**: the tool calls behind each line of an agent scan; null for a quick scan.
+- **`vision_agent_runs.rerun_of_scan_id`** (migration `0008_add_stocktake_rerun_discard`): for a rerun, the photo's first scan; null for a new stock-take.
 - **`vision_detections.review`** (migration `0007_add_detection_review`): why the merchant should look closely at a line; null for a quick scan and for lines the agent resolved.
 
 ## Measured (Oct 2026, staging catalogue)
