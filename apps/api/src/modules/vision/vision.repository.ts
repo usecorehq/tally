@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, schema, sql } from "@tally/db";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, notExists, or, schema, sql } from "@tally/db";
 import { TALLY_DB, type TallyDb } from "../../drizzle/drizzle.module";
 import { outcomeFor, type DecidedDetection } from "./confirm-plan";
 import { readingKey, rememberable } from "./inventory-match";
@@ -54,7 +54,7 @@ export class VisionRepository {
   /** The scan and its detections in one transaction; detection ids are the ones already returned to the client. */
   async saveScan(
     scan: Omit<schema.NewVisionScan, "id" | "status" | "confirmedAt" | "createdAt">,
-    detections: (Detection & { evidence?: { turn: number; tool: string; summary: string }[] })[],
+    detections: (Detection & { evidence?: { turn: number; tool: string; summary: string }[]; review?: string | null })[],
   ): Promise<string> {
     return this.db.transaction(async (tx) => {
       const [row] = await tx.insert(visionScans).values(scan).returning({ id: visionScans.id });
@@ -75,10 +75,11 @@ export class VisionRepository {
             count: d.count,
             countSource: d.countSource,
             boxes: d.boxes,
-            candidates: d.candidates.map((c) => ({ qid: c.qid, score: c.score })),
+            candidates: d.candidates.map((c) => ({ qid: c.qid, score: c.score, match: c.match })),
             inventoryItemId: d.inventoryItemId,
             inventoryMatch: d.inventoryMatch,
             evidence: d.evidence ?? null,
+            review: d.review ? d.review.slice(0, 500) : null,
           })),
         );
       }
@@ -169,6 +170,84 @@ export class VisionRepository {
       .where(eq(visionDetections.scanId, scanId))
       .orderBy(asc(visionDetections.position));
     return { ...scan, detections };
+  }
+
+  /** Items a reopened scan refers to (matched, decided, or stocking a candidate), archived ones included. */
+  async scanItems(
+    businessId: string,
+    itemIds: string[],
+    qids: string[],
+  ): Promise<{ id: string; name: string; coreQid: string | null; archived: boolean }[]> {
+    if (itemIds.length === 0 && qids.length === 0) return [];
+    const rows = await this.db
+      .select({ id: inventoryItems.id, name: inventoryItems.name, coreQid: inventoryItems.coreQid, archivedAt: inventoryItems.archivedAt })
+      .from(inventoryItems)
+      .where(
+        and(
+          eq(inventoryItems.businessId, businessId),
+          or(
+            itemIds.length > 0 ? inArray(inventoryItems.id, itemIds) : undefined,
+            qids.length > 0 ? and(inArray(inventoryItems.coreQid, qids), isNull(inventoryItems.archivedAt)) : undefined,
+          ),
+        ),
+      );
+    return rows.map(({ archivedAt, ...r }) => ({ ...r, archived: archivedAt !== null }));
+  }
+
+  /**
+   * The newest stock-take runs and quick scans (scans no run points at), each with its scan's status and
+   * line counts by decision. Up to `limit` of each; the service merges and trims them.
+   */
+  async history(businessId: string, limit: number) {
+    const runs = await this.db
+      .select({
+        runId: visionAgentRuns.id,
+        runStatus: visionAgentRuns.status,
+        error: visionAgentRuns.error,
+        startedAt: visionAgentRuns.startedAt,
+        scanId: visionAgentRuns.scanId,
+        scanStatus: visionScans.status,
+        confirmedAt: visionScans.confirmedAt,
+      })
+      .from(visionAgentRuns)
+      .leftJoin(visionScans, and(eq(visionScans.businessId, visionAgentRuns.businessId), eq(visionScans.id, visionAgentRuns.scanId)))
+      .where(eq(visionAgentRuns.businessId, businessId))
+      .orderBy(desc(visionAgentRuns.startedAt))
+      .limit(limit);
+    const quick = await this.db
+      .select({ scanId: visionScans.id, scanStatus: visionScans.status, startedAt: visionScans.createdAt, confirmedAt: visionScans.confirmedAt })
+      .from(visionScans)
+      .where(
+        and(
+          eq(visionScans.businessId, businessId),
+          notExists(
+            this.db
+              .select({ one: sql`1` })
+              .from(visionAgentRuns)
+              .where(and(eq(visionAgentRuns.businessId, visionScans.businessId), eq(visionAgentRuns.scanId, visionScans.id))),
+          ),
+        ),
+      )
+      .orderBy(desc(visionScans.createdAt))
+      .limit(limit);
+
+    const scanIds = [...runs.flatMap((r) => (r.scanId ? [r.scanId] : [])), ...quick.map((q) => q.scanId)];
+    const counts =
+      scanIds.length === 0
+        ? []
+        : await this.db
+            .select({
+              scanId: visionDetections.scanId,
+              lines: sql<number>`count(*)::int`,
+              add: sql<number>`count(*) filter (where ${visionDetections.action} = 'add')::int`,
+              restock: sql<number>`count(*) filter (where ${visionDetections.action} = 'restock')::int`,
+              restore: sql<number>`count(*) filter (where ${visionDetections.action} = 'restore')::int`,
+              skip: sql<number>`count(*) filter (where ${visionDetections.action} = 'skip')::int`,
+            })
+            .from(visionDetections)
+            .where(and(eq(visionDetections.businessId, businessId), inArray(visionDetections.scanId, scanIds)))
+            .groupBy(visionDetections.scanId);
+    return { runs, quick, counts };
   }
 
   /**

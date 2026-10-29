@@ -65,6 +65,10 @@ export const STOCKTAKE_DEADLINES = {
 };
 /** A run still "running" after this is lost (restart, or a write that never landed): marked failed on read. */
 const STALE_RUN_MS = STOCKTAKE_DEADLINES.runMs + 60_000;
+/** Catalogue lookups when a stored scan is reopened: at a time, and how long a product's details are kept. */
+const DETAIL_CONCURRENCY = 8;
+const DETAIL_TTL_MS = 10 * 60 * 1000;
+const CROP_URL_SECONDS = 60 * 60;
 
 export type IdentifyResult = {
   model: string;
@@ -112,6 +116,58 @@ export type ShelfScanResult = {
   cropsStored: number;
   /** samMs and matchMs run in parallel after readMs. */
   timings: { readMs: number; samMs: number; matchMs: number; totalMs: number };
+};
+
+type CandidateDetails = Pick<DetectionCandidate, "name" | "brand" | "variantLabel" | "size" | "packQty" | "price" | "image">;
+
+/** A stored candidate with its catalogue details filled back in; only qid and score when the lookup failed. */
+export type ScanCandidate = Pick<DetectionCandidate, "qid" | "score"> & Partial<Omit<DetectionCandidate, "qid" | "score">>;
+
+/** A stored scan, reopened: the quick-scan detection shape plus each line's decision. */
+export type ScanView = {
+  scanId: string;
+  status: "open" | "confirmed";
+  createdAt: Date;
+  confirmedAt: Date | null;
+  model: string;
+  countModel: string;
+  catalogueAvailable: boolean;
+  /** False when some candidate names and prices couldn't be fetched from Qore Catalog (the lines still work). */
+  candidateDetails: boolean;
+  detections: (Omit<Detection, "candidates"> & {
+    position: number;
+    candidates: ScanCandidate[];
+    review: string | null;
+    evidence: { turn: number; tool: string; summary: string }[] | null;
+    /** The stored crop (presigned, an hour); null when R2 is off. May 404 when no crop was stored. */
+    cropUrl: string | null;
+    decision: {
+      action: "restock" | "restore" | "add" | "skip";
+      itemId: string | null;
+      itemName: string | null;
+      quantity: number | null;
+      confirmedQid: string | null;
+      decidedAt: Date;
+    } | null;
+  })[];
+};
+
+export type HistoryEntry = {
+  /** The run id for a stock-take, the scan id for a quick scan. */
+  id: string;
+  kind: "stocktake" | "quick";
+  runId: string | null;
+  scanId: string | null;
+  status: "running" | "review" | "confirmed" | "failed";
+  /** The agent stopped and the result is the first pass. */
+  fallback: boolean;
+  startedAt: Date;
+  confirmedAt: Date | null;
+  error: string | null;
+  /** Lines in the scan; null while running or when it failed. */
+  lines: number | null;
+  /** Decided lines by action. An add can land as a restock when the item already exists. */
+  decided: { add: number; restock: number; restore: number; skip: number };
 };
 
 @Injectable()
@@ -253,8 +309,9 @@ export class VisionService implements OnApplicationBootstrap {
       await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS));
       ({ steps, ...run } = await this.repo.getRun(businessId, runId));
     }
+    // The fresh result saves the catalogue lookups; status and decisions always come from the stored scan.
     const fresh = this.stocktakeResults.get(runId);
-    const result = fresh ?? (run.scanId ? await this.repo.getScan(businessId, run.scanId) : null);
+    const result = run.scanId ? await this.scanView(businessId, run.scanId, fresh?.detections) : null;
     return {
       run,
       steps: steps.map(({ turn, kind, tool, summary, ms, createdAt }) => ({ turn, kind, tool, summary, ms, at: createdAt })),
@@ -452,10 +509,171 @@ export class VisionService implements OnApplicationBootstrap {
     };
   }
 
-  /** A stored scan with its detections and decisions (candidates as Qore IDs + scores). */
-  async getScan(businessId: string, userId: string, scanId: string) {
+  /** A stored scan, reopened: candidates with names and prices again, store state as of now, and decisions. */
+  async getScan(businessId: string, userId: string, scanId: string): Promise<ScanView> {
     await this.businesses.getForMember(businessId, userId);
-    return this.repo.getScan(businessId, scanId);
+    return this.scanView(businessId, scanId);
+  }
+
+  /** The business's stock-takes and quick scans, newest first, with status and line counts. */
+  async history(businessId: string, userId: string, limit: number): Promise<HistoryEntry[]> {
+    await this.businesses.getForMember(businessId, userId);
+    await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS)).catch(() => 0);
+    const { runs, quick, counts } = await this.repo.history(businessId, limit);
+    const byScan = new Map(counts.map((c) => [c.scanId, c]));
+    const tally = (scanId: string | null) => {
+      const c = scanId ? byScan.get(scanId) : undefined;
+      return { lines: scanId ? (c?.lines ?? 0) : null, decided: { add: c?.add ?? 0, restock: c?.restock ?? 0, restore: c?.restore ?? 0, skip: c?.skip ?? 0 } };
+    };
+    const scanStatus = (s: string | null): HistoryEntry["status"] => (s === "confirmed" ? "confirmed" : "review");
+    const entries: HistoryEntry[] = [
+      ...runs.map((r): HistoryEntry => ({
+        id: r.runId,
+        kind: "stocktake",
+        runId: r.runId,
+        scanId: r.scanId,
+        status: r.runStatus === "running" ? "running" : r.runStatus === "failed" || !r.scanId ? "failed" : scanStatus(r.scanStatus),
+        fallback: r.runStatus === "fallback",
+        startedAt: r.startedAt,
+        confirmedAt: r.confirmedAt,
+        error: r.runStatus === "failed" ? r.error : null,
+        ...tally(r.scanId),
+      })),
+      ...quick.map((q): HistoryEntry => ({
+        id: q.scanId,
+        kind: "quick",
+        runId: null,
+        scanId: q.scanId,
+        status: scanStatus(q.scanStatus),
+        fallback: false,
+        startedAt: q.startedAt,
+        confirmedAt: q.confirmedAt,
+        error: null,
+        ...tally(q.scanId),
+      })),
+    ];
+    return entries.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime()).slice(0, limit);
+  }
+
+  /** Product details by Qore ID for reopened scans; catalogue data only, so shared across businesses. */
+  private readonly productDetails = new TtlCache<CandidateDetails | null>(DETAIL_TTL_MS);
+
+  private async scanView(businessId: string, scanId: string, fresh?: Detection[]): Promise<ScanView> {
+    const scan = await this.repo.getScan(businessId, scanId);
+    const qids = [...new Set(scan.detections.flatMap((d) => d.candidates.map((c) => c.qid)))];
+    const itemIds = [...new Set(scan.detections.flatMap((d) => [d.inventoryItemId, d.itemId].filter((id): id is string => Boolean(id))))];
+    const [items, details] = await Promise.all([this.repo.scanItems(businessId, itemIds, qids), this.candidateDetails(qids, fresh)]);
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const activeByQid = new Map(items.filter((i) => i.coreQid && !i.archived).map((i) => [i.coreQid!, i.id]));
+    const cropUrls = this.media.enabled
+      ? await Promise.all(scan.detections.map((d) => this.media.presignedGetUrl(cropKey(scanId, d.position), CROP_URL_SECONDS).catch(() => null)))
+      : scan.detections.map(() => null);
+
+    return {
+      scanId: scan.id,
+      status: scan.status as ScanView["status"],
+      createdAt: scan.createdAt,
+      confirmedAt: scan.confirmedAt,
+      model: scan.readModel,
+      countModel: scan.countModel,
+      catalogueAvailable: scan.catalogueAvailable,
+      candidateDetails: qids.every((q) => details.has(q)),
+      detections: scan.detections.map((d, i) => {
+        const candidates: ScanCandidate[] = d.candidates.map((c) => {
+          const p = details.get(c.qid);
+          return {
+            qid: c.qid,
+            score: c.score,
+            ...(c.match && { match: c.match }),
+            ...p,
+            inventoryItemId: activeByQid.get(c.qid) ?? null,
+          };
+        });
+        const item = d.inventoryItemId ? byId.get(d.inventoryItemId) : undefined;
+        const matched = d.inventoryItemId ? candidates.find((c) => c.inventoryItemId === d.inventoryItemId) : undefined;
+        return {
+          id: d.id,
+          position: d.position,
+          brand: d.brand,
+          name: d.name,
+          pack: d.pack,
+          look: d.look,
+          count: d.count,
+          countSource: d.countSource as Detection["countSource"],
+          sparkCount: d.sparkCount,
+          samCount: d.samCount,
+          boxes: d.boxes,
+          confidence: d.confidence as Detection["confidence"],
+          candidates,
+          inventoryItemId: d.inventoryItemId,
+          inventoryMatch: d.inventoryMatch as InventoryMatch | null,
+          inventoryItemArchived: item?.archived ?? false,
+          // As at scan time: a remembered reading is sure, a name match asks, a catalogue match is sure only when strong.
+          inventoryNeedsConfirm: d.inventoryMatch === "name" || (d.inventoryMatch === "catalogue" && matched?.match !== "strong"),
+          review: d.review,
+          evidence: d.evidence,
+          cropUrl: cropUrls[i] ?? null,
+          decision: d.action
+            ? {
+                action: d.action as NonNullable<ScanView["detections"][number]["decision"]>["action"],
+                itemId: d.itemId,
+                itemName: d.itemId ? (byId.get(d.itemId)?.name ?? null) : null,
+                quantity: d.quantity,
+                confirmedQid: d.confirmedQid,
+                decidedAt: d.decidedAt!,
+              }
+            : null,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Catalogue details for stored Qore IDs: the fresh agent result first, then Qore Catalog (cached, a few at a
+   * time, a merged product followed once). Best-effort: a failed lookup is left out.
+   */
+  private async candidateDetails(qids: string[], fresh?: Detection[]): Promise<Map<string, CandidateDetails>> {
+    const out = new Map<string, CandidateDetails>();
+    for (const { name, brand, variantLabel, size, packQty, price, image, qid } of fresh?.flatMap((d) => d.candidates) ?? []) {
+      out.set(qid, { name, brand, variantLabel, size, packQty, price, image });
+    }
+    const missing = qids.filter((q) => !out.has(q));
+    for (let i = 0; i < missing.length; i += DETAIL_CONCURRENCY) {
+      await Promise.all(
+        missing.slice(i, i + DETAIL_CONCURRENCY).map(async (qid) => {
+          const p = await this.product(qid);
+          if (p) out.set(qid, p);
+        }),
+      );
+    }
+    return out;
+  }
+
+  private async product(qid: string): Promise<CandidateDetails | null> {
+    const cached = this.productDetails.get(qid);
+    if (cached !== undefined) return cached;
+    try {
+      let p = await this.catalog.client.getProduct(qid);
+      if ("mergedInto" in p) p = await this.catalog.client.getProduct(p.mergedInto);
+      const details: CandidateDetails | null =
+        "mergedInto" in p
+          ? null
+          : {
+              name: p.name,
+              brand: p.brand?.name ?? null,
+              variantLabel: p.variantLabel,
+              size: p.size,
+              packQty: p.packQty,
+              price: p.price ? { median: p.price.median, min: p.price.min, max: p.price.max } : null,
+              image: p.image ?? null,
+            };
+      this.productDetails.set(qid, details);
+      return details;
+    } catch (err) {
+      // Not cached: the next reopen tries again.
+      this.logger.warn(`Catalogue product lookup failed (${(err as { status?: number }).status ?? (err as Error).name})`);
+      return null;
+    }
   }
 
   /**

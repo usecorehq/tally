@@ -335,8 +335,8 @@ export const visionDetections = tally.table(
     countSource: text("count_source").notNull(),
     // [{x1,y1,x2,y2}] on the 0–1000 grid of the uploaded image.
     boxes: jsonb("boxes").$type<{ x1: number; y1: number; x2: number; y2: number }[]>().notNull(),
-    // [{qid, score}], best first: catalogue ids and match scores only.
-    candidates: jsonb("candidates").$type<{ qid: string; score: number }[]>().notNull(),
+    // [{qid, score, match}], best first: catalogue ids and match scores only (match is missing on older scans).
+    candidates: jsonb("candidates").$type<{ qid: string; score: number; match?: "strong" | "medium" | "low" }[]>().notNull(),
     // The business's item this looks like at scan time, and how it was found.
     inventoryItemId: uuid("inventory_item_id"),
     inventoryMatch: text("inventory_match"),
@@ -353,6 +353,8 @@ export const visionDetections = tally.table(
     feedbackSentAt: timestamp("feedback_sent_at", { withTimezone: true }),
     // Stock-take agent: how this line was resolved (tool calls behind it); null for a quick scan.
     evidence: jsonb("evidence").$type<{ turn: number; tool: string; summary: string }[]>(),
+    // Stock-take agent: why the merchant should look closely; a reopened scan picks nothing for it.
+    review: text("review"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -377,6 +379,7 @@ export const visionDetections = tally.table(
       sql`(inventory_item_id is null) = (inventory_match is null) and (inventory_match is null or inventory_match in ('reading', 'catalogue', 'name'))`,
     ),
     check("vision_detections_name_length", sql`char_length(name) between 1 and 200`),
+    check("vision_detections_review_length", sql`review is null or char_length(review) between 1 and 500`),
     foreignKey({
       name: "vision_detections_item_fk",
       columns: [t.businessId, t.itemId],
