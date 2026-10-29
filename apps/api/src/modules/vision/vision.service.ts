@@ -19,6 +19,7 @@ import { bestBox, cropKey, cropSize, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_S
 import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
+import { parsePhotoCheck, PHOTO_CHECK_MODEL, photoCheckRequest, type PhotoCheck } from "./photo-check";
 import { assignInstances, distinctLooks, parseSamInstances, SAM_MODEL, samRequest, type SamInstance } from "./sam-counter";
 import {
   parseShelfProducts,
@@ -50,6 +51,8 @@ import { VisionRepository, type ConfirmResult } from "./vision.repository";
 const SHELF_TIMEOUT_MS = 45_000;
 const SAM_TIMEOUT_MS = 20_000;
 const LABEL_TIMEOUT_MS = 10_000;
+/** The merchant waits on a photo check before scanning; past this, skip it rather than hold them up. */
+const PHOTO_CHECK_TIMEOUT_MS = 12_000;
 /**
  * Per-phase deadlines so every background stock-take ends done, fallback or failed, even when a model call
  * hangs or a full Supabase pooler never hands out a connection.
@@ -514,6 +517,24 @@ export class VisionService implements OnApplicationBootstrap {
     } catch (err) {
       this.logger.warn(`Crops not made for scan ${scanId}: ${(err as Error).message}`);
       return 0;
+    }
+  }
+
+  /**
+   * Before a scan: is this photo worth reading? One quick Muse Spark verdict with one instruction. Advice only;
+   * the photo isn't stored and nothing changes.
+   */
+  async checkPhoto(businessId: string, userId: string, image: Buffer): Promise<PhotoCheck & { model: string; ms: number }> {
+    if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
+    await this.businesses.getForMember(businessId, userId);
+    const type = sniffImageType(image);
+    if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
+    const started = Date.now();
+    try {
+      const check = parsePhotoCheck((await this.meta.respond(photoCheckRequest(image, type), PHOTO_CHECK_TIMEOUT_MS)).text);
+      return { ...check, model: PHOTO_CHECK_MODEL, ms: Date.now() - started };
+    } catch (err) {
+      throw err instanceof HttpException ? err : toVisionHttpException(err);
     }
   }
 

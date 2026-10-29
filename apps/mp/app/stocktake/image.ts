@@ -49,3 +49,64 @@ export async function cropThumbs(photo: Blob, items: { id: string; boxes: Box[] 
   bitmap.close();
   return out;
 }
+
+/** Quick checks in the browser, before the model's verdict: no network, a few milliseconds. */
+export type LocalCheck = { dark: boolean; blurry: boolean; glare: boolean };
+
+const CHECK_EDGE = 320;
+const DARK_MEAN = 60;
+/** Variance of the Laplacian below this on a 320 px copy: too soft to read labels. */
+const BLUR_VARIANCE = 40;
+/** Share of near-white pixels that means reflections over the labels. */
+const GLARE_SHARE = 0.08;
+
+export async function localCheck(photo: Blob): Promise<LocalCheck> {
+  const bitmap = await createImageBitmap(photo);
+  const scale = CHECK_EDGE / Math.max(bitmap.width, bitmap.height);
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  const { data } = ctx.getImageData(0, 0, w, h);
+  const grey = new Float32Array(w * h);
+  let sum = 0;
+  let bright = 0;
+  for (let i = 0; i < w * h; i++) {
+    const g = 0.299 * data[i * 4]! + 0.587 * data[i * 4 + 1]! + 0.114 * data[i * 4 + 2]!;
+    grey[i] = g;
+    sum += g;
+    if (g >= 250) bright++;
+  }
+  let lapSum = 0;
+  let lapSq = 0;
+  let n = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const lap = grey[i - w]! + grey[i + w]! + grey[i - 1]! + grey[i + 1]! - 4 * grey[i]!;
+      lapSum += lap;
+      lapSq += lap * lap;
+      n++;
+    }
+  }
+  const variance = n ? lapSq / n - (lapSum / n) ** 2 : 0;
+  return { dark: sum / (w * h) < DARK_MEAN, blurry: variance < BLUR_VARIANCE, glare: bright / (w * h) > GLARE_SHARE };
+}
+
+/** A ~1024 px JPEG copy for the photo check (under the API's 1 MB). */
+export async function checkCopy(photo: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(photo);
+  const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+  if (!blob) throw new Error("Couldn't prepare the photo check");
+  return blob;
+}

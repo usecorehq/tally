@@ -67,7 +67,7 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
 `/stocktake` in the merchant portal (built) runs the same flow from a browser, so the shelf scan doesn't need the mobile app:
 
 1. Pick one of the user's businesses (`GET /api/businesses`).
-2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to at most a 2560 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation. A photo under 1500 px on its long edge gets a warning before the scan: products on a whole shelf are likely too small to read.
+2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to at most a 2560 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation. A photo under 1500 px on its long edge gets a warning before the scan: products on a whole shelf are likely too small to read. Each picked photo is also **checked**: in the browser at once (blur, darkness, glare on a 320 px copy), then by Muse Spark through `POST …/vision/photo-check` on a 1024 px copy (about 4–5 s). The verdict (good, usable, retake), the issues, one instruction and a dashed box around the most readable area show under the photo, with **Retake photo** on a retake. It is advice only: the merchant can always start the scan, and a failed check shows nothing.
 3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then the page moves to the run's own URL, `/stocktake/history/<runId>`, which polls `GET …/stocktakes/:runId` every 1.5 s and shows the step trace as it grows. **Quick scan** calls `POST …/shelf-scans`, waits, then moves to `/stocktake/history/<scanId>`.
 4. The review table has one row per undecided detection, `review` lines first: the reading, an editable count, the product (opens the picker; pre-filled by the rules in [Showing a line](#showing-a-line-clients)), the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box, or is the stored crop when this browser doesn't have the photo. A restock line names the store item (`inventoryItemName`). **Coverage:** the photo is split into a 3 × 3 grid; when two or more cells have no counted unit, they are shaded and a warning names them ("Nothing was read in parts of this photo…"), so a missed shelf is never silent.
 5. Confirm sends every row to `…/shelf-scans/:scanId/confirm` and shows the outcome: created, restocked, restored, skipped, invalid lines with their reasons, and the feedback sent.
@@ -189,6 +189,19 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
   4. `name`: a hand-typed item (no Qore ID) whose name contains the brand and name read off the pack. Always `inventoryNeedsConfirm: true`: show "Is this your X?". This needs a legible brand, exactly one such item and no conflicting pack size. Confirming it links the item to the Qore ID, so later scans match exactly.
   5. `null`: not in store. Offer the catalogue candidates ("Add to my store"), or a new item named from the label when there are none.
 - An empty shelf returns `detections: []`.
+
+### `POST /api/businesses/:id/vision/photo-check` (built)
+
+Before a scan. Multipart, one field `image`: JPEG, PNG or WebP, at most 1 MB (send about 1024 px). One Muse Spark call with minimal reasoning; nothing is stored. Returns 200:
+
+```json
+{ "verdict": "retake", "issues": ["angled", "too_far", "cut_off"], "instruction": "Stand straight in front of one shelf and take photo facing it.",
+  "productsVisible": 200, "labelsLegible": "some", "region": { "x1": 380, "y1": 280, "x2": 1000, "y2": 980 }, "model": "muse-spark-1.3", "ms": 4700 }
+```
+
+- `verdict`: `good`, `usable` (some products will be lost) or `retake` (most can't be read). `issues`, worst first: `not_shelf`, `too_far`, `too_close`, `angled`, `blurry`, `dark`, `glare`, `obstructed`, `cut_off`. `region`: the area with the most readable products, or null.
+- Advice only: never block a scan on it. Measured on two stored photos: 3.8–4.7 s, about 1.1k tokens in and 0.4k out. Too slow to run on every camera frame; check once after capture.
+- 401 / 403 membership, 400 no or bad image, 413 over 1 MB, 503 / 504 / 502 as identify.
 
 ### `POST /api/businesses/:id/vision/identify` (built)
 

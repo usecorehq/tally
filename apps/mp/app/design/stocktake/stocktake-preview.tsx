@@ -33,6 +33,7 @@ import {
   history,
   reopened,
 } from "./fixtures";
+import type { CheckState } from "../../stocktake/photo-check";
 
 const BUSINESSES = [
   { id: "b1", name: "Mama Nkechi Provisions" },
@@ -44,6 +45,30 @@ const fakeRerun = async () => ({ ok: false as const, status: 409, error: "Previe
 const fakeDiscard = async () => {
   await new Promise((r) => setTimeout(r, 600));
   return { ok: true as const, data: { status: "discarded" as const } };
+};
+
+/** Photo-check states, as the real API answered for a whole-aisle photo and a close shelf. */
+const PICK_CHECKS: Record<string, CheckState> = {
+  "pick-checking": { status: "checking", local: { dark: false, blurry: false, glare: false } },
+  "pick-check-good": {
+    status: "done",
+    local: { dark: false, blurry: false, glare: false },
+    result: { verdict: "good", issues: [], instruction: "", productsVisible: 14, labelsLegible: "most", region: null, model: "muse-spark-1.3", ms: 3800 },
+  },
+  "pick-check-retake": {
+    status: "done",
+    local: { dark: false, blurry: false, glare: false },
+    result: {
+      verdict: "retake",
+      issues: ["angled", "too_far", "cut_off"],
+      instruction: "Stand straight in front of one shelf and take photo facing it.",
+      productsVisible: 200,
+      labelsLegible: "some",
+      region: { x1: 380, y1: 280, x2: 1000, y2: 980 },
+      model: "muse-spark-1.3",
+      ms: 4700,
+    },
+  },
 };
 
 const PICK_ERRORS: Partial<Record<Variant, string>> = {
@@ -192,6 +217,7 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
         error={PICK_ERRORS[variant] ?? null}
         preparing={variant === "pick-preparing"}
         photo={withPhoto ? photo : null}
+        check={PICK_CHECKS[variant] ?? null}
         fileRef={fileRef}
         onFile={noop}
         onAgent={noop}

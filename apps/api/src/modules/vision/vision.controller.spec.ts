@@ -699,6 +699,68 @@ describe("VisionController confirm + get (HTTP)", () => {
   });
 });
 
+describe("VisionController photo-check (HTTP)", () => {
+  let nest: INestApplication;
+  let ctx: Awaited<ReturnType<typeof app>>;
+  let fetchSpy: ReturnType<typeof jest.spyOn<typeof global, "fetch">>;
+  const checkPath = `/api/businesses/${BIZ}/vision/photo-check`;
+  const verdict = (v: Record<string, unknown>) =>
+    new Response(JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(v) }] }] }), {
+      status: 200,
+    });
+
+  beforeAll(async () => {
+    fetchSpy = jest.spyOn(global, "fetch");
+    ctx = await app("LLM_000_not-a-real-key");
+    nest = ctx.nest;
+  });
+  afterAll(async () => {
+    await nest.close();
+    fetchSpy.mockRestore();
+  });
+  beforeEach(() => fetchSpy.mockReset());
+
+  const post = () => request(nest.getHttpServer()).post(checkPath);
+
+  it("returns Muse Spark's verdict for the photo with one quick call, storing nothing", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      verdict({
+        verdict: "retake",
+        issues: ["too_far", "angled", "made_up"],
+        instruction: "Step closer so one or two shelves fill the photo.",
+        products_visible: 30,
+        labels_legible: "few",
+        has_region: true,
+        region: { x_min: 420, y_min: 120, x_max: 980, y_max: 560 },
+      }),
+    );
+    ctx.media.put.mockClear();
+    const res = await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).reasoning).toEqual({ effort: "minimal" });
+    expect(res.body).toMatchObject({
+      verdict: "retake",
+      issues: ["too_far", "angled"],
+      instruction: "Step closer so one or two shelves fill the photo.",
+      productsVisible: 30,
+      labelsLegible: "few",
+      region: { x1: 420, y1: 120, x2: 980, y2: 560 },
+      model: "muse-spark-1.3",
+    });
+    expect(ctx.media.put).not.toHaveBeenCalled();
+  });
+
+  it("checks membership first, and rejects missing, oversized or non-image uploads", async () => {
+    await post().attach("image", JPEG, "p.jpg").expect(401);
+    ctx.businesses.getForMember.mockRejectedValueOnce(new ForbiddenException());
+    await post().set(auth).attach("image", JPEG, "p.jpg").expect(403);
+    await post().set(auth).expect(400);
+    await post().set(auth).attach("image", Buffer.alloc(MAX_IDENTIFY_IMAGE_BYTES + 1, 1), "big.jpg").expect(413);
+    await post().set(auth).attach("image", Buffer.from("<svg/>"), "s.jpg").expect(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("VisionController identify (HTTP)", () => {
   let nest: INestApplication;
   let ctx: Awaited<ReturnType<typeof app>>;

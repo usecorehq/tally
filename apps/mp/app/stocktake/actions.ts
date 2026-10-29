@@ -8,6 +8,7 @@ import type {
   ConfirmResult,
   Decision,
   HistoryEntry,
+  PhotoCheck,
   ScanView,
   ShelfScanResult,
   StocktakeRun,
@@ -100,6 +101,16 @@ export async function recentStocktakes(business: string | null): Promise<ActionR
     if (!businessId) return { ok: true, data: { businessId: "", entries: [] } };
     const entries = await api<HistoryEntry[]>(`${vision(businessId)}/stocktakes?limit=30`);
     return { ok: true, data: { businessId, entries } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Muse Spark's verdict on a photo before scanning (~4–5 s); the caller treats any failure as "no verdict". */
+export async function checkPhoto(businessId: string, form: FormData): Promise<ActionResult<PhotoCheck>> {
+  try {
+    const data = await api<PhotoCheck>(`${vision(businessId)}/photo-check`, { method: "POST", body: form, timeoutMs: 15_000 });
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }
