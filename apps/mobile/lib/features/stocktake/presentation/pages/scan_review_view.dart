@@ -1,18 +1,18 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/design/auth_parts.dart';
 import '../../../../core/design/v15_widgets.dart';
-import '../../../../core/utils/naira.dart';
 import '../../../../injection_container.dart';
 import '../../../business/domain/entities/business.dart';
 import '../../domain/entities/shelf_scan.dart';
 import '../../domain/scan_review.dart';
 import '../../domain/usecases/stocktake_usecases.dart';
 import '../cubit/scan_review_cubit.dart';
+import '../widgets/review_cards.dart';
+import '../widgets/review_parts.dart';
 import '../widgets/scan_photo.dart';
 
 /// S4 review → confirm → outcome, for one scan. Nothing is stocked until
@@ -90,6 +90,26 @@ class _Review extends StatelessWidget {
     final invalid = state.invalidIds.length;
     final counts = state.counts;
     final stocking = rows.length - counts[ScanAction.skip]!;
+    final confirm = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${counts[ScanAction.restock]} restock · ${counts[ScanAction.restore]} restore · '
+          '${counts[ScanAction.add]} add · ${counts[ScanAction.skip]} skip',
+          style: V15.text(13, FontWeight.w400, c.gray500, tabular: true),
+        ),
+        const SizedBox(height: 8),
+        V15Button(
+          stocking == 0
+              ? 'Confirm: nothing to stock'
+              : 'Stock $stocking item${stocking == 1 ? '' : 's'}, ${state.units} unit${state.units == 1 ? '' : 's'}',
+          height: 48,
+          expand: true,
+          loading: state.submitting,
+          onPressed: rows.isEmpty ? null : cubit.submit,
+        ),
+      ],
+    );
     return Scaffold(
       backgroundColor: c.surface,
       body: SafeArea(
@@ -107,6 +127,11 @@ class _Review extends StatelessWidget {
                 ],
               ),
             ),
+            if (rows.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: _ModeSwitch(mode: state.mode, onChanged: cubit.setMode),
+              ),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -132,63 +157,50 @@ class _Review extends StatelessWidget {
                     const SizedBox(height: 12),
                   ],
                   if (state.error != null) ...[AuthMessage(state.error!), const SizedBox(height: 12)],
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(V15.sheetRadius),
-                    child: ScanPhotoView(
-                      image: image,
-                      detections: rows,
-                      selected: state.selected,
-                      onSelect: (id) => cubit.select(id == state.selected ? null : id),
+                  if (state.mode == ReviewMode.cards && rows.isNotEmpty)
+                    ReviewCards(image: image, state: state)
+                  else ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(V15.sheetRadius),
+                      child: ScanPhotoView(
+                        image: image,
+                        detections: rows,
+                        selected: state.selected,
+                        onSelect: (id) => cubit.select(id == state.selected ? null : id),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text('Tap an outline to find its line.', style: V15.caption),
-                  const SizedBox(height: 16),
-                  if (rows.isEmpty)
-                    const AuthMessage(
-                      "We didn't find any products in this photo. Try a closer photo with the labels facing the camera.",
-                      tone: AuthTone.brand,
-                    )
-                  else
-                    V15Section(
-                      rows: [
-                        for (final d in rows)
-                          _Line(
-                            key: ValueKey(d.id),
-                            d: d,
-                            choice: state.choices[d.id]!,
-                            image: image,
-                            selected: d.id == state.selected,
-                            showProblems: state.attempted,
-                          ),
-                      ],
-                    ),
+                    const SizedBox(height: 6),
+                    Text('Tap an outline to find its line.', style: V15.caption),
+                    const SizedBox(height: 16),
+                    if (rows.isEmpty)
+                      const AuthMessage(
+                        "We didn't find any products in this photo. Try a closer photo with the labels facing the camera.",
+                        tone: AuthTone.brand,
+                      )
+                    else
+                      V15Section(
+                        rows: [
+                          for (final d in rows)
+                            _Line(
+                              key: ValueKey(d.id),
+                              d: d,
+                              choice: state.choices[d.id]!,
+                              image: image,
+                              selected: d.id == state.selected,
+                              showProblems: state.attempted,
+                            ),
+                        ],
+                      ),
+                  ],
                 ],
               ),
             ),
             Divider(height: 1, color: c.divider),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${counts[ScanAction.restock]} restock · ${counts[ScanAction.restore]} restore · '
-                    '${counts[ScanAction.add]} add · ${counts[ScanAction.skip]} skip',
-                    style: V15.text(13, FontWeight.w400, c.gray500, tabular: true),
-                  ),
-                  const SizedBox(height: 8),
-                  V15Button(
-                    stocking == 0
-                        ? 'Confirm: nothing to stock'
-                        : 'Stock $stocking item${stocking == 1 ? '' : 's'}, ${state.units} unit${state.units == 1 ? '' : 's'}',
-                    height: 48,
-                    expand: true,
-                    loading: state.submitting,
-                    onPressed: rows.isEmpty ? null : cubit.submit,
-                  ),
-                ],
-              ),
+              child: state.mode == ReviewMode.cards && rows.isNotEmpty
+                  ? ReviewCardsFooter(state: state, confirm: confirm)
+                  : confirm,
             ),
           ],
         ),
@@ -218,17 +230,9 @@ class _Line extends StatefulWidget {
 }
 
 class _LineState extends State<_Line> {
-  late final _quantity = TextEditingController(text: widget.choice.quantity);
-  late final _name = TextEditingController(text: widget.choice.name);
-  late final _price = TextEditingController(text: widget.choice.price);
-
   @override
   void didUpdateWidget(_Line old) {
     super.didUpdateWidget(old);
-    // Picking a product renames the line and resets its price: show that.
-    _sync(_name, widget.choice.name);
-    _sync(_price, widget.choice.price);
-    _sync(_quantity, widget.choice.quantity);
     // Tapped on the photo: bring the line into view.
     if (widget.selected && !old.selected) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -237,35 +241,12 @@ class _LineState extends State<_Line> {
     }
   }
 
-  static void _sync(TextEditingController t, String value) {
-    if (t.text == value) return;
-    t.value = TextEditingValue(text: value, selection: TextSelection.collapsed(offset: value.length));
-  }
-
-  @override
-  void dispose() {
-    _quantity.dispose();
-    _name.dispose();
-    _price.dispose();
-    super.dispose();
-  }
-
-  void _step(int by) {
-    final now = int.tryParse(_quantity.text.trim()) ?? 0;
-    final next = (now + by).clamp(0, 999999);
-    context.read<ScanReviewCubit>().setQuantity(widget.d.id, '$next');
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = V15.of(context);
     final cubit = context.read<ScanReviewCubit>();
     final d = widget.d;
-    final choice = widget.choice;
-    final skipped = choice.action == ScanAction.skip;
-    final problems = widget.showProblems ? ScanProblems.of(choice) : const ScanProblems();
-    final (status, tone) = storeStatus(d);
-    final picked = d.candidates.where((x) => x.qid == choice.choice).firstOrNull;
+    final skipped = widget.choice.action == ScanAction.skip;
     final recount = d.countedBySam && d.samCount != d.sparkCount
         ? ' · counted ${d.samCount} (read ${d.sparkCount})'
         : '';
@@ -301,29 +282,7 @@ class _LineState extends State<_Line> {
                         style: V15.text(13, FontWeight.w400, c.gray500),
                       ),
                       const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          V15Pill(
-                            status,
-                            tone: switch (tone) {
-                              StoreTone.green => V15PillTone.green,
-                              StoreTone.amber => V15PillTone.amber,
-                              StoreTone.gray => V15PillTone.gray,
-                            },
-                          ),
-                          V15Pill(
-                            '${d.confidence.name[0].toUpperCase()}${d.confidence.name.substring(1)} match',
-                            tone: switch (d.confidence) {
-                              ScanConfidence.high => V15PillTone.green,
-                              ScanConfidence.medium => V15PillTone.amber,
-                              ScanConfidence.low => V15PillTone.red,
-                            },
-                          ),
-                          if (d.review != null) V15Pill('Check: ${d.review}', tone: V15PillTone.amber),
-                        ],
-                      ),
+                      LineBadges(d: d),
                     ],
                   ),
                 ),
@@ -331,301 +290,10 @@ class _LineState extends State<_Line> {
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final a in actionsFor(d))
-                _ActionKey(
-                  label: kScanActionLabels[a]!,
-                  selected: a == choice.action,
-                  onTap: () => cubit.setAction(d.id, a),
-                ),
-            ],
-          ),
-          if (!skipped) ...[
-            const SizedBox(height: 12),
-            _Stepper(
-              controller: _quantity,
-              invalid: problems.quantity,
-              onChanged: (v) => cubit.setQuantity(d.id, v),
-              onStep: _step,
-            ),
-            if (productEditable(d, choice)) ...[
-              const SizedBox(height: 8),
-              _ProductKey(d: d, choice: choice, onChoose: (qid) => cubit.choose(d.id, qid)),
-              if (picked?.priceMedian != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    'Typical shelf price ${formatNaira('${picked!.priceMedian}')}'
-                    '${picked.priceMin != null && picked.priceMax != null ? ' (${formatNaira('${picked.priceMin}')}–${formatNaira('${picked.priceMax}')})' : ''}',
-                    style: V15.text(13, FontWeight.w400, c.gray500, tabular: true),
-                  ),
-                ),
-            ],
-            if (choice.action == ScanAction.add) ...[
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: _Field(
-                      label: 'Item name',
-                      controller: _name,
-                      invalid: problems.name,
-                      onChanged: (v) => cubit.setName(d.id, v),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: _Field(
-                      label: 'Your price (₦)',
-                      controller: _price,
-                      numeric: true,
-                      invalid: problems.price,
-                      onChanged: (v) => cubit.setPrice(d.id, v),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
+          LineEditor(d: d, choice: widget.choice, showProblems: widget.showProblems),
         ],
       ),
     );
-  }
-}
-
-/// A selectable 36-tall key (V2 chip), as onboarding's sub-type keys.
-class _ActionKey extends StatelessWidget {
-  const _ActionKey({required this.label, required this.selected, required this.onTap});
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = V15.of(context);
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: selected ? c.primaryLight : c.gray100,
-            borderRadius: BorderRadius.circular(kV15ButtonRadius),
-            border: Border.all(color: selected ? c.primary : Colors.transparent),
-          ),
-          child: Center(
-            widthFactor: 1,
-            child: Text(label, style: V15.ui.copyWith(color: selected ? c.primaryInk : c.gray900)),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Count: − field +, whole units.
-class _Stepper extends StatelessWidget {
-  const _Stepper({required this.controller, required this.invalid, required this.onChanged, required this.onStep});
-  final TextEditingController controller;
-  final bool invalid;
-  final ValueChanged<String> onChanged;
-  final ValueChanged<int> onStep;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = V15.of(context);
-    Widget key(String glyph, String label, int by) => Semantics(
-      button: true,
-      label: label,
-      excludeSemantics: true,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(kV15ButtonRadius),
-        onTap: () => onStep(by),
-        child: Container(
-          width: 44,
-          height: 44,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: c.gray100, borderRadius: BorderRadius.circular(kV15ButtonRadius)),
-          child: Text(glyph, style: V15.text(20, FontWeight.w500, c.gray900)),
-        ),
-      ),
-    );
-    return Row(
-      children: [
-        Text('Count', style: V15.label.copyWith(color: c.gray700)),
-        const Spacer(),
-        key('−', 'One fewer', -1),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 72,
-          child: TextField(
-            controller: controller,
-            onChanged: onChanged,
-            textAlign: TextAlign.center,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
-            style: V15.text(16, FontWeight.w600, c.gray900, tabular: true),
-            decoration: InputDecoration(isDense: true, enabledBorder: invalid ? _invalidBorder : null),
-          ),
-        ),
-        const SizedBox(width: 8),
-        key('+', 'One more', 1),
-      ],
-    );
-  }
-}
-
-final _invalidBorder = OutlineInputBorder(
-  borderRadius: BorderRadius.circular(V15.sheetRadius),
-  borderSide: const BorderSide(color: Color(0xFFFCA5A5)),
-);
-
-class _Field extends StatelessWidget {
-  const _Field({
-    required this.label,
-    required this.controller,
-    required this.onChanged,
-    this.numeric = false,
-    this.invalid = false,
-  });
-  final String label;
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-  final bool numeric;
-  final bool invalid;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = V15.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, style: V15.text(12, FontWeight.w500, c.gray500)),
-        const SizedBox(height: 4),
-        TextField(
-          controller: controller,
-          onChanged: onChanged,
-          keyboardType: numeric ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-          inputFormatters: numeric ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))] : null,
-          textCapitalization: numeric ? TextCapitalization.none : TextCapitalization.words,
-          style: V15.text(15, FontWeight.w400, c.gray900, tabular: numeric),
-          decoration: InputDecoration(isDense: true, enabledBorder: invalid ? _invalidBorder : null),
-        ),
-      ],
-    );
-  }
-}
-
-/// S5: the product for a line — the catalogue's plausible matches, or a new item.
-class _ProductKey extends StatelessWidget {
-  const _ProductKey({required this.d, required this.choice, required this.onChoose});
-  final ScanDetection d;
-  final ScanChoice choice;
-  final ValueChanged<String> onChoose;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = V15.of(context);
-    final picked = d.candidates.where((x) => x.qid == choice.choice).firstOrNull;
-    final label = picked?.label ?? (d.candidates.isEmpty ? 'New item (not in catalogue)' : 'None of these: new item');
-    return Semantics(
-      button: true,
-      label: 'Product: $label',
-      excludeSemantics: true,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(V15.sheetRadius),
-        onTap: () => _pick(context),
-        child: Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: c.gray50,
-            borderRadius: BorderRadius.circular(V15.sheetRadius),
-            border: Border.all(color: c.gray200),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: V15.text(15, FontWeight.w400, c.gray900),
-                ),
-              ),
-              Icon(IconsOutline.alt_arrow_right, size: 16, color: c.gray400),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pick(BuildContext context) async {
-    final c = V15.of(context);
-    final qid = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      backgroundColor: c.surface,
-      builder: (sheet) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: [
-            Text(
-              d.reading.isEmpty ? 'Which product is this?' : d.reading,
-              style: V15.dialogTitle.copyWith(color: c.gray900),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              d.candidates.isEmpty
-                  ? 'Qore Catalog had no plausible match. Add it as your own item.'
-                  : 'Plausible Qore Catalog matches, best first.',
-              style: V15.description.copyWith(color: c.gray500),
-            ),
-            const SizedBox(height: 12),
-            V15Section(
-              rows: [
-                for (final cand in d.candidates)
-                  V15Row(
-                    title: cand.label,
-                    subtitle: [
-                      if (cand.priceMedian != null) 'Typical ${formatNaira('${cand.priceMedian}')}',
-                      if (cand.inventoryItemId != null) 'In your store',
-                    ].join(' · '),
-                    trailing: cand.qid == choice.choice
-                        ? Icon(IconsOutline.check_circle, size: 20, color: c.primary)
-                        : null,
-                    onTap: () => Navigator.of(sheet).pop(cand.qid),
-                  ),
-                V15Row(
-                  leading: const V15IconTile(IconsOutline.add_circle),
-                  title: 'Add as my own item',
-                  subtitle: 'Not in the catalogue',
-                  trailing: choice.choice == ScanChoice.newItem
-                      ? Icon(IconsOutline.check_circle, size: 20, color: c.primary)
-                      : null,
-                  onTap: () => Navigator.of(sheet).pop(ScanChoice.newItem),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-    if (qid != null) onChoose(qid);
   }
 }
 
@@ -717,6 +385,48 @@ class _Outcome extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// List / One by one, at the top of the review. Both read and write the same decisions.
+class _ModeSwitch extends StatelessWidget {
+  const _ModeSwitch({required this.mode, required this.onChanged});
+  final ReviewMode mode;
+  final ValueChanged<ReviewMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = V15.of(context);
+    Widget option(ReviewMode m, String label) {
+      final on = m == mode;
+      return Expanded(
+        child: Semantics(
+          button: true,
+          selected: on,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => onChanged(m),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              height: 36,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: on ? c.surface : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: on ? V15.sheetShadow : null,
+              ),
+              child: Text(label, style: V15.ui.copyWith(color: on ? c.gray900 : c.gray500)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: c.gray100, borderRadius: BorderRadius.circular(kV15ButtonRadius)),
+      child: Row(children: [option(ReviewMode.cards, 'One by one'), option(ReviewMode.list, 'List')]),
     );
   }
 }

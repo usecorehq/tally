@@ -29,6 +29,66 @@ class ScanReviewCubit extends Cubit<ScanReviewState> {
 
   void select(String? id) => emit(state.copyWith(selected: id, clearSelected: id == null));
 
+  /// The list, or one line at a time.
+  void setMode(ReviewMode mode) => emit(state.copyWith(mode: mode));
+
+  /// One by one: is the current line ready to accept? Flags it when not (the
+  /// card shows what's missing and stays). An earlier skip counts as its
+  /// default action again.
+  bool canAcceptCurrent() {
+    final d = state.current;
+    if (d == null) return false;
+    final c = _accepted(d);
+    if (ScanProblems.of(c).any) {
+      emit(state.copyWith(choices: {...state.choices, d.id: c}, flagged: {...state.flagged, d.id}));
+      return false;
+    }
+    return true;
+  }
+
+  /// One by one: keep the current line as set and move on.
+  void acceptCurrent() {
+    final d = state.current;
+    if (d == null || !canAcceptCurrent()) return;
+    emit(
+      state.copyWith(
+        choices: {...state.choices, d.id: _accepted(d)},
+        flagged: {...state.flagged}..remove(d.id),
+        cursor: state.cursor + 1,
+      ),
+    );
+  }
+
+  /// One by one: skip the current line and move on.
+  void skipCurrent() {
+    final d = state.current;
+    if (d == null) return;
+    emit(
+      state.copyWith(
+        choices: {
+          ...state.choices,
+          d.id: state.choices[d.id]!.copyWith(action: ScanAction.skip),
+        },
+        flagged: {...state.flagged}..remove(d.id),
+        cursor: state.cursor + 1,
+      ),
+    );
+  }
+
+  /// One by one: back a card (its decision stays until changed).
+  void previous() => emit(state.copyWith(cursor: (state.cursor - 1).clamp(0, state.rows.length)));
+
+  /// One by one: open a given line (from the summary).
+  void goTo(String id) {
+    final i = state.rows.indexWhere((d) => d.id == id);
+    if (i >= 0) emit(state.copyWith(cursor: i, mode: ReviewMode.cards));
+  }
+
+  ScanChoice _accepted(ScanDetection d) {
+    final c = state.choices[d.id]!;
+    return c.action == ScanAction.skip ? c.copyWith(action: actionsFor(d).first) : c;
+  }
+
   /// Qorelly rule: Confirm stays enabled; pressing it flags what's missing.
   Future<void> submit() async {
     if (state.invalidIds.isNotEmpty) {
@@ -58,8 +118,14 @@ class ScanReviewCubit extends Cubit<ScanReviewState> {
       emit(state.copyWith(choices: {...state.choices, id: change(state.choices[id]!)}));
 }
 
+/// One by one opens first after a scan; the list is one tap away.
+enum ReviewMode { cards, list }
+
 class ScanReviewState extends Equatable {
   const ScanReviewState({
+    this.mode = ReviewMode.cards,
+    this.cursor = 0,
+    this.flagged = const {},
     required this.scan,
     required this.rows,
     required this.choices,
@@ -76,6 +142,16 @@ class ScanReviewState extends Equatable {
   }
 
   final ShelfScan scan;
+
+  final ReviewMode mode;
+
+  /// One by one: the line on screen; rows.length = all done (the summary).
+  final int cursor;
+
+  /// One by one: lines accepted with something missing (shown on their card).
+  final Set<String> flagged;
+
+  ScanDetection? get current => cursor < rows.length ? rows[cursor] : null;
 
   /// Lines in review order (agent-flagged first).
   final List<ScanDetection> rows;
@@ -107,6 +183,9 @@ class ScanReviewState extends Equatable {
   });
 
   ScanReviewState copyWith({
+    ReviewMode? mode,
+    int? cursor,
+    Set<String>? flagged,
     Map<String, ScanChoice>? choices,
     String? selected,
     bool clearSelected = false,
@@ -116,6 +195,9 @@ class ScanReviewState extends Equatable {
     bool clearError = false,
     ScanConfirmResult? result,
   }) => ScanReviewState(
+    mode: mode ?? this.mode,
+    cursor: cursor ?? this.cursor,
+    flagged: flagged ?? this.flagged,
     scan: scan,
     rows: rows,
     choices: choices ?? this.choices,
@@ -127,5 +209,17 @@ class ScanReviewState extends Equatable {
   );
 
   @override
-  List<Object?> get props => [scan, rows, choices, selected, attempted, submitting, error, result];
+  List<Object?> get props => [
+    scan,
+    rows,
+    choices,
+    mode,
+    cursor,
+    flagged,
+    selected,
+    attempted,
+    submitting,
+    error,
+    result,
+  ];
 }
