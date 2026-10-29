@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, FormMessage, Pill, QorellyLoader, SearchWell, SolarIcon, cn } from "@tally/ui";
 import { catalogueProduct, searchCatalogue } from "./actions";
 import type { Candidate, CatalogImage, CatalogProduct, CatalogProductDetail, Detection, MatchStrength } from "./types";
+import { ThumbImage, type Thumb } from "./thumb";
 
 /** What a line is linked to: a catalogue product (with what the row shows and pre-fills), or a new item. */
 export type Pick =
@@ -50,7 +51,7 @@ export function ProductPicker({
   onOpenChange: (open: boolean) => void;
   d: Detection;
   current: Pick | null;
-  thumb: string | undefined;
+  thumb: Thumb | undefined;
   onPick: (pick: Pick) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -118,8 +119,7 @@ export function ProductPicker({
       <DialogContent title="Choose the product" description="Pick what this line is, so the catalogue learns it too." className="max-w-xl" sheetClassName="p-0">
         <div className="flex items-center gap-3 border-b border-gray-100 p-4">
           <div className="h-14 w-14 shrink-0 overflow-hidden rounded-[10px] bg-gray-100 ring-1 ring-hairline/[0.05]">
-            {/* eslint-disable-next-line @next/next/no-img-element -- a data URL cut from the local photo */}
-            {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" />}
+            <ThumbImage thumb={thumb} />
           </div>
           <div className="min-w-0">
             <p className="break-words text-[15px] font-medium text-gray-900">{reading}</p>
@@ -221,7 +221,7 @@ function Option({
   selected: boolean;
   image: CatalogImage;
   /** Shown when there is no catalogue picture: the merchant's own crop. */
-  fallback: string | undefined;
+  fallback: Thumb | undefined;
   icon?: "Add-Circle";
   name: string;
   detail?: string | null;
@@ -230,7 +230,7 @@ function Option({
   busy?: boolean;
   onClick: () => void;
 }) {
-  const src = image?.url ?? fallback;
+  const src = image?.url;
   // Catalogue names usually carry the size already.
   const extra = detail && !name.includes(detail) ? detail : null;
   return (
@@ -248,8 +248,10 @@ function Option({
         {icon ? (
           <SolarIcon name={icon} iconStyle="Outline" size={20} />
         ) : src ? (
-          // eslint-disable-next-line @next/next/no-img-element -- a catalogue URL or a local data URL
+          // eslint-disable-next-line @next/next/no-img-element -- a catalogue picture
           <img src={src} alt="" className="h-full w-full object-cover" />
+        ) : fallback ? (
+          <ThumbImage thumb={fallback} />
         ) : (
           <SolarIcon name="Box" iconStyle="Outline" size={20} />
         )}
