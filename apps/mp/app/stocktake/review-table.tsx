@@ -21,6 +21,7 @@ import {
   cn,
 } from "@tally/ui";
 import { confirmScan } from "./actions";
+import { STOCKTAKE_CHANGED } from "./recents";
 import { cropThumbs } from "./image";
 import { pickFromCandidate, ProductPicker, type Pick } from "./product-picker";
 import type { ActionResult, Candidate, ConfirmResult, Decision, Detection, ShelfScanResult } from "./types";
@@ -127,24 +128,29 @@ export function ReviewTable({
   onRestart,
   confirm,
   initial,
+  actions,
 }: {
   businessId: string;
   businessName: string;
   result: ShelfScanResult;
   fallback: boolean;
-  photo: Blob;
-  photoUrl: string;
+  /** The shelf photo, when this browser has it; a reopened scan without it shows the stored crops. */
+  photo: Blob | null;
+  photoUrl: string | null;
   onRestart: () => void;
+  /** Extra header actions (History). */
+  actions?: React.ReactNode;
   /** Defaults to the confirmScan action; /design passes a fixture. */
   confirm?: (decisions: Decision[]) => Promise<ActionResult<ConfirmResult>>;
   /** Starting UI state; only /design sets it, to show the invalid, failed and selected states. */
   initial?: { attempted?: boolean; error?: string; selected?: string };
 }) {
-  // Lines the agent flagged for a closer look come first.
+  // Lines the agent flagged for a closer look come first; lines confirmed earlier (a partial confirm) stay as they are.
   const rows = useMemo(
-    () => [...result.detections].sort((a, b) => Number(Boolean(b.review)) - Number(Boolean(a.review))),
+    () => result.detections.filter((d) => !d.decision).sort((a, b) => Number(Boolean(b.review)) - Number(Boolean(a.review))),
     [result.detections],
   );
+  const decidedEarlier = result.detections.length - rows.length;
   const [state, setState] = useState<Record<string, RowState>>(() => Object.fromEntries(rows.map((d) => [d.id, initialState(d)])));
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [attempted, setAttempted] = useState(initial?.attempted ?? false);
@@ -154,7 +160,8 @@ export function ReviewTable({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    cropThumbs(photo, rows).then(setThumbs, () => undefined);
+    if (photo) cropThumbs(photo, rows).then(setThumbs, () => undefined);
+    else setThumbs(Object.fromEntries(rows.flatMap((d) => (d.cropUrl ? [[d.id, d.cropUrl]] : []))));
   }, [photo, rows]);
 
   const update = (id: string, patch: Partial<RowState>) => setState((prev) => ({ ...prev, [id]: { ...prev[id]!, ...patch } }));
@@ -178,6 +185,7 @@ export function ReviewTable({
       const res = await (confirm ? confirm(decisions) : confirmScan(businessId, result.scanId, decisions));
       if (res.ok) {
         setOutcome(res.data);
+        window.dispatchEvent(new Event(STOCKTAKE_CHANGED));
         window.scrollTo({ top: 0 });
       } else setError(res.error);
     });
@@ -206,13 +214,16 @@ export function ReviewTable({
             : `${rows.length} product${rows.length === 1 ? "" : "s"} for ${businessName}. Fix counts and matches, then confirm.`
         }
         actions={
-          // With nothing found the empty state carries "New photo" itself.
-          rows.length > 0 && (
-            <Button variant="quiet" onClick={onRestart}>
-              <SolarIcon name="Refresh" iconStyle="Outline" size={16} />
-              New photo
-            </Button>
-          )
+          <>
+            {actions}
+            {/* With nothing found the empty state carries "New photo" itself. */}
+            {rows.length > 0 && (
+              <Button variant="quiet" onClick={onRestart}>
+                <SolarIcon name="Refresh" iconStyle="Outline" size={16} />
+                New photo
+              </Button>
+            )}
+          </>
         }
       />
 
@@ -221,16 +232,35 @@ export function ReviewTable({
         {result.catalogueAvailable === false && (
           <FormMessage variant="warning" message="The catalogue was unavailable, so there are no product matches. You can still add items by name." />
         )}
+        {result.candidateDetails === false && (
+          <FormMessage
+            variant="warning"
+            message="Some product names and prices couldn't be loaded from the catalogue. Check those lines, or come back later."
+          />
+        )}
+        {(decidedEarlier > 0 || (!photoUrl && rows.length > 0)) && (
+          <FormMessage
+            variant="info"
+            message={[
+              decidedEarlier > 0 && `${decidedEarlier} line${decidedEarlier === 1 ? " was" : "s were"} confirmed earlier and ${decidedEarlier === 1 ? "isn't" : "aren't"} shown.`,
+              !photoUrl && rows.length > 0 && "The shelf photo stays on the device it was taken on; each line shows its own crop.",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          />
+        )}
       </div>
 
       {/* Desktop: the photo stays pinned on the left while the lines scroll on the right. */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
-        <Tray className="w-fit max-w-full lg:sticky lg:top-6">
-          <TraySheet className="p-1">
-            <ShelfPhoto url={photoUrl} rows={rows} selected={selected} onSelect={select} />
-          </TraySheet>
-          {rows.length > 0 && <TrayFooter>Click an outline to find its line.</TrayFooter>}
-        </Tray>
+      <div className={cn("mt-6 grid gap-4 lg:items-start", photoUrl && "lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]")}>
+        {photoUrl && (
+          <Tray className="w-fit max-w-full lg:sticky lg:top-6">
+            <TraySheet className="p-1">
+              <ShelfPhoto url={photoUrl} rows={rows} selected={selected} onSelect={select} />
+            </TraySheet>
+            {rows.length > 0 && <TrayFooter>Click an outline to find its line.</TrayFooter>}
+          </Tray>
+        )}
 
         {rows.length === 0 ? (
           <Tray>
@@ -396,8 +426,8 @@ function Row({
           skipped && "opacity-50",
         )}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element -- a data URL cut from the local photo */}
-        {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" />}
+        {/* eslint-disable-next-line @next/next/no-img-element -- cut from the local photo, or the stored crop */}
+        {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" onError={(e) => (e.currentTarget.style.display = "none")} />}
       </div>
 
       <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6 lg:flex-col lg:gap-3 xl:flex-row xl:gap-6">

@@ -30,10 +30,10 @@ sequenceDiagram
         end
         A->>D: steps: thought + each tool call
     end
-    A->>D: save scan + detections with evidence, finish run (done / fallback)
-    loop every 1–2 s
+    A->>D: save scan + detections with evidence and review, finish run (done / fallback)
+    loop every 1–2 s (resumes after a refresh: the run has its own URL)
         P->>A: GET …/stocktakes/:runId
-        A-->>P: status, live step trace, result when done
+        A-->>P: status, live step trace, stored scan when done
     end
     M->>P: review, confirm
     P->>A: POST …/shelf-scans/:scanId/confirm (human sign-off)

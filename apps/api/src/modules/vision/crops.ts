@@ -60,8 +60,16 @@ export async function makeCrops(
   );
 }
 
+/** A stored crop's size; 0×0 when it can't be read. */
+export async function cropSize(crop: Uint8Array): Promise<{ width: number; height: number }> {
+  const { width, height } = await sharp(crop)
+    .metadata()
+    .catch(() => ({ width: 0, height: 0 }));
+  return { width: width ?? 0, height: height ?? 0 };
+}
+
 /** True when a stored crop is big enough for Qore Catalog (short side >= MIN_CROP_SIDE). */
 export async function catalogueSized(crop: Uint8Array): Promise<boolean> {
-  const { width, height } = await sharp(crop).metadata();
-  return Math.min(width ?? 0, height ?? 0) >= MIN_CROP_SIDE;
+  const { width, height } = await cropSize(crop);
+  return Math.min(width, height) >= MIN_CROP_SIDE;
 }

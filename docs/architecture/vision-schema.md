@@ -2,7 +2,7 @@
 
 > Diagram: [vision tables (ERD)](../diagrams/images/vision-schema-erd.svg). Part of [vision recognition](vision-recognition.md) and the [stock-take agent](stocktake-agent.md). The whole schema: [database](database.md).
 
-How the camera tables in the `tally` schema relate, who writes each row, and which links are foreign keys versus plain values. Migrations `0004_add_vision_scans`, `0005_add_vision_decisions` and `0006_add_stocktake_agent`; source of truth is `packages/db/src/schema.ts`.
+How the camera tables in the `tally` schema relate, who writes each row, and which links are foreign keys versus plain values. Migrations `0004_add_vision_scans`, `0005_add_vision_decisions`, `0006_add_stocktake_agent` and `0007_add_detection_review`; source of truth is `packages/db/src/schema.ts`.
 
 ## The shape in one paragraph
 
@@ -13,7 +13,7 @@ A **scan** (`vision_scans`) is one shelf photo. Each product found in it is a **
 | Table | One row is | Parent | Written by |
 |---|---|---|---|
 | `vision_scans` | One shelf photo: sha256 and size (never the photo), model ids, time per stage, `open` → `confirmed` | `businesses` | `POST …/vision/shelf-scans`, or a stock-take run when it saves its result |
-| `vision_detections` | One product in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates, the store match, and then the merchant's decision | `vision_scans` | Inserted with its scan; decision columns set by `POST …/shelf-scans/:scanId/confirm` |
+| `vision_detections` | One product in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates, the store match, the agent's `review` reason, and then the merchant's decision | `vision_scans` | Inserted with its scan; decision columns set by `POST …/shelf-scans/:scanId/confirm` |
 | `inventory_item_readings` | "The camera read `brand\|name\|pack`, and the merchant said it is this item" | `inventory_items` | Scan confirm (every non-skip line with a brand) and `POST …/vision/identify/confirm` |
 | `vision_agent_runs` | One stock-take: status, model, turns, tokens, error, the resulting scan | `businesses` | `POST …/vision/stocktakes` creates it; the background run updates it |
 | `vision_agent_steps` | One step of a run: `baseline` (first pass), `thought` or `tool` with its arguments and a short summary | `vision_agent_runs` | The background run, as it goes |
@@ -41,7 +41,7 @@ Identify calls (point to sell) write nothing until the merchant confirms, and th
 
 | Value | Points at | Why it isn't a foreign key |
 |---|---|---|
-| `vision_detections.candidates[].qid`, `confirmed_qid` | A Qore Catalog product | It lives in another service. Tally keeps Qore IDs and match scores only, never catalogue names or prices |
+| `vision_detections.candidates[].qid`, `confirmed_qid` | A Qore Catalog product | It lives in another service. Tally keeps Qore IDs, match scores and match strength (`strong`/`medium`/`low`) only, never catalogue names or prices; a reopened scan fetches those again |
 | `stock_movements.client_movement_id = 'vision:<detection id>'` | The detection that moved stock | It is the idempotency key, so a retried confirm can't move stock twice. The detection's `item_id` + `quantity` say the same thing from the other side |
 | `<scan_id>:<position>` | The detection, as Qore Catalog's feedback `clientRef` | Sent to `/v1/feedback` and `/v1/images` so retries dedupe on the catalogue side |
 | `tally/crops/<scan_id>/<position>.webp` | The detection's crop in R2 | Object storage; the key is derived, not stored. See [product crops](vision-recognition.md#product-crops) |
@@ -61,8 +61,8 @@ quick scan    POST shelf-scans
 stock-take    POST stocktakes
               → vision_agent_runs (running)
               → vision_agent_steps …  (baseline, then thought / tool per turn)
-              → vision_scans + vision_detections (with evidence)  ─┐
-              → vision_agent_runs.scan_id, status done | fallback ◄┘  (or failed, no scan)
+              → vision_scans + vision_detections (with evidence, review)  ─┐
+              → vision_agent_runs.scan_id, status done | fallback ◄────────┘  (or failed, no scan)
 
 confirm       POST shelf-scans/:scanId/confirm, one transaction
               per line: restock | restore → inventory_items (link Qore ID / unarchive) + stock_movements (restock)
@@ -75,6 +75,9 @@ confirm       POST shelf-scans/:scanId/confirm, one transaction
               after commit, best-effort: catalogue feedback → feedback_sent_at, crop uploads
 
 identify      POST identify/confirm → inventory_item_readings upsert (with a brand)
+
+history       GET stocktakes → vision_agent_runs ∪ vision_scans no run points at, newest first,
+              with detection counts by action (reads only)
 ```
 
 The next scan checks the store before the catalogue: first `inventory_item_readings` (`inventory_match = reading`, branded readings only), then items linked to a candidate's Qore ID (`catalogue`), then hand-typed item names (`name`). That's why confirming once makes the same product show as **In store** next time.
@@ -82,7 +85,7 @@ The next scan checks the store before the catalogue: first `inventory_item_readi
 ## What the database enforces
 
 - **Scan status:** `open` or `confirmed`, and `confirmed_at` is set exactly when confirmed. `image_sha256` is 64 hex characters.
-- **Detection:** `position >= 0` and unique per scan. `confidence` is `high`, `medium` or `low`. `count_source` is `sam` or `spark`. Counts are not negative. The name is 1 to 200 characters.
+- **Detection:** `position >= 0` and unique per scan. `confidence` is `high`, `medium` or `low`. `count_source` is `sam` or `spark`. Counts are not negative. The name is 1 to 200 characters, and `review`, when set, 1 to 500.
 - **Match:** `inventory_item_id` and `inventory_match` are both set or both null.
 - **Decision:** `action`, `outcome`, `decided_by` and `decided_at` are all set or all null. `skip` ⇔ `removed`. Every decision except `skip` has an `item_id`. `confirmed_qid` matches the Qore ID format.
 - **Run:** status is `running`, `done`, `fallback` or `failed`, and `finished_at` is null exactly while running. Turns and tokens are not negative.
