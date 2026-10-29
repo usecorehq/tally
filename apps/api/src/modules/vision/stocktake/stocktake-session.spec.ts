@@ -67,6 +67,8 @@ describe("StocktakeSession", () => {
       { type: "input_image", image_url: "data:image/webp;base64,AAAA" },
     ]);
     expect(deps.zoom).toHaveBeenCalledWith(box(100));
+    // The trace names the product, never box coordinates.
+    expect(r.summary).toBe('read the label of "Garri" up close');
     for (let i = 1; i < STOCKTAKE_LIMITS.maxZooms; i++) await s.execute("zoom", '{"line":1}', 1);
     expect((await s.execute("zoom", '{"line":1}', 2)).summary).toBe("zoom refused: budget");
   });
@@ -107,6 +109,20 @@ describe("StocktakeSession", () => {
     expect(s.detections()[0]).toMatchObject({ count: 2, countSource: "spark" });
     await s.execute("record_line", '{"line":0,"brand":"Closeup","name":"Toothpaste","pack":"","use_counted":true}', 2);
     expect(s.detections()[0]).toMatchObject({ count: 4, countSource: "sam" });
+  });
+
+  it("a low SAM count from the first pass is flagged and the zoom goes to Spark's boxes", async () => {
+    const products = [product({ brand: "Golden", name: "Syrup", count: 3, boxes: [box(10), box(20), box(30)] })];
+    const deps: StocktakeDeps = {
+      searchCatalogue: jest.fn(async () => []),
+      countUnits: jest.fn(async () => []),
+      zoom: jest.fn(async () => "data:image/webp;base64,AAAA"),
+    };
+    const s = new StocktakeSession(products, [match("0", [])], new Map([[0, [box(500)]]]), indexInventory([], []), deps);
+    expect(s.checklist()).toContain("[CHECK]");
+    expect(s.detections()[0]).toMatchObject({ count: 3, countSource: "spark", review: expect.stringContaining("Counts disagree: read 3, SAM found 1") });
+    await s.execute("zoom", '{"line":0}', 1);
+    expect(deps.zoom).toHaveBeenCalledWith(box(10));
   });
 
   it("use_counted without a count is refused", async () => {
