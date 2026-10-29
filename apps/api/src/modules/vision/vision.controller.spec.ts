@@ -15,6 +15,9 @@ import { R2Storage } from "../media/r2-storage";
 import { VisionRepository } from "./vision.repository";
 import { STOCKTAKE_DEADLINES, VisionService } from "./vision.service";
 
+/** A stored crop of the given size, as R2 would return it. */
+const webp = (width: number, height: number) => sharp({ create: { width, height, channels: 3, background: "#c33" } }).webp().toBuffer();
+
 // Real guard, controller and service; the business lookup, the catalogue and
 // the Meta Model API (global fetch) are mocked. Live behaviour is checked with
 // scripts/vision-smoke.mjs.
@@ -111,7 +114,7 @@ async function app(apiKey: string | undefined) {
   const media = {
     enabled: false,
     put: jest.fn(async (_key: string, _body: Uint8Array, _type: string) => undefined),
-    get: jest.fn(async (_key: string) => new Uint8Array([1, 2, 3]) as Uint8Array | null),
+    get: jest.fn(async (_key: string) => (await webp(400, 600)) as Uint8Array | null),
   };
   const config: Record<string, unknown> = { "supabase.jwtSecret": SECRET, "meta.apiKey": apiKey, "meta.baseUrl": "https://api.meta.ai/v1" };
   const moduleRef = await Test.createTestingModule({
@@ -223,19 +226,21 @@ describe("VisionController shelf-scans (HTTP)", () => {
     expect(res.body.detections[0]).toMatchObject({ count: 1, countSource: "spark", sparkCount: 1, samCount: null });
   });
 
-  it("stores one crop per detection in R2 when it is configured; a tiny box gets none", async () => {
+  it("stores one crop per detection in R2 when it is configured, small ones too; a tiny box gets none", async () => {
     media.enabled = true;
     media.put.mockClear();
     try {
       const photo = await sharp({ create: { width: 1000, height: 1000, channels: 3, background: "#c33" } }).jpeg().toBuffer();
       const big = { ...peak, boxes: [{ x_min: 100, y_min: 100, x_max: 600, y_max: 700 }] };
       const tiny = { ...peak, name: "Tiny", boxes: [{ x_min: 900, y_min: 900, x_max: 920, y_max: 930 }] };
-      fetchSpy.mockImplementation(metaApi(() => sparkReply([big, tiny]), () => samReply("")));
+      // ~85 x 106 px: under Qore Catalog's 160 px, still kept for Tally's own dataset.
+      const small = { ...peak, name: "Small", boxes: [{ x_min: 700, y_min: 100, x_max: 780, y_max: 200 }] };
+      fetchSpy.mockImplementation(metaApi(() => sparkReply([big, tiny, small]), () => samReply("")));
       const res = await post().set(auth).attach("image", photo, "shelf.jpg").expect(200);
-      expect(res.body.cropsStored).toBe(1);
-      expect(media.put).toHaveBeenCalledTimes(1);
-      const [key, body, type] = media.put.mock.calls[0]!;
-      expect(key).toBe("tally/crops/scan-1/0.webp");
+      expect(res.body.cropsStored).toBe(2);
+      expect(media.put).toHaveBeenCalledTimes(2);
+      expect(media.put.mock.calls.map(([key]) => key).sort()).toEqual(["tally/crops/scan-1/0.webp", "tally/crops/scan-1/2.webp"]);
+      const [, body, type] = media.put.mock.calls.find(([key]) => key.endsWith("/0.webp"))!;
       expect(type).toBe("image/webp");
       expect((await sharp(Buffer.from(body)).metadata()).format).toBe("webp");
     } finally {
@@ -397,7 +402,7 @@ describe("VisionController confirm + get (HTTP)", () => {
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.media.get).toHaveBeenCalledWith(`tally/crops/${SCAN}/0.webp`);
       expect(ctx.catalog.client.uploadImage).toHaveBeenCalledWith({
-        file: new Uint8Array([1, 2, 3]),
+        file: expect.any(Uint8Array),
         filename: "0.webp",
         qid: "QC-7K2M-9XQ4-R",
         view: "on_shelf",
@@ -424,6 +429,13 @@ describe("VisionController confirm + get (HTTP)", () => {
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
       expect(res.body.images).toEqual({ uploaded: 0, skipped: 2, failed: 0 });
+    });
+
+    it("keeps a crop under 160 px out of Qore Catalog", async () => {
+      ctx.media.get.mockResolvedValueOnce(await webp(120, 300));
+      const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+      expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 1, failed: 0 });
     });
 
     it("an upload failure is counted, not fatal", async () => {
