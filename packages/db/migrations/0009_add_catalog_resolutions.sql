@@ -1,0 +1,4 @@
+ALTER TABLE "tally"."vision_detections" ADD COLUMN "catalog_resolution" text;--> statement-breakpoint
+ALTER TABLE "tally"."vision_detections" ADD COLUMN "catalog_resolved_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "vision_detections_catalog_resolved_idx" ON "tally"."vision_detections" USING btree ("catalog_resolved_at");--> statement-breakpoint
+ALTER TABLE "tally"."vision_detections" ADD CONSTRAINT "vision_detections_catalog_resolution" CHECK ((catalog_resolution is null) = (catalog_resolved_at is null) and (catalog_resolution is null or catalog_resolution in ('created', 'linked', 'dismissed')));

@@ -361,6 +361,9 @@ export const visionDetections = tally.table(
     evidence: jsonb("evidence").$type<{ turn: number; tool: string; summary: string }[]>(),
     // Stock-take agent: why the merchant should look closely; a reopened scan picks nothing for it.
     review: text("review"),
+    // What Qore Catalog's curators did with a new-item line (created, linked, dismissed) and when; null until then.
+    catalogResolution: text("catalog_resolution"),
+    catalogResolvedAt: timestamp("catalog_resolved_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -386,6 +389,12 @@ export const visionDetections = tally.table(
     ),
     check("vision_detections_name_length", sql`char_length(name) between 1 and 200`),
     check("vision_detections_review_length", sql`review is null or char_length(review) between 1 and 500`),
+    check(
+      "vision_detections_catalog_resolution",
+      sql`(catalog_resolution is null) = (catalog_resolved_at is null) and (catalog_resolution is null or catalog_resolution in ('created', 'linked', 'dismissed'))`,
+    ),
+    // The resolutions cursor is the latest resolved_at.
+    index("vision_detections_catalog_resolved_idx").on(t.catalogResolvedAt),
     foreignKey({
       name: "vision_detections_item_fk",
       columns: [t.businessId, t.itemId],
