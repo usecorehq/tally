@@ -71,6 +71,8 @@ erDiagram
         timestamptz feedback_sent_at
         jsonb evidence "agent tool calls, null for quick scan"
         text review "why to look closely, agent scans only"
+        text catalog_resolution "created | linked | dismissed, new items"
+        timestamptz catalog_resolved_at "resolutions cursor"
     }
     INVENTORY_ITEM_READINGS {
         uuid id PK
