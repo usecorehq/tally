@@ -88,6 +88,8 @@ export type ShelfScanResult = {
   confirmedAt?: string | null;
   /** False when some candidate names and prices couldn't be fetched again. */
   candidateDetails?: boolean;
+  /** The stored shelf photo on reopen (short-lived link); null for scans from before photos were kept. */
+  photoUrl?: string | null;
 };
 
 /** A stored scan, as the API returns it on reopen. */

@@ -94,7 +94,7 @@ export const STOCKTAKE_TOOLS = [
     type: "function",
     name: "record_line",
     description:
-      "Record your conclusion for a line. brand, name and pack are the label exactly as printed on the pack (never copy the catalogue's product name); pack is the printed size or quantity such as '400g', '50cl', 'x12', never the container type ('' if not printed). qid is the catalogue product you matched: only one returned by search_catalogue or listed for the line. If you cannot resolve it, give unresolved_reason instead of a qid. use_counted: true to take count_units' count instead of the first-pass count.",
+      "Record your conclusion for a line. brand, name and pack are the label exactly as printed on the pack (never copy the catalogue's product name); pack is the printed size or quantity such as '400g', '50cl', 'x12', never the container type ('' if not printed). qid is the catalogue product you matched: only one returned by search_catalogue or listed for the line, and only when its brand, size and flavour match the label. If you cannot resolve it, give unresolved_reason instead of a qid. use_counted: true to take count_units' count instead of the first-pass count.",
     parameters: obj(
       { line: int, brand: str, name: str, pack: str, qid: str, unresolved_reason: str, use_counted: { type: "boolean" } },
       ["line", "brand", "name", "pack"],
@@ -291,6 +291,11 @@ export class StocktakeSession {
     if (chosen && read && chosen.size && !sameSize(read, chosen.size)) {
       return `${qid} is ${chosen.size.value}${chosen.size.unit} but the pack says ${reading.pack}. Pick the matching size or leave qid empty.`;
     }
+    const label = variants(`${reading.name} ${reading.pack}`);
+    const product = chosen ? variants(`${chosen.name} ${chosen.variantLabel ?? ""}`) : [];
+    if (label.length && product.length && !product.some((v) => label.includes(v))) {
+      return `${qid} is ${product.join("/")} but the label says ${label.join("/")}. Pick the matching flavour or leave qid empty.`;
+    }
     return null;
   }
 
@@ -370,6 +375,20 @@ function sameBrand(read: string, catalogue: string): boolean {
   const a = norm(read);
   const b = norm(catalogue);
   return a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+}
+
+// Flavour and variant words that make two same-brand products different (orange jam is not peach jam).
+const VARIANT_WORDS = new Set(
+  (
+    "orange peach strawberry raspberry blackcurrant apricot mango pineapple apple banana lemon lime cherry grape guava " +
+    "coconut vanilla chocolate caramel honey ginger cinnamon mint coffee chicken beef shrimp crayfish onion pepper " +
+    "tomato curry original classic plain unsweetened sweetened salted unsalted spicy hot mild menthol herbal"
+  ).split(" "),
+);
+
+/** The flavour/variant words in a name, in order; "chocolate" from "Dark Chocolate Spread". */
+function variants(text: string): string[] {
+  return [...new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => VARIANT_WORDS.has(w)))];
 }
 
 const UNITS: Record<string, { base: "g" | "ml"; factor: number }> = {

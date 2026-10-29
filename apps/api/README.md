@@ -72,6 +72,8 @@ node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs --template ~
 # 2. Correct it by hand: brand/name/pack as printed, every unit counted, the right Qore ID (or null)
 # 3. Benchmark a folder (or a list of photos); photos without a truth file are skipped
 node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs ~/shelves --out ~/shelves/results.json
+# 4. Or compare the single read with the experimental shelf sweep (no agent run)
+node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs ~/shelves --sweep --out ~/shelves/sweep.json
 ```
 
 Truth file (`shelf1.truth.json` or `shelf1.jpg.truth.json`):
@@ -83,6 +85,7 @@ Truth file (`shelf1.truth.json` or `shelf1.jpg.truth.json`):
 - **Runs:** per photo, the quick scan, then the agent starting from that same first pass with the same tools and deps as `VisionService.runStocktake`. The agent's time, tokens and cost include the first pass. If the agent throws, it is scored on the quick-scan fallback and marked `fallback`.
 - **Matching** (`src/modules/vision/benchmark-score.ts`): each detection pairs with at most one truth product by word overlap of normalised brand + name (≥ 0.5; brands, when both are read, must share a word). Extra lines for an already-paired product count against precision.
 - **Scores:** product recall and precision; brand read right (case and spaces ignored); name read right (same words, any order); Qore ID right / wrong / missing (only where the truth has one); count mean absolute error and share within ±20%; time; tokens; estimated $ (Muse Spark Standard $1.25/M in, $4.25/M out; SAM $2.50 per 1,000 images; catalogue calls not priced).
+- **Shelf sweep (`--sweep`, experimental):** compares the single read with the [shelf sweep](../../docs/architecture/vision-recognition.md#shelf-sweep-experimental) instead of running the agent. Both feed the same SAM count and catalogue match. Add `--grid` to skip the layout call and use the fixed 3 × 2 grid. The sweep's time, tokens and $ include its layout and every cell call (`Spark calls` column), and each photo lists every cell's coverage (read / empty / unreadable). Expect several times the quick scan's tokens. Use full-resolution phone photos: on small photos (under ~1500 px) the cells have little extra detail to offer.
 - **Variance:** The read varies a lot run to run, so run each photo more than once when benchmarking.
 - **Output:** Markdown tables (per photo, totals, per product) on stdout; full JSON (detections, pairs, agent steps) to `--out`, default the OS temp dir. `--out` inside the repo is refused. Keep photos, truth files and results out of the repo.
 
@@ -111,6 +114,7 @@ src/
   modules/vision/             Camera recognition: shelf scan (Muse Spark, SAM 3.1, catalogue), confirm, identify, crops
   modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
   modules/vision/benchmark-score.ts  Scoring for scripts/vision-benchmark.mjs (not used by routes)
+  modules/vision/shelf-sweep.ts      Experimental row-by-row shelf read (benchmark only, not used by routes)
   modules/media/              R2Storage: Tally's files in Cloudflare R2 (aws4fetch, server-only)
   modules/health/             GET /api/health
 ```

@@ -243,7 +243,7 @@ export function ReviewTable({
             variant="info"
             message={[
               decidedEarlier > 0 && `${decidedEarlier} line${decidedEarlier === 1 ? " was" : "s were"} confirmed earlier and ${decidedEarlier === 1 ? "isn't" : "aren't"} shown.`,
-              !photoUrl && rows.length > 0 && "The shelf photo stays on the device it was taken on; each line shows its own crop.",
+              !photoUrl && rows.length > 0 && "No shelf photo was kept for this stock-take; each line shows its own crop.",
             ]
               .filter(Boolean)
               .join(" ")}

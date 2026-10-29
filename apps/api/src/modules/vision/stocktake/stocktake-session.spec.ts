@@ -220,6 +220,17 @@ describe("StocktakeSession", () => {
       expect((await s2.execute("record_line", '{"line":1,"brand":"closeup","name":"Toothpaste","pack":"","qid":"QC-UUUU-UUUU-U"}', 2)).output).toBe("Recorded.");
     });
 
+    it("a matched product must be the flavour that was read (orange is not peach)", async () => {
+      const peach = candidate("QC-JJJJ-JJJJ-J", { name: "Stute No Sugar Added Peach Jam 430g", brand: { slug: "stute", name: "Stute" } });
+      const { s } = session({ searchCatalogue: jest.fn(async () => [peach]) });
+      await s.execute("zoom", '{"line":1}', 1);
+      await s.execute("search_catalogue", '{"line":1,"name":"jam"}', 1);
+      const r = await s.execute("record_line", '{"line":1,"brand":"Stute","name":"No Sugar Added Thick Cut Orange","pack":"","qid":"QC-JJJJ-JJJJ-J"}', 2);
+      expect(r.output).toBe("Refused: QC-JJJJ-JJJJ-J is peach but the label says orange. Pick the matching flavour or leave qid empty.");
+      // No flavour on the label, or the same one: no objection.
+      expect((await s.execute("record_line", '{"line":1,"brand":"Stute","name":"Peach Jam","pack":"","qid":"QC-JJJJ-JJJJ-J"}', 3)).output).toBe("Recorded.");
+    });
+
     it("a matched product must be the size that was read (Peak 900g is not Peak 400g)", async () => {
       const p400 = candidate("QC-PPPP-PPPP-P", { brand: { slug: "peak", name: "Peak" }, size: { value: 400, unit: "g" } });
       const { s } = session({ searchCatalogue: jest.fn(async () => [p400]) });

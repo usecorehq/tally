@@ -14,7 +14,7 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
-import { bestBox, cropKey, cropSize, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE } from "./crops";
+import { bestBox, cropKey, cropSize, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, shelfPhotoKey, storablePhoto } from "./crops";
 import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
@@ -116,6 +116,8 @@ export type ShelfScanResult = {
   catalogueAvailable: boolean;
   /** Product crops stored in R2 for this scan (0 when R2 isn't configured). */
   cropsStored: number;
+  /** The shelf photo was stored in R2 with the scan (false when R2 is off or the upload failed). */
+  photoStored: boolean;
   /** samMs and matchMs run in parallel after readMs. */
   timings: { readMs: number; samMs: number; matchMs: number; totalMs: number };
 };
@@ -136,6 +138,8 @@ export type ScanView = {
   catalogueAvailable: boolean;
   /** False when some candidate names and prices couldn't be fetched from Qore Catalog (the lines still work). */
   candidateDetails: boolean;
+  /** The stored shelf photo (presigned, an hour); null when R2 is off or no photo was kept for this scan. */
+  photoUrl: string | null;
   detections: (Omit<Detection, "candidates"> & {
     position: number;
     candidates: ScanCandidate[];
@@ -212,7 +216,7 @@ export class VisionService implements OnApplicationBootstrap {
     const a = await this.analyse(businessId, userId, image, type);
     const detections = buildDetections(a.products, a.matches, a.index, a.samBoxes);
     const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections);
-    const cropsStored = await this.storeCrops(scanId, image, detections);
+    const [cropsStored, photoStored] = await Promise.all([this.storeCrops(scanId, image, detections), this.storePhoto(scanId, image)]);
     return {
       scanId,
       model: SHELF_MODEL,
@@ -220,6 +224,7 @@ export class VisionService implements OnApplicationBootstrap {
       detections,
       catalogueAvailable: a.catalogueAvailable,
       cropsStored,
+      photoStored,
       timings: { ...a.timings, totalMs: Date.now() - started },
     };
   }
@@ -390,7 +395,10 @@ export class VisionService implements OnApplicationBootstrap {
       await this.finish(runId, { status: "failed", error: `Could not save the result: ${(err as Error).message}` });
       return;
     }
-    const cropsStored = await withDeadline(this.storeCrops(scanId, image, detections), limits.writeMs, "crops").catch(() => 0);
+    const [cropsStored, photoStored] = await Promise.all([
+      withDeadline(this.storeCrops(scanId, image, detections), limits.writeMs, "crops").catch(() => 0),
+      withDeadline(this.storePhoto(scanId, image), limits.writeMs, "photo").catch(() => false),
+    ]);
     this.stocktakeResults.set(runId, {
       scanId,
       model: STOCKTAKE_MODEL,
@@ -398,6 +406,7 @@ export class VisionService implements OnApplicationBootstrap {
       detections,
       catalogueAvailable: a.catalogueAvailable,
       cropsStored,
+      photoStored,
       timings: { ...a.timings, totalMs: Date.now() - started },
     });
     await this.finish(runId, { status: end.status, scanId, turns: end.turns, inputTokens: end.input, outputTokens: end.output, error: end.error });
@@ -424,6 +433,18 @@ export class VisionService implements OnApplicationBootstrap {
    * Stores one crop per detection in R2 (tally/crops/<scanId>/<position>.webp), read back on confirm.
    * Best-effort: a crop failure never fails the scan.
    */
+  /** The shelf photo, kept for good as the scan's audit record. Best-effort: a failure never fails the scan. */
+  private async storePhoto(scanId: string, image: Buffer): Promise<boolean> {
+    if (!this.media.enabled) return false;
+    try {
+      await this.media.put(shelfPhotoKey(scanId), await storablePhoto(image), "image/jpeg");
+      return true;
+    } catch (err) {
+      this.logger.warn(`Shelf photo not stored for scan ${scanId}: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
   private async storeCrops(scanId: string, image: Buffer, detections: Detection[]): Promise<number> {
     if (!this.media.enabled || detections.length === 0) return 0;
     try {
@@ -590,9 +611,16 @@ export class VisionService implements OnApplicationBootstrap {
     const [items, details] = await Promise.all([this.repo.scanItems(businessId, itemIds, qids), this.candidateDetails(qids, fresh)]);
     const byId = new Map(items.map((i) => [i.id, i]));
     const activeByQid = new Map(items.filter((i) => i.coreQid && !i.archived).map((i) => [i.coreQid!, i.id]));
-    const cropUrls = this.media.enabled
-      ? await Promise.all(scan.detections.map((d) => this.media.presignedGetUrl(cropKey(scanId, d.position), CROP_URL_SECONDS).catch(() => null)))
-      : scan.detections.map(() => null);
+    const [cropUrls, photoUrl] = this.media.enabled
+      ? await Promise.all([
+          Promise.all(scan.detections.map((d) => this.media.presignedGetUrl(cropKey(scanId, d.position), CROP_URL_SECONDS).catch(() => null))),
+          // Scans from before photos were kept have none.
+          this.media
+            .exists(shelfPhotoKey(scanId))
+            .then((found) => (found ? this.media.presignedGetUrl(shelfPhotoKey(scanId), CROP_URL_SECONDS) : null))
+            .catch(() => null),
+        ])
+      : [scan.detections.map(() => null), null];
 
     return {
       scanId: scan.id,
@@ -603,6 +631,7 @@ export class VisionService implements OnApplicationBootstrap {
       countModel: scan.countModel,
       catalogueAvailable: scan.catalogueAvailable,
       candidateDetails: qids.every((q) => details.has(q)),
+      photoUrl,
       detections: scan.detections.map((d, i) => {
         const candidates: ScanCandidate[] = d.candidates.map((c) => {
           const p = details.get(c.qid);

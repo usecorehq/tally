@@ -46,6 +46,7 @@ The pattern from Meta's agent workshop: checks run inside the tools at fixed poi
 | `record_line` | A `CHECK` line, or a changed label, was zoomed into first (waived once the zoom budget is spent) | Refused: "zoom into it first" |
 | `record_line` | The matched product's brand agrees with the brand read ("Close-Up" = "closeup") | Refused: pick a product of that brand or leave qid empty |
 | `record_line` | The matched product's size agrees with the pack read, within 5% (units convert: 0.4kg = 400g) | Refused: pick the matching size or leave qid empty |
+| `record_line` | When both the label and the product name a flavour or variant (orange, vanilla, chicken, original…), they share one | Refused: pick the matching flavour or leave qid empty |
 | `record_line` | `use_counted` has a `count_units` result | Refused |
 | 3 refusals on a line | | **Escalated:** the line is recorded unresolved with `review: "Escalated after 3 refused records: …"` |
 | `record_line` with `unresolved_reason` | | The line keeps its reading and candidates, with `review: "Agent couldn't confirm: <reason>"`, so it sorts first and clients don't pre-select a candidate |

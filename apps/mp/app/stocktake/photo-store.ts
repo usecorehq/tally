@@ -1,7 +1,7 @@
 "use client";
 
-// The API never stores the shelf photo, so this browser keeps a copy per session (run or scan id).
-// Best-effort: private windows and blocked storage just mean a reopened session shows crops instead.
+// A copy of the shelf photo per session (run or scan id), so this browser shows it at once.
+// The API keeps the stored photo too; this cache is best-effort (private windows, blocked storage).
 
 export type StoredPhoto = { blob: Blob; width: number; height: number };
 

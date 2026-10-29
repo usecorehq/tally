@@ -27,7 +27,7 @@ One store per business, Naira only, no VAT. Money is `numeric(12,2)`; Drizzle re
 | `sales` | One checkout: per-business `sale_number`, `completed` or `voided`, `subtotal − discount = total`, `paid_amount` |
 | `sale_items` | Lines of a sale, with `item_name` and `unit_price` copied as sold |
 | `sale_payments` | Money received for a sale: amount and method (`cash`, `transfer`, `card`, `other`); recorded, not processed |
-| `vision_scans` | One shelf photo recognised by the camera flow: status (`open`, `confirmed`), image sha256 and size (the photo itself isn't in the database), models and timings |
+| `vision_scans` | One shelf photo recognised by the camera flow: status (`open`, `confirmed`), image sha256 and size (the photo itself is in R2 at `tally/scans/<scanId>.jpg`, not in the database), models and timings |
 | `vision_detections` | One product found in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates as Qore IDs + scores only, the item the merchant seems to stock, and the merchant's decision (`restock`, `restore`, `add`, `skip`) with its feedback outcome |
 | `vision_agent_runs` | A stock-take agent run: status (`running`, `done`, `fallback`, `failed`), model, turns, tokens, error, the resulting scan |
 | `vision_agent_steps` | The run's audit trail: one row per step (`baseline`, `thought`, `tool`) with tool, arguments and a short summary |

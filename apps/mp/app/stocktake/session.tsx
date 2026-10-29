@@ -130,12 +130,15 @@ function ScanContent({
 }) {
   const router = useRouter();
   const history = <HistoryButton href={historyHref(business.id)} />;
+  // This browser's copy shows at once; otherwise the photo stored with the scan.
+  const photoUrl = photo?.url ?? scan.photoUrl ?? null;
   if (scan.status === "confirmed") {
     return (
       <ConfirmedView
         scan={scan}
         businessName={business.name}
         kind={kind}
+        photoUrl={photoUrl}
         actions={
           <>
             {history}
@@ -157,7 +160,7 @@ function ScanContent({
       result={scan}
       fallback={fallback}
       photo={photo?.blob ?? null}
-      photoUrl={photo?.url ?? null}
+      photoUrl={photoUrl}
       onRestart={() => router.push(newHref(business.id))}
       actions={history}
     />
