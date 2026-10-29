@@ -141,7 +141,7 @@ export const STEPS: AgentStep[] = [
   { turn: 0, kind: "baseline", tool: null, summary: "First pass: 6 products, 30 units", ms: 24100 },
   { turn: 1, kind: "thought", tool: null, summary: "The noodle sachets overlap; the first pass read 7 but the row looks longer. The pasta label is half hidden.", ms: null },
   { turn: 1, kind: "tool", tool: "count_units", summary: 'count "indomie chicken 70g" → 9', ms: 3200 },
-  { turn: 2, kind: "tool", tool: "zoom", summary: "zoomed the blue and yellow pack, bottom left", ms: 1800 },
+  { turn: 2, kind: "tool", tool: "zoom", summary: 'read the label of "Golden Penny Spaghetti" up close', ms: 1800 },
   { turn: 3, kind: "tool", tool: "search_catalogue", summary: 'search "golden penny spaghetti 500g" → 2', ms: 900 },
   { turn: 4, kind: "tool", tool: "find_in_store", summary: "Golden Penny Spaghetti matched your item by name", ms: 300 },
 ];
