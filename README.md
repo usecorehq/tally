@@ -8,6 +8,18 @@
 
 Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile; shelf photo → inventory (see [vision recognition](docs/architecture/vision-recognition.md) and the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
 
+## Why Tally: stock-taking, before and after
+
+The same job, from counting by hand and typing every item to one photo per shelf and a yes from the merchant.
+
+<img src="docs/diagrams/process-reengineering.webp" alt="Stock-taking before and after Tally: a manual count across owner, staff, notebook and inventory app, versus one photo per shelf checked by the stock-take agent and confirmed by the merchant" width="100%">
+
+## How the stock-take agent counts a shelf
+
+Muse Spark reads and plans, SAM 3.1 counts, Qore Catalog names and prices. Tally checks every answer, and the merchant has the final say. Details: [stock-take agent](docs/architecture/stocktake-agent.md) and [vision recognition](docs/architecture/vision-recognition.md).
+
+<img src="docs/diagrams/stock-take-agent.webp" alt="How the stock-take agent counts a shelf: a first pass (Muse Spark reads, SAM 3.1 counts, Qore Catalog matches), an agent loop with zoom, search, store check and recount tools, merchant review, confirm, and the catalogue learning from each decision" width="100%">
+
 ---
 
 ## Built during the Meta hackathon
@@ -84,10 +96,9 @@ packages/
 docs/
   architecture/      Why we built it this way.
   guides/            How to run, migrate, and keep docs current.
-  diagrams/          C4 model, sequences, flows, journeys (mermaid/ source, images/ SVG).
+  diagrams/          Process and agent overviews (.webp), plus C4, sequences, flows and journeys (images/).
 scripts/
   check-secrets.sh   Secret guard (pre-commit hook + CI). See "Secret guard" below.
-  render-diagrams.sh pnpm docs:diagrams.
 .githooks/           pre-commit → scripts/check-secrets.sh --staged.
 ```
 
@@ -145,10 +156,6 @@ pnpm build
 pnpm db:generate --name=<what_changed>
 pnpm db:migrate
 pnpm db:studio
-
-# Docs
-pnpm docs:diagrams                    # re-render every Mermaid diagram
-pnpm docs:diagrams c4-container       # just one
 
 # Secrets
 pnpm check:secrets                    # scan every tracked file for keys

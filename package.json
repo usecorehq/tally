@@ -12,7 +12,6 @@
     "db:migrate": "pnpm --filter @tally/db db:migrate",
     "db:generate": "pnpm --filter @tally/db db:generate",
     "db:studio": "pnpm --filter @tally/db db:studio",
-    "docs:diagrams": "bash scripts/render-diagrams.sh",
     "check:secrets": "bash scripts/check-secrets.sh --tree",
     "test": "turbo run test",
     "db:check": "bash scripts/check-db-drift.sh"
