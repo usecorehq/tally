@@ -72,6 +72,19 @@ export async function stocktakeHistory(businessId: string, limit = 50): Promise<
   }
 }
 
+/** The sidebar's recents: the business in ?business= (else the user's first) and its newest stock-takes. */
+export async function recentStocktakes(business: string | null): Promise<ActionResult<{ businessId: string; entries: HistoryEntry[] }>> {
+  try {
+    const businesses = await api<{ id: string }[]>("/businesses");
+    const businessId = businesses.find((b) => b.id === business)?.id ?? businesses[0]?.id;
+    if (!businessId) return { ok: true, data: { businessId: "", entries: [] } };
+    const entries = await api<HistoryEntry[]>(`${vision(businessId)}/stocktakes?limit=30`);
+    return { ok: true, data: { businessId, entries } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** The quick scan: one synchronous request, ~15–30 s (the API gives up at 45 s). */
 export async function quickScan(businessId: string, form: FormData): Promise<ActionResult<ShelfScanResult>> {
   try {

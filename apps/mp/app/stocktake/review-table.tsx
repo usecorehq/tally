@@ -21,6 +21,7 @@ import {
   cn,
 } from "@tally/ui";
 import { confirmScan } from "./actions";
+import { STOCKTAKE_CHANGED } from "./recents";
 import { cropThumbs } from "./image";
 import { pickFromCandidate, ProductPicker, type Pick } from "./product-picker";
 import type { ActionResult, Candidate, ConfirmResult, Decision, Detection, ShelfScanResult } from "./types";
@@ -184,6 +185,7 @@ export function ReviewTable({
       const res = await (confirm ? confirm(decisions) : confirmScan(businessId, result.scanId, decisions));
       if (res.ok) {
         setOutcome(res.data);
+        window.dispatchEvent(new Event(STOCKTAKE_CHANGED));
         window.scrollTo({ top: 0 });
       } else setError(res.error);
     });

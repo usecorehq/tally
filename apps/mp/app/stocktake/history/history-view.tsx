@@ -16,9 +16,10 @@ import {
   TraySheet,
   type PillTone,
 } from "@tally/ui";
-import { formatDay, formatTime, lagosDay, plural } from "../format";
+import { entrySummary, entryTitle } from "../entry-text";
+import { formatDay, formatTime, lagosDay } from "../format";
 import { LoadFailed } from "../load-failed";
-import { newHref, runHref, scanHref } from "../urls";
+import { newHref, sessionHref } from "../urls";
 import type { HistoryEntry } from "../types";
 
 export const HISTORY_TITLE = "Stock-take history";
@@ -116,15 +117,15 @@ function byDay(entries: HistoryEntry[]): [string, HistoryEntry[]][] {
 function EntryRow({ entry: e, businessId }: { entry: HistoryEntry; businessId: string }) {
   const empty = e.status === "review" && e.lines === 0;
   const status = empty ? { label: "Nothing found", tone: "gray" as const } : STATUS[e.status];
-  const href = e.runId ? runHref(businessId, e.runId) : scanHref(businessId, e.scanId!);
+  const href = sessionHref(businessId, e.id);
   return (
     <Link href={href} className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-gray-50/70 focus-visible:bg-gray-50/70 focus-visible:outline-none">
       <IconTile icon={e.kind === "stocktake" ? "Stars" : "Gallery-Add"} active={e.status === "running"} className="h-10 w-10 shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-gray-900">
-          {e.kind === "stocktake" ? "Stock-take" : "Quick scan"} <span className="font-normal tabular-nums text-gray-500">· {formatTime(e.startedAt)}</span>
+        <p className="truncate text-sm font-medium text-gray-900">{entryTitle(e)}</p>
+        <p className="mt-0.5 break-words text-[13px] text-gray-500">
+          <span className="tabular-nums">{e.kind === "stocktake" ? "Stock-take" : "Quick scan"} · {formatTime(e.startedAt)}</span> · {entrySummary(e)}
         </p>
-        <p className="mt-0.5 break-words text-[13px] text-gray-500">{summary(e)}</p>
       </div>
       <Pill tone={status.tone} className="shrink-0">
         {status.label}
@@ -134,35 +135,12 @@ function EntryRow({ entry: e, businessId }: { entry: HistoryEntry; businessId: s
   );
 }
 
-/** One line under the entry: what it found, or what was decided. */
-function summary(e: HistoryEntry): string {
-  if (e.status === "running") return "The agent is still working on it";
-  if (e.status === "failed") return e.error ?? "It stopped before finishing";
-  const lines = plural(e.lines ?? 0, "line");
-  if (e.status === "review") {
-    if (e.lines === 0) return "No products found in the photo";
-    const left = (e.lines ?? 0) - Object.values(e.decided).reduce((a, b) => a + b, 0);
-    return `${lines}, ${left} to confirm${e.fallback ? " · first pass only" : ""}`;
-  }
-  const parts = (
-    [
-      ["added", e.decided.add],
-      ["restocked", e.decided.restock],
-      ["restored", e.decided.restore],
-      ["skipped", e.decided.skip],
-    ] as const
-  )
-    .filter(([, n]) => n > 0)
-    .map(([word, n]) => `${n} ${word}`);
-  return [lines, ...parts].join(" · ");
-}
-
 export function NewStocktakeButton({ href }: { href: string }) {
   return (
     <Button asChild>
       <Link href={href}>
         <SolarIcon name="Gallery-Add" iconStyle="Bold" size={16} />
-        New stock-take
+        Take new stock
       </Link>
     </Button>
   );

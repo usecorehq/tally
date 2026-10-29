@@ -106,6 +106,8 @@ export type HistoryEntry = {
   error: string | null;
   lines: number | null;
   decided: { add: number; restock: number; restore: number; skip: number };
+  /** Up to 3 distinct products read: the entry's title. */
+  preview: string[];
 };
 
 export type RunStatus = "running" | "done" | "fallback" | "failed";

@@ -3,5 +3,5 @@ const q = (businessId: string) => `?business=${encodeURIComponent(businessId)}`;
 
 export const newHref = (businessId: string) => `/stocktake${q(businessId)}`;
 export const historyHref = (businessId: string) => `/stocktake/history${q(businessId)}`;
-export const runHref = (businessId: string, runId: string) => `/stocktake/${encodeURIComponent(runId)}${q(businessId)}`;
-export const scanHref = (businessId: string, scanId: string) => `/stocktake/scan/${encodeURIComponent(scanId)}${q(businessId)}`;
+/** A run id or a quick scan's id: the page tells them apart. */
+export const sessionHref = (businessId: string, id: string) => `/stocktake/history/${encodeURIComponent(id)}${q(businessId)}`;

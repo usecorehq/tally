@@ -24,7 +24,7 @@ import { quickScan, startStocktake } from "./actions";
 import { resizeForScan } from "./image";
 import { PICK_SUBTITLE, PICK_TITLE } from "./copy";
 import { runKey, savePhoto, scanKey } from "./photo-store";
-import { historyHref, runHref, scanHref } from "./urls";
+import { historyHref, sessionHref } from "./urls";
 import type { AgentStep } from "./types";
 
 export type Business = { id: string; name: string };
@@ -82,7 +82,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
       return;
     }
     await savePhoto(scanKey(res.data.scanId), kept());
-    router.push(scanHref(businessId, res.data.scanId));
+    router.push(sessionHref(businessId, res.data.scanId));
   }
 
   async function runAgent() {
@@ -96,7 +96,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
     }
     // The run continues on the server; its own URL polls it and survives a refresh.
     await savePhoto(runKey(started.data.runId), kept());
-    router.push(runHref(businessId, started.data.runId));
+    router.push(sessionHref(businessId, started.data.runId));
   }
 
   if (phase.name === "working") {

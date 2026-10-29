@@ -39,7 +39,7 @@ function usePhoto(key: string): Photo | null | undefined {
   return photo;
 }
 
-/** A stock-take run at /stocktake/<runId>: progress while it runs, then its scan; polling resumes after a refresh. */
+/** A stock-take run at /stocktake/history/<runId>: progress while it runs, then its scan; polling resumes after a refresh. */
 export function RunSession({ business, initial }: { business: Business; initial: StocktakeRun }) {
   const [data, setData] = useState(initial);
   const [pollError, setPollError] = useState<string | null>(null);
@@ -108,7 +108,7 @@ export function RunSession({ business, initial }: { business: Business; initial:
   return <ScanContent business={business} scan={data.result} kind="stocktake" fallback={data.run.status === "fallback"} photo={photo} />;
 }
 
-/** A quick scan at /stocktake/scan/<scanId>. */
+/** A quick scan at /stocktake/history/<scanId>. */
 export function ScanSession({ business, scan }: { business: Business; scan: ScanView }) {
   const photo = usePhoto(scanKey(scan.scanId));
   if (photo === undefined) return null;
@@ -142,7 +142,7 @@ function ScanContent({
             <Button asChild>
               <Link href={newHref(business.id)}>
                 <SolarIcon name="Gallery-Add" iconStyle="Bold" size={16} />
-                New stock-take
+                Take new stock
               </Link>
             </Button>
           </>
@@ -184,7 +184,7 @@ export function RunFailed({ business, startedAt, error }: { business: Business; 
           <Button asChild className="mt-2" size="lg">
             <Link href={newHref(business.id)}>
               <SolarIcon name="Gallery-Add" iconStyle="Bold" size={16} />
-              Start a new stock-take
+              Take new stock
             </Link>
           </Button>
         </TraySheet>

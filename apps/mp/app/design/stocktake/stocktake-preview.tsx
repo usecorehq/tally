@@ -13,6 +13,7 @@ import { HistorySkeleton, HistoryView } from "../../stocktake/history/history-vi
 import { SessionSkeleton } from "../../stocktake/session-skeleton";
 import { RunFailed } from "../../stocktake/session";
 import { HistoryButton } from "../../stocktake/stocktake-flow";
+import { RecentsList } from "../../stocktake/recents";
 import type { Variant } from "./variants";
 import {
   DETECTIONS,
@@ -76,6 +77,16 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
 
   if (variant === "loading") return <PickSkeleton />;
 
+  if (variant.startsWith("recents")) {
+    if (now === null) return null;
+    const data = variant === "recents-loading" ? null : variant === "recents-failed" ? "failed" : { businessId: "b1", entries: variant === "recents-empty" ? [] : history(now) };
+    // The sidebar's stock-take section (stocktake/recents.tsx), at the sidebar's width.
+    return (
+      <div className="flex h-[560px] w-60 flex-col rounded-[18px] bg-gray-100 px-3 py-3">
+        <RecentsList data={data as Parameters<typeof RecentsList>[0]["data"]} active="r2" newActive={false} onRetry={noop} />
+      </div>
+    );
+  }
   if (variant === "history-loading") return <HistorySkeleton />;
   if (variant.startsWith("history")) {
     if (now === null) return null;

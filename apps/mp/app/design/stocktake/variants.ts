@@ -34,5 +34,9 @@ export const VARIANTS = [
   "session-confirmed",
   "session-failed",
   "session-not-found",
+  "recents",
+  "recents-loading",
+  "recents-empty",
+  "recents-failed",
 ] as const;
 export type Variant = (typeof VARIANTS)[number];
