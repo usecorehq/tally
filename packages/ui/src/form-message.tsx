@@ -7,20 +7,25 @@ interface FormMessageProps {
   className?: string;
 }
 
-const variantConfig: Record<NonNullable<FormMessageProps["variant"]>, { container: string; icon: SolarIconName }> = {
-  error: { container: "bg-red-50 text-red-700 border border-red-100", icon: "Danger-Circle" },
-  success: { container: "bg-green-50 text-green-700 border border-green-100", icon: "Check-Circle" },
-  warning: { container: "bg-amber-50 text-amber-700 border border-amber-100", icon: "Danger-Triangle" },
-  info: { container: "bg-blue-50 text-blue-700 border border-blue-100", icon: "Info-Circle" },
+// V2 tinted notice (v2-kit V2Notice): 14px, 13/20 text, no border. Colour is
+// for meaning: info is the neutral grey well.
+const variantConfig: Record<NonNullable<FormMessageProps["variant"]>, { container: string; icon: SolarIconName; ink: string }> = {
+  error: { container: "bg-red-50 text-red-800", icon: "Danger-Circle", ink: "text-red-600" },
+  success: { container: "bg-emerald-50 text-emerald-800", icon: "Check-Circle", ink: "text-emerald-600" },
+  warning: { container: "bg-amber-50 text-amber-900", icon: "Danger-Triangle", ink: "text-amber-700" },
+  info: { container: "bg-gray-100 text-gray-700", icon: "Info-Circle", ink: "text-gray-900" },
 };
 
 export function FormMessage({ message, variant = "error", className }: FormMessageProps) {
   if (!message) return null;
-  const { container, icon } = variantConfig[variant];
+  const { container, icon, ink } = variantConfig[variant];
   return (
-    <div role={variant === "error" ? "alert" : "status"} className={cn("flex items-start gap-2.5 rounded-xl p-3 text-sm", container, className)}>
-      <SolarIcon name={icon} size={16} className="mt-0.5" />
-      <span>{message}</span>
+    <div
+      role={variant === "error" ? "alert" : "status"}
+      className={cn("flex items-start gap-2.5 rounded-[14px] px-4 py-3 text-[13px] leading-5", container, className)}
+    >
+      <SolarIcon name={icon} iconStyle="Outline" size={18} className={cn("shrink-0", ink)} />
+      <span className="min-w-0 break-words">{message}</span>
     </div>
   );
 }

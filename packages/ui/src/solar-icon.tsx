@@ -1,133 +1,46 @@
-// Solar icons (Qorelly V1 rule: Bold = active, Outline = inactive).
-// Static registry: each glyph is a generated component in icons/{Bold,Outline}/<Name>.tsx,
-// copied from Qorelly packages/ui/src/icons/generated. To add one, copy BOTH files and add
-// the name to ICON_NAMES — a missing name renders a grey placeholder box.
-import type { SVGProps } from "react";
+// Icons by Solar name, drawn in Phosphor as Qorelly Design V2 does: Light for
+// every name (Bold and Outline both), Fill for a selected state (the active nav
+// item). A check always draws filled. Glyphs: icons/phosphor.ts.
+import { createElement } from "react";
 import { cn } from "./lib/cn";
+import { FILL, LIGHT, SOLAR_TO_PHOSPHOR } from "./icons/phosphor";
 
-import BoldAddCircle from "./icons/Bold/Add-Circle";
-import BoldAltArrowDown from "./icons/Bold/Alt-Arrow-Down";
-import BoldAltArrowLeft from "./icons/Bold/Alt-Arrow-Left";
-import BoldAltArrowRight from "./icons/Bold/Alt-Arrow-Right";
-import BoldBox from "./icons/Bold/Box";
-import BoldBuildings from "./icons/Bold/Buildings";
-import BoldCheckCircle from "./icons/Bold/Check-Circle";
-import BoldChefHat from "./icons/Bold/Chef-Hat";
-import BoldCloseCircle from "./icons/Bold/Close-Circle";
-import BoldDangerCircle from "./icons/Bold/Danger-Circle";
-import BoldDangerTriangle from "./icons/Bold/Danger-Triangle";
-import BoldDelivery from "./icons/Bold/Delivery";
-import BoldFileText from "./icons/Bold/File-Text";
-import BoldGalleryAdd from "./icons/Bold/Gallery-Add";
-import BoldInfoCircle from "./icons/Bold/Info-Circle";
-import BoldMirror from "./icons/Bold/Mirror";
-import BoldPen from "./icons/Bold/Pen";
-import BoldPills from "./icons/Bold/Pills";
-import BoldRefresh from "./icons/Bold/Refresh";
-import BoldShop from "./icons/Bold/Shop";
-import BoldStars from "./icons/Bold/Stars";
-import BoldTag from "./icons/Bold/Tag";
-import BoldWidget5 from "./icons/Bold/Widget-5";
-import OutlineAddCircle from "./icons/Outline/Add-Circle";
-import OutlineAltArrowDown from "./icons/Outline/Alt-Arrow-Down";
-import OutlineAltArrowLeft from "./icons/Outline/Alt-Arrow-Left";
-import OutlineAltArrowRight from "./icons/Outline/Alt-Arrow-Right";
-import OutlineBox from "./icons/Outline/Box";
-import OutlineBuildings from "./icons/Outline/Buildings";
-import OutlineCheckCircle from "./icons/Outline/Check-Circle";
-import OutlineChefHat from "./icons/Outline/Chef-Hat";
-import OutlineCloseCircle from "./icons/Outline/Close-Circle";
-import OutlineDangerCircle from "./icons/Outline/Danger-Circle";
-import OutlineDangerTriangle from "./icons/Outline/Danger-Triangle";
-import OutlineDelivery from "./icons/Outline/Delivery";
-import OutlineFileText from "./icons/Outline/File-Text";
-import OutlineGalleryAdd from "./icons/Outline/Gallery-Add";
-import OutlineInfoCircle from "./icons/Outline/Info-Circle";
-import OutlineMirror from "./icons/Outline/Mirror";
-import OutlinePen from "./icons/Outline/Pen";
-import OutlinePills from "./icons/Outline/Pills";
-import OutlineRefresh from "./icons/Outline/Refresh";
-import OutlineShop from "./icons/Outline/Shop";
-import OutlineStars from "./icons/Outline/Stars";
-import OutlineTag from "./icons/Outline/Tag";
-import OutlineWidget5 from "./icons/Outline/Widget-5";
+export const ICON_NAMES = Object.keys(SOLAR_TO_PHOSPHOR) as SolarIconName[];
+export type SolarIconName = keyof typeof SOLAR_TO_PHOSPHOR;
 
-export const ICON_NAMES = ["Add-Circle", "Alt-Arrow-Down", "Alt-Arrow-Left", "Alt-Arrow-Right", "Box", "Buildings", "Check-Circle", "Chef-Hat", "Close-Circle", "Danger-Circle", "Danger-Triangle", "Delivery", "File-Text", "Gallery-Add", "Info-Circle", "Mirror", "Pen", "Pills", "Refresh", "Shop", "Stars", "Tag", "Widget-5"] as const;
-export type SolarIconName = (typeof ICON_NAMES)[number];
-type Glyph = (props: SVGProps<SVGSVGElement>) => React.ReactElement;
-
-const BOLD: Record<SolarIconName, Glyph> = {
-  "Add-Circle": BoldAddCircle,
-  "Alt-Arrow-Down": BoldAltArrowDown,
-  "Alt-Arrow-Left": BoldAltArrowLeft,
-  "Alt-Arrow-Right": BoldAltArrowRight,
-  "Box": BoldBox,
-  "Buildings": BoldBuildings,
-  "Check-Circle": BoldCheckCircle,
-  "Chef-Hat": BoldChefHat,
-  "Close-Circle": BoldCloseCircle,
-  "Danger-Circle": BoldDangerCircle,
-  "Danger-Triangle": BoldDangerTriangle,
-  "Delivery": BoldDelivery,
-  "File-Text": BoldFileText,
-  "Gallery-Add": BoldGalleryAdd,
-  "Info-Circle": BoldInfoCircle,
-  "Mirror": BoldMirror,
-  "Pen": BoldPen,
-  "Pills": BoldPills,
-  "Refresh": BoldRefresh,
-  "Shop": BoldShop,
-  "Stars": BoldStars,
-  "Tag": BoldTag,
-  "Widget-5": BoldWidget5,
-};
-const OUTLINE: Record<SolarIconName, Glyph> = {
-  "Add-Circle": OutlineAddCircle,
-  "Alt-Arrow-Down": OutlineAltArrowDown,
-  "Alt-Arrow-Left": OutlineAltArrowLeft,
-  "Alt-Arrow-Right": OutlineAltArrowRight,
-  "Box": OutlineBox,
-  "Buildings": OutlineBuildings,
-  "Check-Circle": OutlineCheckCircle,
-  "Chef-Hat": OutlineChefHat,
-  "Close-Circle": OutlineCloseCircle,
-  "Danger-Circle": OutlineDangerCircle,
-  "Danger-Triangle": OutlineDangerTriangle,
-  "Delivery": OutlineDelivery,
-  "File-Text": OutlineFileText,
-  "Gallery-Add": OutlineGalleryAdd,
-  "Info-Circle": OutlineInfoCircle,
-  "Mirror": OutlineMirror,
-  "Pen": OutlinePen,
-  "Pills": OutlinePills,
-  "Refresh": OutlineRefresh,
-  "Shop": OutlineShop,
-  "Stars": OutlineStars,
-  "Tag": OutlineTag,
-  "Widget-5": OutlineWidget5,
-};
+/** V2 draws these solid whatever the call site asks: a check sits on a filled disc. */
+const SOLID = new Set<SolarIconName>(["Check-Circle"]);
 
 export interface SolarIconProps {
   name: SolarIconName;
-  iconStyle?: "Bold" | "Outline";
+  /** Bold and Outline both draw Phosphor Light; Fill is the selected state. */
+  iconStyle?: "Bold" | "Outline" | "Fill";
   size?: number;
   className?: string;
   "aria-label"?: string;
 }
 
 export function SolarIcon({ name, iconStyle = "Bold", size = 20, className, ...aria }: SolarIconProps) {
-  const Glyph = (iconStyle === "Outline" ? OUTLINE : BOLD)[name];
-  if (!Glyph) {
-    return <span aria-hidden className={cn("inline-block rounded-sm bg-[#D1D5DB]", className)} style={{ width: size, height: size }} />;
+  const glyph = SOLAR_TO_PHOSPHOR[name];
+  const shapes = (iconStyle === "Fill" || SOLID.has(name) ? FILL : LIGHT)[glyph];
+  if (!shapes) {
+    return <span aria-hidden className={cn("inline-block rounded-sm bg-gray-300", className)} style={{ width: size, height: size }} />;
   }
   return (
-    <Glyph
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 256 256"
       width={size}
       height={size}
+      // Light's strokes carry their own fill="none"; Fill's shapes and Light's solid details inherit this.
+      fill="currentColor"
       aria-hidden={aria["aria-label"] ? undefined : true}
       role={aria["aria-label"] ? "img" : undefined}
       {...aria}
-      className={cn("shrink-0 [&_path]:fill-current", className)}
-    />
+      className={cn("shrink-0", className)}
+      style={{ minWidth: size, minHeight: size }}
+    >
+      {shapes.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs }))}
+    </svg>
   );
 }

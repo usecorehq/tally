@@ -1,0 +1,30 @@
+%%{init: {"theme": "neutral"} }%%
+sequenceDiagram
+    autonumber
+    actor M as Merchant
+    participant S as ShelfScanPage<br/>(ShelfScanCubit)
+    participant R as ScanReviewView<br/>(ScanReviewCubit)
+    participant A as apps/api vision
+
+    M->>S: take or pick a shelf photo (image_picker, 1600 px JPEG)
+    alt Start stock-take (agent)
+        S->>A: POST …/vision/stocktakes (multipart image)
+        A-->>S: 202 { runId }
+        loop every 1.5 s, until not running (gives up at 6 min)
+            S->>A: GET …/stocktakes/:runId
+            A-->>S: { run.status, steps[], result }
+            S-->>M: live step trace
+        end
+        Note right of S: fallback = the first pass, flagged in review
+    else Quick scan
+        S->>A: POST …/vision/shelf-scans (multipart image)
+        A-->>S: { scanId, detections[] } (~15–30 s)
+    end
+    S->>R: scan + photo
+    R-->>M: photo with outlines, one line per product
+    M->>R: action, count, product, name and price per line
+    Note right of R: nothing is stocked until Confirm
+    M->>R: Stock N items, U units
+    R->>A: POST …/shelf-scans/:scanId/confirm { decisions[] } (every line, skips too)
+    A-->>R: { created, restocked, restored, skipped, invalid, feedback }
+    R-->>M: outcome, then the inventory reloads

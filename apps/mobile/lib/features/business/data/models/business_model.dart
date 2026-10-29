@@ -7,6 +7,7 @@ class BusinessModel extends Business {
     id: json['id'] as String,
     name: json['name'] as String,
     subtypeCode: json['subtypeCode'] as String,
-    role: json['role'] as String,
+    // POST /businesses answers without a role: the creator is its owner.
+    role: json['role'] as String? ?? 'owner',
   );
 }

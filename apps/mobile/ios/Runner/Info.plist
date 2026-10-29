@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Tally uses the camera to scan barcodes on your stock items.</string>
+	<string>Tally uses the camera to scan barcodes and photograph shelves to count your stock.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Tally reads a shelf photo you pick to count your stock.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

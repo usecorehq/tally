@@ -7,21 +7,35 @@ import 'core/network/api_client.dart';
 import 'features/auth/data/datasources/auth_remote_data_source.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
+import 'features/auth/domain/usecases/account_usecases.dart';
 import 'features/auth/domain/usecases/get_current_user.dart';
 import 'features/auth/domain/usecases/sign_in.dart';
 import 'features/auth/domain/usecases/sign_out.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
+import 'features/auth/presentation/cubit/account_cubits.dart';
 import 'features/auth/presentation/cubit/sign_in_cubit.dart';
 import 'features/business/data/datasources/business_remote_data_source.dart';
 import 'features/business/data/repositories/business_repository_impl.dart';
+import 'features/business/domain/entities/business_draft.dart';
 import 'features/business/domain/repositories/business_repository.dart';
 import 'features/business/domain/usecases/get_my_businesses.dart';
+import 'features/business/domain/usecases/setup_usecases.dart';
 import 'features/business/presentation/cubit/business_cubit.dart';
+import 'features/business/presentation/cubit/setup_business_cubit.dart';
+import 'features/business/presentation/cubit/starter_items_cubit.dart';
 import 'features/inventory/data/datasources/inventory_remote_data_source.dart';
 import 'features/inventory/data/repositories/inventory_repository_impl.dart';
 import 'features/inventory/domain/repositories/inventory_repository.dart';
 import 'features/inventory/domain/usecases/inventory_usecases.dart';
+import 'features/inventory/presentation/cubit/inventory_list_cubit.dart';
 import 'features/inventory/presentation/cubit/scan_cubit.dart';
+import 'features/stocktake/data/datasources/stocktake_remote_data_source.dart';
+import 'features/stocktake/data/repositories/stocktake_repository_impl.dart';
+import 'features/stocktake/domain/entities/shelf_scan.dart';
+import 'features/stocktake/domain/repositories/stocktake_repository.dart';
+import 'features/stocktake/domain/usecases/stocktake_usecases.dart';
+import 'features/stocktake/presentation/cubit/scan_review_cubit.dart';
+import 'features/stocktake/presentation/cubit/shelf_scan_cubit.dart';
 
 final sl = GetIt.instance;
 
@@ -40,17 +54,39 @@ Future<void> initDependencies() async {
     ..registerLazySingleton(() => SignIn(sl()))
     ..registerLazySingleton(() => SignOut(sl()))
     ..registerLazySingleton(() => GetCurrentUser(sl()))
+    ..registerLazySingleton(() => SignUp(sl()))
+    ..registerLazySingleton(() => VerifyEmailCode(sl()))
+    ..registerLazySingleton(() => ResendSignupCode(sl()))
+    ..registerLazySingleton(() => RequestPasswordReset(sl()))
+    ..registerLazySingleton(() => SetNewPassword(sl()))
     ..registerFactory(() => AuthBloc(getCurrentUser: sl(), signOut: sl()))
-    ..registerFactory(() => SignInCubit(sl()));
+    ..registerFactory(() => SignInCubit(sl(), sl()))
+    ..registerFactory(() => SignUpCubit(sl()))
+    ..registerFactory(() => ForgotPasswordCubit(sl()))
+    ..registerFactory(() => NewPasswordCubit(sl()))
+    // The code screen is per email + flow: sl<VerifyCodeCubit>(param1: email, param2: recovery)
+    ..registerFactoryParam<VerifyCodeCubit, String, bool>(
+      (email, recovery) =>
+          VerifyCodeCubit(email: email, recovery: recovery, verify: sl(), resendSignup: sl(), resendRecovery: sl()),
+    );
 
   // Business
   sl
     ..registerLazySingleton<BusinessRemoteDataSource>(() => BusinessRemoteDataSourceImpl(sl()))
     ..registerLazySingleton<BusinessRepository>(() => BusinessRepositoryImpl(sl()))
     ..registerLazySingleton(() => GetMyBusinesses(sl()))
-    ..registerFactory(() => BusinessCubit(sl()));
+    ..registerLazySingleton(() => GetBusinessVerticals(sl()))
+    ..registerLazySingleton(() => CreateBusiness(sl()))
+    ..registerFactory(() => BusinessCubit(sl()))
+    ..registerLazySingleton(() => GetStarterRows(sl()))
+    ..registerLazySingleton(() => SubmitStarterItems(sl()))
+    ..registerFactory(() => SetupBusinessCubit(getVerticals: sl()))
+    // Onboarding step 2 is per step-1 draft: sl<StarterItemsCubit>(param1: draft)
+    ..registerFactoryParam<StarterItemsCubit, BusinessDraft, void>(
+      (draft, _) => StarterItemsCubit(draft: draft, getRows: sl(), createBusiness: sl(), submit: sl()),
+    );
 
-  // Inventory (ScanCubit is per business: sl<ScanCubit>(param1: businessId))
+  // Inventory (ScanCubit and InventoryListCubit are per business: sl<…>(param1: businessId))
   sl
     ..registerLazySingleton<InventoryRemoteDataSource>(() => InventoryRemoteDataSourceImpl(sl()))
     ..registerLazySingleton<InventoryRepository>(() => InventoryRepositoryImpl(sl()))
@@ -59,5 +95,24 @@ Future<void> initDependencies() async {
     ..registerLazySingleton(() => LinkBarcode(sl()))
     ..registerFactoryParam<ScanCubit, String, void>(
       (businessId, _) => ScanCubit(businessId: businessId, getInventory: sl(), findByBarcode: sl(), linkBarcode: sl()),
+    )
+    ..registerFactoryParam<InventoryListCubit, String, void>(
+      (businessId, _) => InventoryListCubit(businessId: businessId, getInventory: sl()),
+    );
+
+  // Photo-to-inventory (ShelfScanCubit is per business, ScanReviewCubit per scan)
+  sl
+    ..registerLazySingleton<StocktakeRemoteDataSource>(() => StocktakeRemoteDataSourceImpl(sl()))
+    ..registerLazySingleton<StocktakeRepository>(() => StocktakeRepositoryImpl(sl()))
+    ..registerLazySingleton(() => QuickScan(sl()))
+    ..registerLazySingleton(() => StartStocktake(sl()))
+    ..registerLazySingleton(() => GetStocktake(sl()))
+    ..registerLazySingleton(() => ConfirmScan(sl()))
+    ..registerFactoryParam<ShelfScanCubit, String, void>(
+      (businessId, _) =>
+          ShelfScanCubit(businessId: businessId, quickScan: sl(), startStocktake: sl(), getStocktake: sl()),
+    )
+    ..registerFactoryParam<ScanReviewCubit, String, ShelfScan>(
+      (businessId, scan) => ScanReviewCubit(businessId: businessId, scan: scan, confirm: sl()),
     );
 }
