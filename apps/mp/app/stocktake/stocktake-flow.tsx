@@ -219,19 +219,6 @@ export function PickView({
                 <div className="relative w-fit max-w-full">
                   {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
                   <img src={photo.url} alt="Shelf photo to scan" className="block max-h-[420px] w-auto max-w-full rounded-[10px] object-contain" />
-                  {/* The area Muse Spark found most readable, when the photo could be better. */}
-                  {check?.status === "done" && check.result?.region && check.result.verdict !== "good" && (
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute rounded-[6px] border-2 border-dashed border-emerald-400"
-                      style={{
-                        left: `${check.result.region.x1 / 10}%`,
-                        top: `${check.result.region.y1 / 10}%`,
-                        width: `${(check.result.region.x2 - check.result.region.x1) / 10}%`,
-                        height: `${(check.result.region.y2 - check.result.region.y1) / 10}%`,
-                      }}
-                    />
-                  )}
                 </div>
               </TraySheet>
               <TrayFooter>
