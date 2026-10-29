@@ -79,7 +79,7 @@ Every stock-take is its own session with its own URL (`?business=<id>` picks the
 - **Sidebar:** on every stock-take page the sidebar shows **Take new stock** and **Recents**: the newest 30 from `GET …/vision/stocktakes`, each titled by the products read (`preview`, e.g. "Peak, Milo, Indomie") over when it ran ("Today, 10:14", "28 Oct, 22:33"; Lagos time), with a dot for running, ready to review or failed. It refreshes on navigation, after a confirm, and every 5 s while one is running. Phones, which have no sidebar, use the **History** button.
 - **`/stocktake/history`** lists them all, grouped by day: title, when it ran (above the status, in the same format), status (running, ready to review, confirmed, failed, or nothing found), line count, and once confirmed how many were added, restocked, restored or skipped.
 - **`/stocktake/history/<id>`** (a run id or a quick scan's id; the page tries the run first) loads the session from the API, so a refresh or a link restores it: a running run resumes polling, an open scan opens the review table, a confirmed scan opens a read-only list of each line's decision and when it was made, and a failed run says why.
-- **The photo stays in the browser.** The API never stores it, so the page keeps a copy in IndexedDB per session (the newest 30). Reopened elsewhere, or with storage blocked, the review shows each line's stored crop instead of the photo with outlines.
+- **The photo is kept with the stock-take.** The API stores it in R2, and a reopened scan returns a short-lived `photoUrl`, so any device sees the photo with its outlines, including on a confirmed stock-take. The page also keeps a copy in IndexedDB per session (the newest 30) so it shows at once. Only scans from before photos were kept show each line's crop instead.
 - **Lines confirmed earlier** (a confirm that left some lines invalid) are not shown again; only the undecided ones are confirmed.
 
 - **Calls:** every call is a server action (`apps/mp/app/stocktake/actions.ts`) that uses the session's Supabase token. The browser never sees the token, and the Meta key stays in apps/api. Server actions accept up to 5 MB (`experimental.serverActions.bodySizeLimit`).
@@ -319,7 +319,9 @@ Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–2
 
 ## Product crops
 
-When a scan is stored, Tally cuts one crop per detection (its largest box, 6% margin, at most 640 px, WebP) from the photo while it is still in memory. The crop shows the product, never the whole shelf or the people in it. It is stored in Cloudflare R2 (bucket `tally-media`) at `tally/crops/<scanId>/<position>.webp`. The full photo is not stored.
+When a scan is stored, Tally cuts one crop per detection (its largest box, 6% margin, at most 640 px, WebP) from the photo while it is still in memory. The crop shows the product, never the whole shelf or the people in it. It is stored in Cloudflare R2 (bucket `tally-media`) at `tally/crops/<scanId>/<position>.webp`.
+
+**The shelf photo** is stored with the scan at `tally/scans/<scanId>.jpg`, kept for good as the stock-take's audit record: upright, at most 2560 px, JPEG, with all metadata (EXIF, GPS) removed. Only members of the business get it, through a presigned link on reopen (`photoUrl`, an hour). Storing it is best-effort: the scan response reports `photoStored`, and a failure never fails the scan.
 
 - **Size:** crops down to a 48 px short side are stored in R2 for Tally's own dataset. Only crops with a short side of 160 px or more are uploaded to Qore Catalog, which rejects smaller ones; the check runs on the stored crop at confirm time.
 - **Lines with a Qore ID:** on confirm, after the line's feedback is sent, Tally reads the crop back and uploads it as a candidate picture of the confirmed product. A curator approves or rejects it in Qore Catalog. Approved pictures come back on products as `image.url`.
@@ -327,7 +329,7 @@ When a scan is stored, Tally cuts one crop per detection (its largest box, 6% ma
 - **Best-effort:** a crop or upload failure never fails the scan or the confirm. The scan response reports `cropsStored`; confirm reports `images: { uploaded, skipped, failed, skippedBy: { noProduct, noCrop, tooSmall } }`.
 - **Logged:** each scan logs how many crops were stored and how many boxes were too small to store. Each confirm logs every line that sent nothing and why (no catalogue product, no stored crop, under 160 px), and every rejected upload with Qore Catalog's status and message (never the key), then a one-line total.
 - **Resolution decides it:** a product is a crop only if its box is at least 48 px in the photo, and a catalogue picture only if it is at least 160 px. On a ~1000 px photo most shelf products are smaller than that, so no picture is sent. apps/mp sends up to 2560 px; the mobile app sends up to 1600 px.
-- **Credentials:** R2 keys are server-only (`R2_*` in apps/api, token scoped to the bucket). Not Supabase Storage, which would write to the shared project's `storage` schema. Clients only get short-lived presigned URLs: a reopened scan's `cropUrl` (an hour). Without `R2_*`, crops are skipped and everything else works.
+- **Credentials:** R2 keys are server-only (`R2_*` in apps/api, token scoped to the bucket). Not Supabase Storage, which would write to the shared project's `storage` schema. Clients only get short-lived presigned URLs: a reopened scan's `cropUrl` and `photoUrl` (an hour). Without `R2_*`, crops and the photo are skipped and everything else works.
 
 ## Data
 

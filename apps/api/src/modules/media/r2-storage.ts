@@ -42,6 +42,13 @@ export class R2Storage {
     return new Uint8Array(await res.arrayBuffer());
   }
 
+  async exists(key: string): Promise<boolean> {
+    const res = await this.send(key, { method: "HEAD" });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new Error(`R2 HEAD failed: ${res.status}`);
+    return true;
+  }
+
   async delete(key: string): Promise<void> {
     const res = await this.send(key, { method: "DELETE" });
     if (!res.ok && res.status !== 404) throw new Error(`R2 DELETE failed: ${res.status}`);

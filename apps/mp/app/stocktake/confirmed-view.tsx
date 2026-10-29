@@ -1,6 +1,6 @@
 "use client";
 
-import { PageHeader, Pill, SheetTable, SolarIcon, TrayTile, type PillTone } from "@tally/ui";
+import { PageHeader, Pill, SheetTable, SolarIcon, Tray, TrayFooter, TraySheet, TrayTile, type PillTone } from "@tally/ui";
 import { formatDateTime, formatTime, plural } from "./format";
 import type { Detection, LineDecision, ScanView } from "./types";
 
@@ -18,11 +18,13 @@ export function ConfirmedView({
   scan,
   businessName,
   kind,
+  photoUrl = null,
   actions,
 }: {
   scan: ScanView;
   businessName: string;
   kind: "stocktake" | "quick";
+  photoUrl?: string | null;
   actions?: React.ReactNode;
 }) {
   const decided = scan.detections.filter((d) => d.decision);
@@ -53,6 +55,18 @@ export function ConfirmedView({
           <TrayTile key={label} label={label} value={n} />
         ))}
       </div>
+
+      {photoUrl && (
+        <Tray className="mt-6 w-fit max-w-full">
+          <TraySheet className="p-1">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a short-lived R2 link or a local object URL */}
+            <img src={photoUrl} alt="Shelf photo for this stock-take" className="block max-h-[480px] w-auto max-w-full rounded-[10px]" />
+          </TraySheet>
+          <TrayFooter>
+            <span>Shelf photo</span>
+          </TrayFooter>
+        </Tray>
+      )}
 
       <SheetTable className="mt-6" title="Lines" count={scan.detections.length} footer="An added line becomes a restock when the item already existed.">
         <ul className="divide-y divide-gray-100">

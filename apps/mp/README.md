@@ -39,7 +39,7 @@ app/stocktake/                   new stock-take: business + photo, then the run 
   actions.ts                     server actions: start/poll the agent, quick scan, reopen a scan, history, confirm, catalogue search/product
   session.tsx                    a reopened session: run polling, review, confirmed or failed
   confirmed-view.tsx             a confirmed scan, read-only: each line's decision and when
-  photo-store.ts                 the shelf photo per session in IndexedDB (the API never stores it)
+  photo-store.ts                 a local copy of the shelf photo per session in IndexedDB, so it shows at once (the API keeps the stored one)
   urls.ts                        session, history and new stock-take URLs
   image.ts                       browser-side resize (2560 px JPEG) and per-product thumbnails
   stocktake-flow.tsx             business + photo picker, live agent trace

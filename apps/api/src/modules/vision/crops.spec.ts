@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
 import sharp from "sharp";
-import { bestBox, catalogueSized, cropKey, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, pixelRegion } from "./crops";
+import { bestBox, catalogueSized, cropKey, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, pixelRegion, shelfPhotoKey, storablePhoto } from "./crops";
 
 const photo = (width: number, height: number) =>
   sharp({ create: { width, height, channels: 3, background: { r: 200, g: 30, b: 30 } } })
@@ -60,5 +60,14 @@ describe("catalogueSized", () => {
     const webp = (w: number, h: number) => sharp({ create: { width: w, height: h, channels: 3, background: "#fff" } }).webp().toBuffer();
     expect(await catalogueSized(await webp(160, 400))).toBe(true);
     expect(await catalogueSized(await webp(640, 120))).toBe(false);
+  });
+});
+
+describe("storablePhoto", () => {
+  it("caps the long side at 2560 px and keeps the key under tally/scans/", async () => {
+    const big = await sharp({ create: { width: 4000, height: 3000, channels: 3, background: "#fff" } }).jpeg().toBuffer();
+    const meta = await sharp(await storablePhoto(big)).metadata();
+    expect([meta.format, meta.width, meta.height]).toEqual(["jpeg", 2560, 1920]);
+    expect(shelfPhotoKey("scan-1")).toBe("tally/scans/scan-1.jpg");
   });
 });
