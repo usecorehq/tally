@@ -1,6 +1,6 @@
 # @tally/mp
 
-Merchant portal — merchant signup, onboarding, stock-take from a shelf photo, point of sale and inventory.
+Merchant portal — merchant signup, onboarding, stock-take from a shelf photo and inventory.
 
 Next.js 16 (App Router), Tailwind 4, NextAuth v5 over the shared Qorelly Supabase Auth.
 

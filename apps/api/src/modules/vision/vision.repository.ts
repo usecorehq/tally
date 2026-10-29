@@ -474,7 +474,7 @@ export class VisionRepository {
   }
 
   /**
-   * Point-to-sell confirm: remember the reading for this item so the next identify recognises it at once.
+   * Identify confirm: remember the reading for this item so the next identify recognises it at once.
    * Returns false when the item isn't an active item of this business.
    */
   async rememberReading(businessId: string, itemId: string, key: string): Promise<boolean> {

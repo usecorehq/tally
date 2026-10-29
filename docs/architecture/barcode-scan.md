@@ -1,6 +1,6 @@
 # Barcode scan
 
-Scan a product's barcode to find it in the merchant's own inventory — at the till or while counting stock. Lookups go to the business's inventory, not to Qore Catalog: it's instant for anything the merchant sells, including products the catalogue doesn't know.
+Scan a product's barcode to find it in the merchant's own inventory while counting stock. Lookups go to the business's inventory, not to Qore Catalog: it's instant for anything the merchant stocks, including products the catalogue doesn't know.
 
 Built: the API. Next: the mobile scanner, which caches the inventory on the device so a scan resolves without a network round trip.
 
@@ -22,4 +22,4 @@ Built: the API. Next: the mobile scanner, which caches the inventory on the devi
 ## Not yet
 
 - Qore Catalog stores GTINs (`core_products.gtin`) but its v1 API has no lookup by barcode, and its feedback contract has no barcode field — so an unknown barcode can't be identified from the catalogue yet, and links don't teach the catalogue. Both need a qore-catalog change.
-- Lookup latency is ~0.7 s against the staging database (membership check + lookup); the mobile app caches inventory to avoid it at the till.
+- Lookup latency is ~0.7 s against the staging database (membership check + lookup); the mobile app caches inventory to avoid it while counting.

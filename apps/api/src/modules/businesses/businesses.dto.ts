@@ -107,7 +107,7 @@ export class StarterItem {
   @ApiPropertyOptional({ minimum: 1 }) @IsOptional() @IsInt() @Min(1) @Max(10000) packQty?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() @Length(1, 200) categoryPath?: string;
 
-  @ApiPropertyOptional({ description: "Selling price in ₦ (required unless removed)", example: "45000.00" })
+  @ApiPropertyOptional({ description: "Price in ₦ (required unless removed)", example: "45000.00" })
   @IsOptional()
   @Matches(NAIRA_PATTERN, { message: "price must be Naira with up to 2 decimals, e.g. 4500 or 4500.50" })
   price?: string;

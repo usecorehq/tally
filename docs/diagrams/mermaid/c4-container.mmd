@@ -9,8 +9,8 @@ flowchart TB
 
     subgraph tally[" Tally "]
         direction TB
-        mp["<b>Merchant portal</b><br/><i>[Container: Next.js 16, apps/mp]</i><br/>Signup, onboarding, POS, inventory.<br/>NextAuth v5 session."]
-        mobile["<b>Mobile app</b><br/><i>[Container: Flutter, apps/mobile]</i><br/>qore_tally — inventory + sales.<br/>supabase_flutter session."]
+        mp["<b>Merchant portal</b><br/><i>[Container: Next.js 16, apps/mp]</i><br/>Signup, onboarding, stock-take, inventory.<br/>NextAuth v5 session."]
+        mobile["<b>Mobile app</b><br/><i>[Container: Flutter, apps/mobile]</i><br/>qore_tally: stock-taking + inventory.<br/>supabase_flutter session."]
         api["<b>API</b><br/><i>[Container: NestJS 11, apps/api]</i><br/>REST JSON under /api. Global<br/>SupabaseJwtGuard; Swagger at /docs."]
         db[("<b>Postgres</b><br/><i>[Container: tally schema]</i><br/>Shared Supabase DB, Drizzle ORM.<br/>Ledger: tally.__drizzle_migrations")]
     end

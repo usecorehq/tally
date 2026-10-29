@@ -2,7 +2,7 @@
   "name": "@tally/api",
   "version": "0.0.1",
   "private": true,
-  "description": "Tally backend — merchant POS/inventory API.",
+  "description": "Tally backend — photo-to-inventory and stock-taking API.",
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",

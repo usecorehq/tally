@@ -98,7 +98,7 @@ export class BusinessesService {
       .orderBy(asc(inventoryItems.name));
   }
 
-  /** The active item with this barcode, for scan-to-find at the till or while counting. */
+  /** The active item with this barcode, for scan-to-find while counting. */
   async findByBarcode(businessId: string, userId: string, code: string): Promise<schema.InventoryItem> {
     await this.getForMember(businessId, userId);
     const barcode = normalizeBarcode(code);

@@ -111,7 +111,7 @@ export function InventoryView({
           <EmptyState
             icon="Box"
             title="No items yet"
-            body="Scan a shelf to add what you stock, or start from the items shops like yours usually sell."
+            body="Scan a shelf to add what you stock, or start from the items shops like yours usually stock."
             action={
               businessId ? (
                 <Button asChild variant="quiet">

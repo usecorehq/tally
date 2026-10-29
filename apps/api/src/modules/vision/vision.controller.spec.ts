@@ -810,7 +810,7 @@ describe("VisionController identify (HTTP)", () => {
     await post().attach("image", JPEG, "p.jpg").expect(401);
   });
 
-  it("a remembered reading sells straight away with one model call and no catalogue call", async () => {
+  it("a remembered reading is found straight away with one model call and no catalogue call", async () => {
     ctx.repo.readings.mockResolvedValueOnce([{ itemId: "closeup", readingKey: "closeup|toothpaste|130g" }]);
     fetchSpy.mockImplementation(async () => label("Closeup", "Toothpaste", "130g")());
     const res = await post().set(auth).attach("image", JPEG, "p.jpg").expect(200);

@@ -1,12 +1,12 @@
 # Tally — by Qorelly
 
-> Inventory and point of sale for Nigerian SMEs, built on the Qore Catalog.
+> Photo-to-inventory and stock-taking for Nigerian SMEs, built on Meta's Muse Spark and SAM 3.1 plus the Qore Catalog.
 
-- **Merchants** sign in with their Qorelly account and run stock and sales from the web portal (`mp`) or the mobile app (`qore_tally`).
+- **Merchants** sign in with their Qorelly account and count and manage their stock from the web portal (`mp`) or the mobile app (`qore_tally`).
 - **Qore Catalog** (a separate product) owns product images and recognition training; Tally sends it confirmed shelf crops and feedback.
 - **Tally** lives in the `tally` schema of the shared Qorelly Supabase project and reuses Qorelly's `auth.users`.
 
-Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile. Photo → inventory and POS are planned (see the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
+Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile; shelf photo → inventory (see [vision recognition](docs/architecture/vision-recognition.md) and the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
 
 ---
 
@@ -19,7 +19,7 @@ This repository was created for the **Meta Global AI Developer Hackathon**. The 
 | Area | What | PRs |
 |---|---|---|
 | Platform | pnpm + turbo monorepo (api, mp, mobile), CI (path-filtered jobs, tests, schema-drift check), secret-scanning guard, architecture docs and diagrams | [#1](https://github.com/usecorehq/tally/pull/1), [#6](https://github.com/usecorehq/tally/pull/6), [#11](https://github.com/usecorehq/tally/pull/11), [#14](https://github.com/usecorehq/tally/pull/14) |
-| Database | `tally` schema: businesses, inventory, append-only stock movements, sales and payments, with triggers that keep stock and paid amounts consistent | [#9](https://github.com/usecorehq/tally/pull/9), [#10](https://github.com/usecorehq/tally/pull/10) |
+| Database | `tally` schema: businesses, inventory, append-only stock movements, with triggers that keep stock on hand consistent | [#9](https://github.com/usecorehq/tally/pull/9), [#10](https://github.com/usecorehq/tally/pull/10) |
 | Catalogue integration | Typed client for the Qore Catalog v1 API; Tally's API is the only place holding the catalogue key | [#3](https://github.com/usecorehq/tally/pull/3), [#12](https://github.com/usecorehq/tally/pull/12), [#13](https://github.com/usecorehq/tally/pull/13) |
 | Onboarding | Create a business from a catalogue business type; turn its template into a starter inventory; every keep/swap/remove decision is sent back to the catalogue as feedback | [#15](https://github.com/usecorehq/tally/pull/15), [#16](https://github.com/usecorehq/tally/pull/16) |
 | Barcode scan | Scan to find an item in the merchant's stock; on-device cache, link unknown barcodes once | [#17](https://github.com/usecorehq/tally/pull/17), [#18](https://github.com/usecorehq/tally/pull/18) |
@@ -73,7 +73,7 @@ Full walkthrough: **[docs/guides/local-development.md](docs/guides/local-develop
 ```
 apps/
   api/               NestJS + Drizzle. Global SupabaseJwtGuard, health, catalog.   README + .env.example
-  mp/                Next.js. Merchant portal: signup, onboarding, POS, inventory.  README + .env.example
+  mp/                Next.js. Merchant portal: signup, onboarding, stock-take, inventory. README + .env.example
   mobile/            Flutter app qore_tally: android + ios, dev/staging/prod flavors. README + .env.example
 packages/
   db/                Drizzle schema + client for the tally schema, migrations/.

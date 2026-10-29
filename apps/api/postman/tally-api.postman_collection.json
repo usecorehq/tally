@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tally API (staging)",
-    "description": "Tally's backend: businesses and inventory, onboarding from Qore Catalog templates, and camera recognition (shelf scans, stock-take, point-to-sell identify). All routes are under `/api`.\n\n**Auth**: a Supabase access token (shared Qorelly project) sent as `Authorization: Bearer`. Run *Auth → Sign in* first: it stores `accessToken` for every request. Use a **test account**. Never put real credentials in a shared copy of this collection (fill `email` / `password` in your local Postman only, as secret variables).\n\n**Setup**: set `baseUrl` (staging `https://tally-api.qorecatalogue.com`, local `http://localhost:4100`), `supabaseUrl`, `supabaseAnonKey` (the project's public anon/publishable key), `email`, `password`.\n\n**Flow**: Sign in → Catalog: verticals → Businesses: create (saves `businessId`) → Catalog: templates → Businesses: starter inventory → Vision: shelf scan (attach a photo) → Vision: confirm scan. Requests save the ids they create (`businessId`, `scanId`, `runId`, `itemId`, `identifyReading`) for the next steps.\n\nCatalogue data comes from Qore Catalog (prices indicative, whole Naira). Tally never exposes its Qore Catalog key.",
+    "description": "Tally's backend: businesses and inventory, onboarding from Qore Catalog templates, and camera recognition (shelf scans, stock-take, identify one product). All routes are under `/api`.\n\n**Auth**: a Supabase access token (shared Qorelly project) sent as `Authorization: Bearer`. Run *Auth → Sign in* first: it stores `accessToken` for every request. Use a **test account**. Never put real credentials in a shared copy of this collection (fill `email` / `password` in your local Postman only, as secret variables).\n\n**Setup**: set `baseUrl` (staging `https://tally-api.qorecatalogue.com`, local `http://localhost:4100`), `supabaseUrl`, `supabaseAnonKey` (the project's public anon/publishable key), `email`, `password`.\n\n**Flow**: Sign in → Catalog: verticals → Businesses: create (saves `businessId`) → Catalog: templates → Businesses: starter inventory → Vision: shelf scan (attach a photo) → Vision: confirm scan. Requests save the ids they create (`businessId`, `scanId`, `runId`, `itemId`, `identifyReading`) for the next steps.\n\nCatalogue data comes from Qore Catalog (prices indicative, whole Naira). Tally never exposes its Qore Catalog key.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -841,7 +841,7 @@
           ]
         },
         {
-          "name": "Identify (point-to-sell)",
+          "name": "Identify one product",
           "request": {
             "method": "POST",
             "header": [],

@@ -4,11 +4,10 @@ flowchart LR
         signup["Sign in with<br/>Qorelly account"]:::built
         onboard["Onboard business"]:::planned
         inv["Inventory:<br/>add / count stock"]:::planned
-        pos["POS: record sale"]:::planned
     end
     qcTrain["Qore Catalog: recognition training<br/>(separate product)"]:::plannedExt
 
-    signup --> onboard --> inv --> pos
+    signup --> onboard --> inv
     inv -. "confirmed crops,<br/>feedback" .-> qcTrain
 
     classDef built fill:#1168bd,stroke:#0b4884,color:#fff
