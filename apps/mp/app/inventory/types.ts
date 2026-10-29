@@ -4,7 +4,7 @@ export type InventoryItem = {
   name: string;
   coreQid: string | null;
   barcode: string | null;
-  /** Selling price, ₦ as a decimal string. */
+  /** Price, ₦ as a decimal string. */
   price: string;
   /** Maintained by the stock_movements trigger; decimal string. */
   quantityOnHand: string;

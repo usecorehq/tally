@@ -12,7 +12,7 @@ Tally has two ways to read a shelf photo, chosen by what the merchant is doing:
 | Time | ~15–30 s, in one request | ~1 minute (first pass + agent), in the background |
 | Use | A fast look; the agent's first pass and fallback | Stock-taking, where accuracy matters more than speed |
 
-Point-to-sell stays a fixed pipeline ([identify](vision-recognition.md#point-to-sell)): a loop of model turns would be too slow at the till.
+Identify one product stays a fixed pipeline ([identify](vision-recognition.md#identify-one-product)): a loop of model turns would be too slow for a single item.
 
 ## How a run works
 

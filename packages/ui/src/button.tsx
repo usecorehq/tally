@@ -27,7 +27,7 @@ const buttonVariants = cva(
         md: "h-10 px-4",
         default: "h-10 px-4",
         lg: "h-11 px-4",
-        // A full-width flow CTA (checkout, confirm): 48px.
+        // A full-width flow CTA (confirm): 48px.
         xl: "h-12 px-5 text-[15px]",
         cta: "h-11 px-5",
         icon: "h-10 w-10",

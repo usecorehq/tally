@@ -238,7 +238,7 @@ export function KitPreview() {
                   step={2}
                   steps={["Business type", "Details", "Starter items"]}
                   title="What's your business called?"
-                  description="Customers see this on receipts."
+                  description="Shown on your stock-take history."
                   onBack={() => undefined}
                   onClose={() => undefined}
                 />

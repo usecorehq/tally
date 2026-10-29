@@ -184,7 +184,7 @@ export class VisionController {
   @ApiBody({ schema: { type: "object", properties: { image: { type: "string", format: "binary" } }, required: ["image"] } })
   @ApiOperation({
     summary:
-      "Point-to-sell: which of the merchant's items is this? One product photo (JPEG/PNG/WebP, ≤ 1 MB, ~640 px long edge). Muse Spark reads the label; Tally matches it to the merchant's items, asking Qore Catalog only when nothing in store matches. Nothing is stored. Try the barcode first: this takes ~3 s.",
+      "Identify one product: which of the merchant's items is this? One product photo (JPEG/PNG/WebP, ≤ 1 MB, ~640 px long edge). Muse Spark reads the label; Tally matches it to the merchant's items, asking Qore Catalog only when nothing in store matches. Nothing is stored. Try the barcode first: this takes ~3 s.",
   })
   @ApiOkResponse({
     schema: {

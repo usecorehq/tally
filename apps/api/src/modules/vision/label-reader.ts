@@ -1,5 +1,5 @@
 /**
- * Point-to-sell: reads the label of one product held up to the camera (Muse Spark). Pure, no IO.
+ * Identify one product: reads the label of one product held up to the camera (Muse Spark). Pure, no IO.
  * Reading then matching in Tally was faster and more accurate than asking Spark to pick from the item list.
  */
 import type { Reading } from "./inventory-match";
@@ -19,9 +19,9 @@ const LABEL_SCHEMA = {
 };
 
 const PROMPT =
-  "A shopkeeper in Nigeria is holding one product up to the camera to sell it. Read the main product's label: brand, product name and pack size, exactly as printed. Use an empty string for anything you cannot read; do not guess.";
+  "A shopkeeper in Nigeria is holding one product up to the camera to identify it. Read the main product's label: brand, product name and pack size, exactly as printed. Use an empty string for anything you cannot read; do not guess.";
 
-/** POST /v1/responses body: minimal reasoning, because this runs at the till. */
+/** POST /v1/responses body: minimal reasoning, because the merchant is waiting. */
 export function labelRequest(image: Buffer, type: ImageType): Record<string, unknown> {
   return {
     model: LABEL_MODEL,

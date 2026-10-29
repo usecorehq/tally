@@ -28,7 +28,7 @@ export type DecidedDetection = {
   quantity: number | null;
   /** The item's name, for new_item. */
   itemName: string | null;
-  /** The item's selling price as stored (Naira string), when there is one. */
+  /** The item's price as stored (Naira string), when there is one. */
   price: string | null;
 };
 
