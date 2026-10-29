@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Box } from "./types";
 
 // Big enough that most packs on a full shelf crop to 160+ px (Qore Catalog's minimum);
@@ -48,4 +49,36 @@ export async function cropThumbs(photo: Blob, items: { id: string; boxes: Box[] 
   }
   bitmap.close();
   return out;
+}
+
+/** The square around a box (0–1000 grid) that cropThumbs cuts, in pixels of a width × height image. */
+function thumbSquare(box: Box, width: number, height: number) {
+  const w = ((box.x2 - box.x1) / 1000) * width;
+  const h = ((box.y2 - box.y1) / 1000) * height;
+  const side = Math.min(Math.max(w, h) * 1.1, width, height);
+  const cx = ((box.x1 + box.x2) / 2000) * width;
+  const cy = ((box.y1 + box.y2) / 2000) * height;
+  return { side, left: Math.min(Math.max(cx - side / 2, 0), width - side), top: Math.min(Math.max(cy - side / 2, 0), height - side) };
+}
+
+/**
+ * The same thumbnail as cropThumbs, drawn by CSS from a remote photo (the stored shelf photo), so it needs
+ * no canvas read of a cross-origin image and works for lines whose crop was never stored.
+ */
+export function remoteThumb(url: string, box: Box, width: number, height: number): CSSProperties {
+  const { side, left, top } = thumbSquare(box, width, height);
+  const fx = side / width;
+  const fy = side / height;
+  const pos = (offset: number, total: number, f: number) => (f >= 1 ? 0 : (offset / total / (1 - f)) * 100);
+  return {
+    backgroundImage: `url(${JSON.stringify(url)})`,
+    backgroundRepeat: "no-repeat",
+    backgroundSize: `${100 / fx}% ${100 / fy}%`,
+    backgroundPosition: `${pos(left, width, fx)}% ${pos(top, height, fy)}%`,
+  };
+}
+
+/** The detection's largest box, which its thumbnail shows. */
+export function largestBox(boxes: Box[]): Box | null {
+  return boxes.reduce<Box | null>((best, b) => (!best || (b.x2 - b.x1) * (b.y2 - b.y1) > (best.x2 - best.x1) * (best.y2 - best.y1) ? b : best), null);
 }
