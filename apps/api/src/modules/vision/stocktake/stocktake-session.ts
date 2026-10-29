@@ -196,13 +196,14 @@ export class StocktakeSession {
         const image = await this.deps.zoom(box);
         this.zooms++;
         if (image) line.zoomed = true;
-        if (!image) return { output: "That area is too small to read; try a larger box.", summary: "zoom: too small" };
+        const what = [line.product.brand, line.product.name].filter(Boolean).join(" ") || `line ${index}`;
+        if (!image) return { output: "That area is too small to read; try a larger box.", summary: `"${what}": label too small to read` };
         return {
           output: [
             { type: "input_text", text: `Close-up of line ${index}:` },
             { type: "input_image", image_url: image },
           ],
-          summary: `zoomed ${box.x1},${box.y1},${box.x2},${box.y2}`,
+          summary: `read the label of "${what}" up close`,
         };
       }
       case "search_catalogue": {

@@ -336,7 +336,8 @@ export function Working({
                 {phase.steps.length === 0 && (
                   <TraceItem current title="Reading every product, counting units and matching the catalogue" detail="About 20–30 s" />
                 )}
-                {phase.steps.map((s, i) => {
+                {/* Newest step first, so what the agent is doing now is always at the top. */}
+                {phase.steps.map((s, i) => ({ s, i })).reverse().map(({ s, i }) => {
                   const d = describe(s);
                   return (
                     <TraceItem
@@ -385,8 +386,10 @@ function describe(s: AgentStep): { title: string; detail?: string } {
   if (s.kind === "baseline") return { title: s.summary.replace(/^First pass:/, "First pass done:"), detail: "Now checking the unclear lines" };
   if (s.kind === "thought") return { title: s.summary.length > 160 ? `${s.summary.slice(0, 160)}…` : s.summary };
   switch (s.tool) {
-    case "zoom":
-      return { title: "Zooming into a label", detail: s.summary };
+    case "zoom": {
+      const m = /^read the label of "(.*)" up close$/.exec(s.summary);
+      return m ? { title: `Zooming into “${m[1]}”`, detail: "Reading the label up close" } : { title: "Zooming into a label", detail: s.summary };
+    }
     case "search_catalogue": {
       const m = /^search "(.*)" → (\d+)/.exec(s.summary);
       return m ? { title: `Searching catalogue for “${m[1]}”`, detail: `${m[2]} plausible match${m[2] === "1" ? "" : "es"}` } : { title: "Searching catalogue", detail: s.summary };
