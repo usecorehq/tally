@@ -14,7 +14,7 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
-import { bestBox, catalogueSized, cropKey, makeCrops, MIN_STORED_CROP_SIDE } from "./crops";
+import { bestBox, cropKey, cropSize, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE } from "./crops";
 import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
@@ -92,11 +92,13 @@ export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
   /** Best-effort: a catalogue outage never undoes the stock changes; feedback is retried on the next confirm. */
   feedback: { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string };
   /**
-   * Crops sent to Qore Catalog for lines confirmed with a Qore ID. Best-effort;
-   * skipped = no stored crop (R2 off, box too small) or no Qore ID.
+   * Crops sent to Qore Catalog for lines confirmed with a Qore ID. Best-effort; skippedBy says why lines sent
+   * nothing: no Qore ID (new item, skip), no stored crop (R2 off, box too small to store), or under 160 px.
    */
-  images: { uploaded: number; skipped: number; failed: number };
+  images: { uploaded: number; skipped: number; failed: number; skippedBy: { noProduct: number; noCrop: number; tooSmall: number } };
 };
+
+const NO_IMAGES = (): ConfirmResponse["images"] => ({ uploaded: 0, skipped: 0, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
 
 export type ShelfScanResult = {
   /** The stored scan; confirm it to stock the detections. */
@@ -358,13 +360,22 @@ export class VisionService implements OnApplicationBootstrap {
   private async storeCrops(scanId: string, image: Buffer, detections: Detection[]): Promise<number> {
     if (!this.media.enabled || detections.length === 0) return 0;
     try {
-      const crops = await makeCrops(image, detections.map((d) => bestBox(d.boxes)), { minSide: MIN_STORED_CROP_SIDE });
+      const boxes = detections.map((d) => bestBox(d.boxes));
+      const crops = await makeCrops(image, boxes, { minSide: MIN_STORED_CROP_SIDE });
       const results = await Promise.allSettled(
         crops.map((crop, position) => (crop ? this.media.put(cropKey(scanId, position), crop, "image/webp").then(() => 1) : 0)),
       );
       const failed = results.filter((r) => r.status === "rejected").length;
+      const stored = results.reduce((n, r) => n + (r.status === "fulfilled" ? r.value : 0), 0);
+      // A product under 48 px in the photo gets no crop, so it can never become a catalogue picture.
+      const tooSmall = crops.filter((c, i) => !c && boxes[i]).length;
+      this.logger.log(
+        `Scan ${scanId}: ${stored} of ${detections.length} crops stored` +
+          (tooSmall ? `, ${tooSmall} too small to store (< ${MIN_STORED_CROP_SIDE} px)` : "") +
+          (crops.length - tooSmall - stored - failed > 0 ? `, ${crops.length - tooSmall - stored - failed} without a box` : ""),
+      );
       if (failed) this.logger.warn(`${failed} crop(s) not stored for scan ${scanId}`);
-      return results.reduce((n, r) => n + (r.status === "fulfilled" ? r.value : 0), 0);
+      return stored;
     } catch (err) {
       this.logger.warn(`Crops not made for scan ${scanId}: ${(err as Error).message}`);
       return 0;
@@ -467,7 +478,7 @@ export class VisionService implements OnApplicationBootstrap {
     const { pendingFeedback, ...result } = await this.repo.confirm(businessId, scanId, userId, decisions);
 
     let feedback: ConfirmResponse["feedback"] = { sent: 0, recorded: 0, duplicates: 0 };
-    let images: ConfirmResponse["images"] = { uploaded: 0, skipped: 0, failed: 0 };
+    let images: ConfirmResponse["images"] = NO_IMAGES();
     if (pendingFeedback.length > 0) {
       feedback = await this.businesses.sendFeedback(pendingFeedback.map((d) => feedbackFor(d, businessId, business.subtypeCode)));
       if (!("error" in feedback)) {
@@ -484,14 +495,25 @@ export class VisionService implements OnApplicationBootstrap {
    * Qore ID or under the 160 px minimum send nothing; stored by sha256, so resends are harmless.
    */
   private async uploadCrops(lines: ConfirmResult["pendingFeedback"]): Promise<ConfirmResponse["images"]> {
-    const images = { uploaded: 0, skipped: 0, failed: 0 };
+    const images = NO_IMAGES();
+    const skip = (line: (typeof lines)[number], why: keyof ConfirmResponse["images"]["skippedBy"], detail: string) => {
+      images.skipped++;
+      images.skippedBy[why]++;
+      this.logger.log(`Crop ${feedbackRef(line.scanId, line.position)} not sent: ${detail}`);
+    };
     await Promise.all(
       lines.map(async (line) => {
         const qid = line.outcome === "accepted" || line.outcome === "corrected" ? line.confirmedQid : null;
-        const crop = qid && this.media.enabled ? await this.media.get(cropKey(line.scanId, line.position)).catch(() => null) : null;
-        if (!qid || !crop || !(await catalogueSized(crop).catch(() => false))) {
-          images.skipped++;
-          return;
+        if (!qid) return skip(line, "noProduct", `no catalogue product (${line.outcome})`);
+        if (!this.media.enabled) return skip(line, "noCrop", "R2 is not configured");
+        const crop = await this.media.get(cropKey(line.scanId, line.position)).catch((err: unknown) => {
+          this.logger.warn(`Crop ${feedbackRef(line.scanId, line.position)} could not be read from R2: ${(err as Error).message}`);
+          return null;
+        });
+        if (!crop) return skip(line, "noCrop", "no stored crop (box too small to store, or the scan predates R2)");
+        const size = await cropSize(crop);
+        if (Math.min(size.width, size.height) < MIN_CROP_SIDE) {
+          return skip(line, "tooSmall", `crop ${size.width}×${size.height} is under Qore Catalog's ${MIN_CROP_SIDE} px minimum`);
         }
         try {
           await this.catalog.client.uploadImage({
@@ -504,9 +526,14 @@ export class VisionService implements OnApplicationBootstrap {
           images.uploaded++;
         } catch (err) {
           images.failed++;
-          this.logger.warn(`Crop not sent to Qore Catalog (${(err as { status?: number }).status ?? (err as Error).name})`);
+          // CatalogError's message carries the status and Qore Catalog's reason, with the key redacted.
+          this.logger.warn(`Crop ${feedbackRef(line.scanId, line.position)} rejected by Qore Catalog: ${(err as Error).message}`);
         }
       }),
+    );
+    this.logger.log(
+      `Crops to Qore Catalog: ${images.uploaded} uploaded, ${images.failed} failed, ${images.skipped} skipped ` +
+        `(${images.skippedBy.noProduct} no product, ${images.skippedBy.noCrop} no crop, ${images.skippedBy.tooSmall} too small)`,
     );
     return images;
   }

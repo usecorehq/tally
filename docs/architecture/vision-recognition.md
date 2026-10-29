@@ -275,7 +275,9 @@ When a scan is stored, Tally cuts one crop per detection (its largest box, 6% ma
 - **Size:** crops down to a 48 px short side are stored in R2 for Tally's own dataset. Only crops with a short side of 160 px or more are uploaded to Qore Catalog, which rejects smaller ones; the check runs on the stored crop at confirm time.
 - **Lines with a Qore ID:** on confirm, after the line's feedback is sent, Tally reads the crop back and uploads it as a candidate picture of the confirmed product. A curator approves or rejects it in Qore Catalog. Approved pictures come back on products as `image.url`.
 - **New items:** lines confirmed as a new item (no Qore ID) or skipped send nothing.
-- **Best-effort:** a crop or upload failure never fails the scan or the confirm. The scan response reports `cropsStored`; confirm reports `images: { uploaded, skipped, failed }`.
+- **Best-effort:** a crop or upload failure never fails the scan or the confirm. The scan response reports `cropsStored`; confirm reports `images: { uploaded, skipped, failed, skippedBy: { noProduct, noCrop, tooSmall } }`.
+- **Logged:** each scan logs how many crops were stored and how many boxes were too small to store. Each confirm logs every line that sent nothing and why (no catalogue product, no stored crop, under 160 px), and every rejected upload with Qore Catalog's status and message (never the key), then a one-line total.
+- **Resolution decides it:** a product is a crop only if its box is at least 48 px in the photo, and a catalogue picture only if it is at least 160 px. On a ~1000 px photo most shelf products are smaller than that, so no picture is sent. apps/mp sends up to 2560 px; the mobile app sends up to 1600 px.
 - **Credentials:** R2 keys are server-only (`R2_*` in apps/api, token scoped to the bucket). Not Supabase Storage, which would write to the shared project's `storage` schema. Clients will only ever get short-lived presigned URLs. Without `R2_*`, crops are skipped and everything else works.
 
 ## Data
