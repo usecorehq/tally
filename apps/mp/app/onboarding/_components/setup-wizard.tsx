@@ -7,7 +7,16 @@ import { Button, ChoiceCard, FieldLabel, FormMessage, IconTile, Input, SolarIcon
 import { finishSetup, loadStarterRows, type FinishInput } from "../actions";
 import { initialStates, invalidRowKeys, toStarterItem, type RowState, type StarterResult, type TemplateRow } from "../_lib/starter";
 import { verticalIcon } from "../_lib/vertical-icons";
-import { BackButton, ContinueButton, FooterSpacer, LoadFailed, OnboardingShell, SavingScreen, StepHeading } from "./onboarding-shell";
+import {
+  BackButton,
+  ContinueButton,
+  FooterSpacer,
+  LoadFailed,
+  OnboardingShell,
+  SavingScreen,
+  StepHeading,
+  TYPE_HEADING,
+} from "./onboarding-shell";
 import { PICK_HEADING, StartFreshCard, StarterDone, StarterList, StarterLoading, StarterReview, keptSummary } from "./starter-items";
 
 type Starter =
@@ -18,8 +27,6 @@ type Starter =
 /** The server actions the wizard calls. Swappable so /design/onboarding can preview it with fixtures. */
 export type SetupActions = { loadStarterRows: typeof loadStarterRows; finishSetup: typeof finishSetup };
 const SERVER_ACTIONS: SetupActions = { loadStarterRows, finishSetup };
-
-const TYPE_HEADING = { title: "What type of business do you have?", subtitle: "Pick your industry so Tally can suggest the right products." };
 
 /**
  * Port of Qorelly's /setup wizard (RestaurantSetupPage): business type → details → starter items.

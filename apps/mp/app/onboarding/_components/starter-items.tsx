@@ -7,7 +7,11 @@ import { NO_PROBLEMS, OWN, rowProblems, type RowProblems, type RowState, type St
 import { StepHeading } from "./onboarding-shell";
 
 const naira = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
-const SMALL_LABEL = "mb-1.5 block text-xs text-gray-500";
+// Field labels show above each field on phones; on wider screens one column header per group carries them.
+const SMALL_LABEL = "mb-1.5 block text-xs text-gray-500 sm:sr-only";
+// The row's fields, and the group's column header above them, share one grid so they line up.
+const FIELD_GRID = "grid grid-cols-2 gap-x-3 gap-y-2 pl-8 sm:grid-cols-[minmax(0,1fr)_8.5rem_6.5rem]";
+const COMPACT_FIELD = "h-10 text-[14px]";
 
 export const PICK_HEADING = {
   title: "Pick your starter items",
@@ -50,7 +54,7 @@ export function StarterList({
     <>
       {attempted && invalidCount > 0 && (
         <FormMessage
-          message={`${invalidCount} item${invalidCount === 1 ? " needs" : "s need"} a price or name. They're outlined in red.`}
+          message={`${invalidCount} item${invalidCount === 1 ? " needs" : "s need"} a price or name. They're marked in red below.`}
           className="mb-6"
         />
       )}
@@ -60,15 +64,23 @@ export function StarterList({
           const kept = groupRows.filter((r) => state[r.key]!.keep).length;
           return (
             <SheetTable key={label} title={label} caption={`${kept} of ${groupRows.length} kept`}>
-              {groupRows.map((r) => (
-                <ItemRow
-                  key={r.key}
-                  row={r}
-                  state={state[r.key]!}
-                  problems={attempted ? rowProblems(r, state[r.key]!) : NO_PROBLEMS}
-                  onChange={(patch) => onChange(r.key, patch)}
-                />
-              ))}
+              {/* Column header for the fields (wider screens); each field keeps its own label for screen readers. */}
+              <div aria-hidden className={cn(FIELD_GRID, "px-4 pb-2 pl-12 pt-3 text-[13px] text-gray-500 max-sm:hidden")}>
+                <span>Product</span>
+                <span>Your price</span>
+                <span>In stock</span>
+              </div>
+              <div className="sm:border-t sm:border-gray-100">
+                {groupRows.map((r) => (
+                  <ItemRow
+                    key={r.key}
+                    row={r}
+                    state={state[r.key]!}
+                    problems={attempted ? rowProblems(r, state[r.key]!) : NO_PROBLEMS}
+                    onChange={(patch) => onChange(r.key, patch)}
+                  />
+                ))}
+              </div>
             </SheetTable>
           );
         })}
@@ -90,21 +102,34 @@ function ItemRow({
 }) {
   const id = row.key.replace(/[^a-z0-9]/gi, "-");
   const suggested = row.candidates[0];
+  const problemText = [
+    problems.name && "Enter a product name.",
+    problems.price && (state.price.trim() ? "Enter a price like 1500." : "Enter a price."),
+    problems.opening && "Enter stock as a number.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const describedBy = problemText ? `${id}-problem` : undefined;
   return (
     <div
       data-row={row.key}
-      className={cn("border-t border-gray-100 px-4 py-2 first:border-t-0", !state.keep && "bg-gray-50/70", state.keep && "pb-4")}
+      className={cn("border-t border-gray-100 px-4 first:border-t-0", state.keep ? "pb-3 pt-0.5" : "bg-gray-50/70 py-0.5")}
     >
-      <div className="flex min-h-11 items-center gap-3">
+      <div className="flex min-h-11 items-center gap-3 py-1">
         {/* The whole name is the hit area for the checkbox. */}
         <label htmlFor={`${id}-keep`} className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3">
-          <Checkbox id={`${id}-keep`} checked={state.keep} onCheckedChange={(v) => onChange({ keep: v === true })} />
+          <Checkbox
+            id={`${id}-keep`}
+            checked={state.keep}
+            onCheckedChange={(v) => onChange({ keep: v === true })}
+            className="dark:border-gray-400"
+          />
           <span className="min-w-0 flex-1">
-            <span className={cn("block truncate text-[15px] font-medium", state.keep ? "text-gray-900" : "text-gray-500")}>
+            <span className={cn("block break-words text-[15px] font-medium leading-5", state.keep ? "text-gray-900" : "text-gray-500")}>
               {row.templateName}
             </span>
-            {!state.keep && suggested && <span className="block truncate text-[13px] text-gray-400">e.g. {suggested.name}</span>}
-            {!state.keep && !suggested && <span className="block text-[13px] text-gray-400">Tick to add your own product</span>}
+            {!state.keep && suggested && <span className="block break-words text-[13px] text-gray-500">e.g. {suggested.name}</span>}
+            {!state.keep && !suggested && <span className="block text-[13px] text-gray-500">Tick to add your own product</span>}
           </span>
         </label>
         {state.keep && state.choice !== OWN && state.choice === suggested?.qid && (
@@ -115,15 +140,16 @@ function ItemRow({
       </div>
 
       {state.keep && (
-        <div className="mt-1 grid grid-cols-2 gap-3 pl-8 sm:grid-cols-[minmax(0,1fr)_8.5rem_6.5rem]">
+        <div className={FIELD_GRID}>
           <div className="col-span-2 min-w-0 space-y-2 sm:col-span-1">
-            <label htmlFor={`${id}-product`} className={SMALL_LABEL}>
+            {/* The select shows a product name, so the label is for screen readers only. */}
+            <label htmlFor={`${id}-product`} className="sr-only">
               Product
             </label>
             <NativeSelect
               id={`${id}-product`}
               value={state.choice}
-              className="h-10 text-[14px]"
+              className={COMPACT_FIELD}
               onChange={(e) => {
                 const next = row.candidates.find((c) => c.qid === e.target.value);
                 onChange({
@@ -148,7 +174,8 @@ function ItemRow({
                 onChange={(e) => onChange({ ownName: e.target.value })}
                 maxLength={200}
                 aria-invalid={problems.name}
-                className="h-10 text-[14px]"
+                aria-describedby={problems.name ? describedBy : undefined}
+                className={COMPACT_FIELD}
               />
             )}
           </div>
@@ -157,7 +184,7 @@ function ItemRow({
               Your price
             </label>
             <div className="relative">
-              <span aria-hidden className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[14px] text-gray-400">
+              <span aria-hidden className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[14px] text-gray-500">
                 ₦
               </span>
               <Input
@@ -167,7 +194,8 @@ function ItemRow({
                 value={state.price}
                 onChange={(e) => onChange({ price: e.target.value.replace(/[^\d.]/g, "") })}
                 aria-invalid={problems.price}
-                className="h-10 pl-8 text-[14px] tabular-nums"
+                aria-describedby={problems.price ? describedBy : undefined}
+                className={cn(COMPACT_FIELD, "pl-8 tabular-nums")}
               />
             </div>
           </div>
@@ -182,10 +210,16 @@ function ItemRow({
               value={state.opening}
               onChange={(e) => onChange({ opening: e.target.value.replace(/[^\d.]/g, "") })}
               aria-invalid={problems.opening}
-              className="h-10 text-[14px] tabular-nums"
+              aria-describedby={problems.opening ? describedBy : undefined}
+              className={cn(COMPACT_FIELD, "tabular-nums")}
             />
           </div>
         </div>
+      )}
+      {state.keep && problemText && (
+        <p id={describedBy} className="mt-2 pl-8 text-[13px] text-red-600">
+          {problemText}
+        </p>
       )}
     </div>
   );
@@ -232,14 +266,14 @@ export function StarterReview({
               const s = state[r.key]!;
               const name = s.choice === OWN ? s.ownName.trim() : r.candidates.find((c) => c.qid === s.choice)?.name;
               return (
-                <li key={r.key} className="flex items-center gap-4 border-t border-gray-100 px-4 py-3 first:border-t-0">
+                <li key={r.key} className="flex items-start gap-4 border-t border-gray-100 px-4 py-3 first:border-t-0">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-medium text-gray-900">{name}</p>
-                    <p className="truncate text-[13px] text-gray-500">{r.templateName}</p>
+                    <p className="break-words text-[15px] font-medium leading-5 text-gray-900">{name}</p>
+                    <p className="mt-0.5 truncate text-[13px] text-gray-500">{r.templateName}</p>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-[15px] font-medium tabular-nums text-gray-900">{naira.format(Number(s.price))}</p>
-                    <p className="text-[13px] tabular-nums text-gray-500">
+                    <p className="mt-0.5 text-[13px] tabular-nums text-gray-500">
                       {s.opening.trim() ? `${s.opening} in stock` : "No opening stock"}
                     </p>
                   </div>
@@ -269,12 +303,18 @@ export function StarterLoading() {
         {[3, 2].map((n, g) => (
           <div key={g} className="rounded-[18px] bg-gray-100 p-1">
             <Skeleton className="mx-3 mb-3 mt-3.5 h-4 w-28 bg-gray-200" />
-            <div className="rounded-[14px] bg-white ring-1 ring-black/[0.04]">
+            <div className="rounded-[14px] bg-surface ring-1 ring-hairline/[0.04]">
               {Array.from({ length: n }, (_, i) => (
-                <div key={i} className="flex items-center gap-3 border-t border-gray-100 px-4 py-4 first:border-t-0">
-                  <Skeleton className="h-5 w-5 rounded-md" />
-                  <Skeleton className="h-4 flex-1" />
-                  <Skeleton className="h-4 w-16" />
+                <div key={i} className="border-t border-gray-100 px-4 pb-3 pt-0.5 first:border-t-0">
+                  <div className="flex min-h-11 items-center gap-3 py-1">
+                    <Skeleton className="h-5 w-5 rounded-md" />
+                    <Skeleton className="h-4 w-32" />
+                  </div>
+                  <div className={FIELD_GRID}>
+                    <Skeleton className="col-span-2 h-10 rounded-[14px] sm:col-span-1" />
+                    <Skeleton className="h-10 rounded-[14px]" />
+                    <Skeleton className="h-10 rounded-[14px]" />
+                  </div>
                 </div>
               ))}
             </div>
@@ -289,7 +329,7 @@ export function StarterLoading() {
 export function StartFreshCard({ onSkip, disabled }: { onSkip: () => void; disabled?: boolean }) {
   return (
     <div className="mt-8 flex flex-wrap items-center gap-3 rounded-[18px] bg-gray-100 p-3 sm:flex-nowrap">
-      <IconTile icon="Add-Circle" className="bg-white text-gray-500" />
+      <IconTile icon="Add-Circle" className="bg-surface text-gray-500" />
       <div className="min-w-0 flex-1">
         <p className="text-[15px] font-medium text-gray-900">Start fresh</p>
         <p className="text-[13px] text-gray-500">Skip starter items and add your products after setup.</p>

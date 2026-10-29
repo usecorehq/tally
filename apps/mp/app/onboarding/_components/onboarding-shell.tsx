@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { Button, QorellyLoader, SolarIcon, StepFooter, cn } from "@tally/ui";
+import { Button, QorellyLoader, Skeleton, SolarIcon, StepFooter, cn } from "@tally/ui";
 import { TallyMark } from "../../_components/tally-mark";
 
 export const ONBOARDING_STEPS = ["Business type", "Details", "Starter items"] as const;
+
+export const TYPE_HEADING = { title: "What type of business do you have?", subtitle: "Pick your industry so Tally can suggest the right products." };
 
 /**
  * V2 full-screen flow: slim top bar (mark, step pill + trail, close), a 680px column on white,
@@ -27,8 +29,8 @@ export function OnboardingShell({
   view?: string;
 }) {
   return (
-    <div className="flex min-h-dvh flex-col bg-white">
-      <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm">
+    <div className="flex min-h-dvh flex-col bg-surface">
+      <header className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[680px] items-center gap-3 px-4 sm:px-6">
           <TallyMark className="h-8 w-8" />
           <span
@@ -98,7 +100,7 @@ export function StepHeading({ title, subtitle }: { title: string; subtitle: stri
 /** Qorelly's full-screen hold while setup saves. */
 export function SavingScreen({ message }: { message: string }) {
   return (
-    <div className="q-fade-in flex min-h-dvh flex-col items-center justify-center gap-4 bg-white px-6 text-center">
+    <div className="q-fade-in flex min-h-dvh flex-col items-center justify-center gap-4 bg-surface px-6 text-center">
       <QorellyLoader className="h-8 w-8 text-primary" />
       <div>
         <p className="text-[15px] font-medium text-gray-900">{message}</p>
@@ -133,6 +135,24 @@ export function FooterSpacer() {
   return <span className="max-sm:hidden" />;
 }
 
+/** Step 1 while business types load: choice cards' shape, so nothing jumps when they arrive. */
+export function ChoiceListSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div aria-busy="true" aria-label="Loading business types" className="flex flex-col gap-2">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex min-h-[68px] items-center gap-3 rounded-[14px] border border-gray-200 p-3">
+          <Skeleton className="h-11 w-11 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="h-3 w-56 max-w-full" />
+          </div>
+          <Skeleton className="h-5 w-5 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** A failed read: what didn't load, why, and a retry. Never an empty list. */
 export function LoadFailed({
   title,
@@ -147,7 +167,7 @@ export function LoadFailed({
 }) {
   return (
     <div className="rounded-[18px] bg-gray-100 p-1">
-      <div role="alert" className="flex flex-col items-center gap-2 rounded-[14px] bg-white px-6 py-12 text-center ring-1 ring-black/[0.04]">
+      <div role="alert" className="flex flex-col items-center gap-2 rounded-[14px] bg-surface px-6 py-12 text-center ring-1 ring-hairline/[0.04]">
         <span className="mb-1 flex size-10 items-center justify-center rounded-full bg-red-50 text-red-600">
           <SolarIcon name="Danger-Circle" iconStyle="Outline" size={20} />
         </span>

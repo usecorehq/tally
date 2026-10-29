@@ -152,6 +152,34 @@ export const OUTCOME_WARN: ConfirmResult = {
   images: undefined,
 };
 
+export const OUTCOME_INVALID: ConfirmResult = {
+  ...OUTCOME,
+  created: 1,
+  invalid: [{ detectionId: "d4", reason: "price must be a Naira amount" }],
+  feedback: { sent: 4 },
+};
+
+export const OUTCOME_FEEDBACK_ERROR: ConfirmResult = { ...OUTCOME, feedback: { sent: 0, error: "catalogue unreachable" }, images: undefined };
+
+/** The catalogue was down: no candidates, so every line is a new item by name. */
+export const RESULT_NO_CATALOGUE: ShelfScanResult = {
+  scanId: "scan-fixture",
+  catalogueAvailable: false,
+  detections: DETECTIONS.map((d) => ({ ...d, candidates: [], inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false, inventoryNeedsConfirm: false })),
+};
+
+export const RESULT_EMPTY: ShelfScanResult = { scanId: "scan-fixture", catalogueAvailable: true, detections: [] };
+
+// The messages the flow shows for each failure (actions.ts fail(), stocktake-flow.tsx, image.ts).
+export const ERRORS = {
+  file: "This photo is too large even after resizing.",
+  busy: "Recognition is busy. Try again in a moment.",
+  timeout: "Recognition timed out. Try again, or a photo with fewer products.",
+  setup: "Photo recognition isn't set up on this server yet.",
+  failed: "The stock-take failed: the model returned no lines. Try again, or use Quick scan.",
+  confirm: "Something went wrong on our side. Try again.",
+};
+
 const COLORS: Record<string, [string, string]> = {
   d1: ["#1d4ed8", "#ffffff"],
   d2: ["#15803d", "#fef08a"],

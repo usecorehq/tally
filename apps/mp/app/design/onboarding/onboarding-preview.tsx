@@ -6,6 +6,8 @@ import { SetupLoadFailed, SetupWizard, type SetupActions } from "../../onboardin
 import { OnboardingShell, SavingScreen, StepHeading } from "../../onboarding/_components/onboarding-shell";
 import { PICK_HEADING, StarterDone, StarterLoading } from "../../onboarding/_components/starter-items";
 import ItemsError from "../../onboarding/[businessId]/items/error";
+import OnboardingError from "../../onboarding/error";
+import OnboardingLoading from "../../onboarding/loading";
 import type { Candidate, TemplateRow } from "../../onboarding/_lib/starter";
 
 // Fixture data only: nothing here reaches the API.
@@ -88,7 +90,9 @@ const VIEWS = [
   ["wizard&fail=load", "Wizard, starter items fail to load"],
   ["wizard&fail=finish", "Wizard, starter items fail to save"],
   ["wizard&fail=slow", "Wizard, starter items keep loading"],
+  ["type-loading", "Business types loading (route)"],
   ["load-failed", "Business types failed to load"],
+  ["route-error", "Setup failed to open (route)"],
   ["items-loading", "Starter items loading (route)"],
   ["items-error", "Starter items error (route)"],
   ["saving", "Saving"],
@@ -100,6 +104,10 @@ export function OnboardingPreview({ view, fail }: { view?: string; fail?: string
   switch (view) {
     case "wizard":
       return <SetupWizard verticals={VERTICALS} closeHref="/design/onboarding" actions={actions(fail)} />;
+    case "type-loading":
+      return <OnboardingLoading />;
+    case "route-error":
+      return <OnboardingError error={new Error("preview")} reset={() => undefined} />;
     case "load-failed":
       return <SetupLoadFailed closeHref="/design/onboarding" />;
     case "items-loading":
@@ -135,7 +143,7 @@ export function OnboardingPreview({ view, fail }: { view?: string; fail?: string
       <h1 className="text-2xl font-medium tracking-tight text-gray-900">Onboarding preview</h1>
       <p className="mt-1.5 text-sm text-gray-500">The real setup wizard on fixture data. Nothing is saved.</p>
       <ul className="mt-6 overflow-hidden rounded-[18px] bg-gray-100 p-1">
-        <li className="rounded-[14px] bg-white ring-1 ring-black/[0.04]">
+        <li className="rounded-[14px] bg-surface ring-1 ring-hairline/[0.04]">
           {VIEWS.map(([key, label]) => (
             <Link
               key={key}

@@ -20,6 +20,7 @@ import {
 } from "@tally/ui";
 import { pollStocktake, quickScan, startStocktake } from "./actions";
 import { resizeForScan } from "./image";
+import { PICK_SUBTITLE, PICK_TITLE } from "./copy";
 import { ReviewTable } from "./review-table";
 import type { AgentStep, ShelfScanResult } from "./types";
 
@@ -197,11 +198,7 @@ export function PickView({
 }) {
   return (
     <div className="q-rise max-w-[760px]">
-      <PageHeader
-        title="Count a shelf from a photo"
-        subtitle="Tally reads every product in the photo, counts the units and matches them to the catalogue. You check the results before anything changes in your stock."
-        className="[&_h1]:whitespace-normal"
-      />
+      <PageHeader title={PICK_TITLE} subtitle={PICK_SUBTITLE} className="[&_h1]:whitespace-normal" />
 
       <div className="space-y-5">
         {businesses.length > 1 && (
@@ -217,7 +214,8 @@ export function PickView({
           </div>
         )}
 
-        <FormMessage message={error} />
+        {/* Without a photo the error is about the file; with one it's about the run, so it sits by the buttons. */}
+        {!photo && <FormMessage message={error} />}
 
         <input
           ref={fileRef}
@@ -232,29 +230,32 @@ export function PickView({
 
         {photo ? (
           <div className="q-fade-in space-y-5">
-            <Tray>
-              <TraySheet className="flex justify-center bg-gray-50 p-2">
+            {/* The tray hugs the photo, whatever its shape. */}
+            <Tray className="w-fit max-w-full">
+              <TraySheet className="p-1">
                 {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-                <img src={photo.url} alt="Shelf photo to scan" className="max-h-[420px] w-auto max-w-full rounded-[10px] object-contain" />
+                <img src={photo.url} alt="Shelf photo to scan" className="block max-h-[420px] w-auto max-w-full rounded-[10px] object-contain" />
               </TraySheet>
               <TrayFooter>
                 <span className="tabular-nums">
                   {photo.width}×{photo.height} JPEG · {Math.round(photo.blob.size / 1024)} KB
                 </span>
-                <Button variant="ghost" size="sm" className="-my-1 -mr-2" onClick={() => fileRef.current?.click()}>
+                <Button variant="ghost" size="sm" className="-my-1 -mr-2 max-sm:h-11" onClick={() => fileRef.current?.click()}>
                   <SolarIcon name="Refresh" iconStyle="Outline" size={16} />
                   Use another photo
                 </Button>
               </TrayFooter>
             </Tray>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <FormMessage message={error} />
+            {/* One primary, last: on the right on desktop, on top on phones. */}
+            <div className="flex flex-col-reverse gap-3 sm:flex-row">
+              <Button size="xl" variant="soft" onClick={onQuick}>
+                Quick scan
+              </Button>
               <Button size="xl" onClick={onAgent}>
                 <SolarIcon name="Stars" iconStyle="Bold" size={18} />
                 Start stock-take
-              </Button>
-              <Button size="xl" variant="soft" onClick={onQuick}>
-                Quick scan
               </Button>
             </div>
             <Notice icon="Clock-Circle">
@@ -315,11 +316,11 @@ export function Working({ photo, phase, businessName }: { photo: Photo; phase: E
 
   return (
     <div className="q-rise grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-8">
-      <Tray className="self-start">
-        <TraySheet className="relative flex justify-center overflow-hidden bg-gray-50 p-2">
+      <Tray className="w-fit max-w-full self-start">
+        <TraySheet className="relative overflow-hidden p-1">
           {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-          <img src={photo.url} alt="Shelf being scanned" className="max-h-[480px] w-auto max-w-full rounded-[10px] object-contain" />
-          <span aria-hidden className="pointer-events-none absolute inset-2 animate-pulse rounded-[10px] bg-white/35" />
+          <img src={photo.url} alt="Shelf being scanned" className="block max-h-[480px] w-auto max-w-full rounded-[10px] object-contain" />
+          <span aria-hidden className="pointer-events-none absolute inset-1 animate-pulse rounded-[10px] bg-white/35" />
         </TraySheet>
         <TrayFooter>
           <span>{phase.mode === "quick" ? "Quick scan" : "Stock-take agent"}</span>
@@ -397,8 +398,8 @@ function TraceItem({ title, detail, current, thought = false }: { title: string;
       <span
         aria-hidden
         className={cn(
-          "absolute left-0 top-1.5 h-[11px] w-[11px] rounded-full ring-4 ring-white",
-          current ? "bg-primary" : "bg-gray-300",
+          "absolute left-0 top-1.5 h-[11px] w-[11px] rounded-full ring-4 ring-surface",
+          current ? "bg-primary" : "bg-gray-300 dark:bg-gray-400",
         )}
       />
       {current && <span aria-hidden className="absolute left-0 top-1.5 h-[11px] w-[11px] animate-ping rounded-full bg-primary/40" />}

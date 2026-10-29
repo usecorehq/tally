@@ -47,7 +47,7 @@ export function KitPreview() {
 
   return (
     <main className="min-h-screen bg-gray-100 p-2">
-      <div className="mx-auto max-w-5xl rounded-2xl bg-white px-4 py-8 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.05] sm:px-8">
+      <div className="mx-auto max-w-5xl rounded-2xl bg-surface px-4 py-8 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.05] sm:px-8">
         <PageHeader
           eyebrow="@tally/ui"
           title="Design V2"
@@ -232,7 +232,7 @@ export function KitPreview() {
           </section>
 
           <section className="grid gap-4 lg:grid-cols-2">
-            <div className="overflow-hidden rounded-[24px] ring-1 ring-black/[0.06]">
+            <div className="overflow-hidden rounded-[24px] ring-1 ring-hairline/[0.06]">
               <div className="p-5">
                 <StepHeader
                   step={2}

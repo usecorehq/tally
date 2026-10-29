@@ -4,6 +4,8 @@ import { Button, FieldLabel, FormMessage, Input, Tray, TraySheet, cn } from "@ta
 import { signIn } from "@/auth";
 import { TallyMark } from "../_components/tally-mark";
 
+// The kit field lifts to bg-white on focus, which turns its near-white dark ink invisible.
+
 export default async function LoginPage({
   searchParams,
 }: {
