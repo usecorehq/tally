@@ -1,0 +1,2 @@
+ALTER TABLE "tally"."vision_detections" ADD COLUMN "review" text;--> statement-breakpoint
+ALTER TABLE "tally"."vision_detections" ADD CONSTRAINT "vision_detections_review_length" CHECK (review is null or char_length(review) between 1 and 500);

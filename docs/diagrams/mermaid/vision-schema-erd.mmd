@@ -55,7 +55,7 @@ erDiagram
         int count
         text count_source "sam | spark"
         jsonb boxes "0-1000 grid"
-        jsonb candidates "qid + score only"
+        jsonb candidates "qid + score + match only"
         uuid inventory_item_id FK "match at scan time"
         text inventory_match "reading | catalogue | name"
         text action "restock | restore | add | skip"
@@ -67,6 +67,7 @@ erDiagram
         timestamptz decided_at
         timestamptz feedback_sent_at
         jsonb evidence "agent tool calls, null for quick scan"
+        text review "why to look closely, agent scans only"
     }
     INVENTORY_ITEM_READINGS {
         uuid id PK

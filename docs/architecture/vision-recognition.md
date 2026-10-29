@@ -1,8 +1,8 @@
 # Vision recognition
 
-> Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg).
+> Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg), [stock-take history](../diagrams/images/stocktake-history-sequence.svg).
 >
-> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, point-to-sell identify (tier 1), and product crops (R2) sent to Qore Catalog as pictures. **Planned:** an on-device model. Planned endpoint shapes may change before they ship.
+> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, point-to-sell identify (tier 1), product crops (R2) sent to Qore Catalog as pictures, and stock-take history (every scan reopenable at its own URL in apps/mp). **Planned:** an on-device model. Planned endpoint shapes may change before they ship.
 
 The merchant points the phone camera at products and Tally recognises them. Product side (users, screens, metrics, delivery slices): [photo-to-inventory PRD](../prd-photo-to-inventory.md). There are two flows. Stock-taking can also run as an agent; see [Stock-take agent](stocktake-agent.md).
 
@@ -68,12 +68,22 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
 
 1. Pick one of the user's businesses (`GET /api/businesses`).
 2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to at most a 2560 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation.
-3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then `GET …/stocktakes/:runId` every 1.5 s, showing the step trace as it grows. **Quick scan** calls `POST …/shelf-scans` and waits.
-4. The review table has one row per detection, `review` lines first: the reading, an editable count, the product (opens the picker; pre-filled by the rules in [Showing a line](#showing-a-line-clients)), the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box.
+3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then the page moves to the run's own URL, `/stocktake/history/<runId>`, which polls `GET …/stocktakes/:runId` every 1.5 s and shows the step trace as it grows. **Quick scan** calls `POST …/shelf-scans`, waits, then moves to `/stocktake/history/<scanId>`.
+4. The review table has one row per undecided detection, `review` lines first: the reading, an editable count, the product (opens the picker; pre-filled by the rules in [Showing a line](#showing-a-line-clients)), the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box, or is the stored crop when this browser doesn't have the photo.
 5. Confirm sends every row to `…/shelf-scans/:scanId/confirm` and shows the outcome: created, restocked, restored, skipped, invalid lines with their reasons, and the feedback sent.
 
+#### Stock-take history (built)
+
+Every stock-take is its own session with its own URL (`?business=<id>` picks the business), like a chat history:
+
+- **Sidebar:** on every stock-take page the sidebar shows **Take new stock** and **Recents**: the newest 30 from `GET …/vision/stocktakes`, each titled by the products read (`preview`, e.g. "Peak, Milo, Indomie"), with a dot for running, ready to review or failed. It refreshes on navigation, after a confirm, and every 5 s while one is running. Phones, which have no sidebar, use the **History** button.
+- **`/stocktake/history`** lists them all, grouped by day: title, time, status (running, ready to review, confirmed, failed, or nothing found), line count, and once confirmed how many were added, restocked, restored or skipped.
+- **`/stocktake/history/<id>`** (a run id or a quick scan's id; the page tries the run first) loads the session from the API, so a refresh or a link restores it: a running run resumes polling, an open scan opens the review table, a confirmed scan opens a read-only list of each line's decision and when it was made, and a failed run says why.
+- **The photo stays in the browser.** The API never stores it, so the page keeps a copy in IndexedDB per session (the newest 30). Reopened elsewhere, or with storage blocked, the review shows each line's stored crop instead of the photo with outlines.
+- **Lines confirmed earlier** (a confirm that left some lines invalid) are not shown again; only the undecided ones are confirmed.
+
 - **Calls:** every call is a server action (`apps/mp/app/stocktake/actions.ts`) that uses the session's Supabase token. The browser never sees the token, and the Meta key stays in apps/api. Server actions accept up to 5 MB (`experimental.serverActions.bodySizeLimit`).
-- **States:** 503 "not configured" or rate-limited, 413, 504, a `failed` run, and a `fallback` run ("the agent couldn't finish; showing the first pass") each get their own message. A run still `running` after 6 minutes stops polling.
+- **States:** 503 "not configured" or rate-limited, 413, 504, a `failed` run, and a `fallback` run ("the agent couldn't finish; showing the first pass") each get their own message. Polling stops after 5 failed polls in a row, with a retry; the API itself marks a run that ran past its deadline `failed`. History and sessions each have loading, failed (retry) and empty states, all previewed at `/design/stocktake`.
 
 ## Point to sell
 
@@ -154,7 +164,7 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 
 - **Pre-fill by the top candidate's `match`:**
   - `strong`: pre-fill its name and price.
-  - `medium`: pre-fill, but ask "Is this your item?". A stored scan has no `match`: treat it as medium.
+  - `medium`: pre-fill, but ask "Is this your item?". Scans stored before match strengths were saved have no `match`: treat it as medium.
   - `low`: **don't pre-fill.** Nothing is picked: the merchant must choose a product or "New item" before confirming. The name is the label's reading (e.g. "Blue box") with no price; the low suggestions appear only in the picker. Live, an unbranded "Blue box" otherwise pre-filled a hair dye at ₦11,499.
   - **A `review` reason overrides the match: pre-fill nothing.** The agent couldn't confirm the line. Live, an unreadable "Cooking Oil" pre-picked Dax Hair Pomade and was confirmed as is.
   - No candidates: a new item named from the label.
@@ -213,7 +223,46 @@ Point-to-sell. Multipart, one field `image`: JPEG, PNG or WebP, at most 1 MB. Se
 
 ### `GET /api/businesses/:id/vision/shelf-scans/:scanId` (built)
 
-The stored scan with its detections in position order: what was read, the counts, boxes, `candidates` as `[{ qid, score }]` (no names or prices; fetch them from `GET /api/catalog/products/:qid`), the inventory match, and each decision (`action`, `outcome`, `confirmedQid`, `itemId`, `quantity`, `decidedAt`, `feedbackSentAt`). 404 when the scan isn't this business's.
+A stored scan, reopened, so a client can finish or show it later. 404 when the scan isn't this business's.
+
+```json
+{
+  "scanId": "…", "status": "open", "createdAt": "…", "confirmedAt": null,
+  "model": "muse-spark-1.3", "countModel": "sam-3.1", "catalogueAvailable": true, "candidateDetails": true,
+  "detections": [
+    {
+      "id": "…", "position": 0, "brand": "Peak", "name": "Full Cream Milk Powder", "pack": "400g", "count": 6, "…": "as in POST shelf-scans",
+      "candidates": [{ "qid": "QC-7K2M-9XQ4-R", "score": 0.94, "match": "strong", "name": "Peak Full Cream Milk Powder", "price": { "median": 4500, "min": 4200, "max": 5100 }, "inventoryItemId": "2c9f…" }],
+      "review": null, "evidence": null,
+      "cropUrl": "https://…r2.cloudflarestorage.com/…/tally/crops/<scanId>/0.webp?X-Amz-…",
+      "decision": { "action": "restock", "itemId": "2c9f…", "itemName": "Peak Milk 400g", "quantity": 6, "confirmedQid": "QC-7K2M-9XQ4-R", "decidedAt": "…" }
+    }
+  ]
+}
+```
+
+- **Candidates:** Tally stores Qore IDs, scores and (since migration `0007`) `match` only. Names, prices and images are fetched again from Qore Catalog by Qore ID (cached 10 minutes, a merged product followed once). A lookup that fails leaves just `qid` and `score`, and `candidateDetails` is false.
+- **Store state is as of now:** `inventoryItemArchived` and each candidate's `inventoryItemId` come from today's inventory, so an item removed since the scan offers restore. `inventoryNeedsConfirm` follows the scan-time rule (reading: sure; name: ask; catalogue: sure only when that candidate's `match` is `strong`).
+- **`review`** is stored (migration `0007`), so a reopened agent scan still picks nothing on a flagged line.
+- **`cropUrl`:** a presigned R2 link valid for an hour, or null when R2 isn't configured. It 404s when no crop was stored (box too small).
+- **`decision`:** null until the line is confirmed.
+
+### `GET /api/businesses/:id/vision/stocktakes?limit=` (built)
+
+Stock-take history: the business's stock-take runs and quick scans (scans no run points at), newest first. `limit` 1–100, default 30.
+
+```json
+[
+  { "id": "5b0e…", "kind": "stocktake", "runId": "5b0e…", "scanId": "9a41…", "status": "confirmed", "fallback": false,
+    "startedAt": "…", "confirmedAt": "…", "error": null, "lines": 8, "decided": { "add": 2, "restock": 5, "restore": 0, "skip": 1 },
+    "preview": ["Peak", "Milo", "Indomie"] }
+]
+```
+
+- `status`: `running`, `review` (the scan is open), `confirmed`, or `failed` (`error` says why). Runs past their deadline are marked failed before the list is read.
+- `preview`: up to 3 distinct products read (brand, else name), in scan order; the entry's title.
+- `lines` is null while running or when the run failed. `decided` counts lines by the action the merchant chose: an `add` lands as a restock when the item already exists, so it can differ from the confirm response's `created`.
+- Open an entry with `GET …/stocktakes/:runId` (a run) or `GET …/shelf-scans/:scanId` (a quick scan).
 
 ### `POST /api/businesses/:id/vision/shelf-scans/:scanId/confirm` (built)
 
@@ -276,14 +325,14 @@ When a scan is stored, Tally cuts one crop per detection (its largest box, 6% ma
 - **Lines with a Qore ID:** on confirm, after the line's feedback is sent, Tally reads the crop back and uploads it as a candidate picture of the confirmed product. A curator approves or rejects it in Qore Catalog. Approved pictures come back on products as `image.url`.
 - **New items:** lines confirmed as a new item (no Qore ID) or skipped send nothing.
 - **Best-effort:** a crop or upload failure never fails the scan or the confirm. The scan response reports `cropsStored`; confirm reports `images: { uploaded, skipped, failed }`.
-- **Credentials:** R2 keys are server-only (`R2_*` in apps/api, token scoped to the bucket). Not Supabase Storage, which would write to the shared project's `storage` schema. Clients will only ever get short-lived presigned URLs. Without `R2_*`, crops are skipped and everything else works.
+- **Credentials:** R2 keys are server-only (`R2_*` in apps/api, token scoped to the bucket). Not Supabase Storage, which would write to the shared project's `storage` schema. Clients only get short-lived presigned URLs: a reopened scan's `cropUrl` (an hour). Without `R2_*`, crops are skipped and everything else works.
 
 ## Data
 
 Migration `0004_add_vision_scans`, all in the `tally` schema. Child rows carry `business_id` and use composite foreign keys, like the rest of the schema. Tally keeps its own readings and only Qore IDs + match scores from the catalogue: no catalogue names or prices. How these tables relate, and who writes what: [vision schema](vision-schema.md).
 
 - **`vision_scans`** (built): business, status (`open`, `confirmed`), the photo's sha256 and size, model ids, time per stage, `created_by`.
-- **`vision_detections`** (built): the scan and position; brand, name, pack and look as read; Spark's and SAM's counts; boxes and confidence; candidates as `[{qid, score}]`; the item it looks like and how it was found. The merchant's decision (migration `0005_add_vision_decisions`): action, feedback outcome, confirmed Qore ID, item, quantity, who decided and when, and when feedback was sent.
+- **`vision_detections`** (built): the scan and position; brand, name, pack and look as read; Spark's and SAM's counts; boxes and confidence; candidates as `[{qid, score, match}]`; the item it looks like and how it was found; for an agent scan, the `review` reason (migration `0007_add_detection_review`). The merchant's decision (migration `0005_add_vision_decisions`): action, feedback outcome, confirmed Qore ID, item, quantity, who decided and when, and when feedback was sent.
 - **`inventory_item_readings`** (written on confirm, branded readings only): `brand|name|pack` as read → the merchant's item. One reading maps to one item per business.
 
 Identify calls are not stored; only a confirmed reading is (`inventory_item_readings`).

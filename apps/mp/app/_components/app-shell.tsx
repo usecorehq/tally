@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { InsetPanel, SolarIcon, cn } from "@tally/ui";
+import { StocktakeRecents } from "../stocktake/recents";
 import { auth, signOut } from "@/auth";
 import { MobileNav, SidebarNav } from "./nav-links";
 import { FOCUS } from "./segment";
@@ -27,6 +29,10 @@ export async function AppShell({ children, width = "default" }: { children: Reac
           <span className="text-[17px] font-semibold tracking-tight text-gray-900">Tally</span>
         </div>
         <SidebarNav />
+        {/* Stock-take pages only; it reads ?business=, hence the boundary. */}
+        <Suspense fallback={null}>
+          <StocktakeRecents />
+        </Suspense>
         <div className="mt-auto flex flex-col gap-3 border-t border-gray-200 pt-4">
           <ThemeToggle />
           <div className="flex flex-col gap-1">

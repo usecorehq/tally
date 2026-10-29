@@ -50,6 +50,13 @@
       "when": 1793208541601,
       "tag": "0006_add_stocktake_agent",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793268597828,
+      "tag": "0007_add_detection_review",
+      "breakpoints": true
     }
   ]
 }
