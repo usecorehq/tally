@@ -1,7 +1,17 @@
 "use server";
 
 import { api, ApiError } from "@/lib/api";
-import type { ActionResult, CatalogProduct, CatalogProductDetail, ConfirmResult, Decision, ShelfScanResult, StocktakeRun } from "./types";
+import type {
+  ActionResult,
+  CatalogProduct,
+  CatalogProductDetail,
+  ConfirmResult,
+  Decision,
+  HistoryEntry,
+  ScanView,
+  ShelfScanResult,
+  StocktakeRun,
+} from "./types";
 
 const vision = (businessId: string) => `/businesses/${encodeURIComponent(businessId)}/vision`;
 
@@ -37,6 +47,39 @@ export async function pollStocktake(businessId: string, runId: string): Promise<
   try {
     const data = await api<StocktakeRun>(`${vision(businessId)}/stocktakes/${encodeURIComponent(runId)}`);
     return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** A stored scan, reopened (candidate names and prices fetched again). */
+export async function getScan(businessId: string, scanId: string): Promise<ActionResult<ScanView>> {
+  try {
+    const data = await api<ScanView>(`${vision(businessId)}/shelf-scans/${encodeURIComponent(scanId)}`, { timeoutMs: 30_000 });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** The business's stock-takes and quick scans, newest first. */
+export async function stocktakeHistory(businessId: string, limit = 50): Promise<ActionResult<HistoryEntry[]>> {
+  try {
+    const data = await api<HistoryEntry[]>(`${vision(businessId)}/stocktakes?limit=${limit}`);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** The sidebar's recents: the business in ?business= (else the user's first) and its newest stock-takes. */
+export async function recentStocktakes(business: string | null): Promise<ActionResult<{ businessId: string; entries: HistoryEntry[] }>> {
+  try {
+    const businesses = await api<{ id: string }[]>("/businesses");
+    const businessId = businesses.find((b) => b.id === business)?.id ?? businesses[0]?.id;
+    if (!businessId) return { ok: true, data: { businessId: "", entries: [] } };
+    const entries = await api<HistoryEntry[]>(`${vision(businessId)}/stocktakes?limit=30`);
+    return { ok: true, data: { businessId, entries } };
   } catch (err) {
     return fail(err);
   }

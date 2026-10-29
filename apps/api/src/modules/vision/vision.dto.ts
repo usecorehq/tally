@@ -116,3 +116,13 @@ export class RunParams extends BusinessParams {
   @IsUUID()
   runId!: string;
 }
+
+export class HistoryQuery {
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 30 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}

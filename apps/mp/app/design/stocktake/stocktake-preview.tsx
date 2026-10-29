@@ -7,6 +7,13 @@ import { Outcome, ReviewTable } from "../../stocktake/review-table";
 import { BusinessesLoadFailed, LoadFailed } from "../../stocktake/load-failed";
 import { PickSkeleton } from "../../stocktake/pick-skeleton";
 import { PICK_TITLE } from "../../stocktake/copy";
+import { cropThumbs } from "../../stocktake/image";
+import { ConfirmedView } from "../../stocktake/confirmed-view";
+import { HistorySkeleton, HistoryView } from "../../stocktake/history/history-view";
+import { SessionSkeleton } from "../../stocktake/session-skeleton";
+import { RunFailed } from "../../stocktake/session";
+import { HistoryButton } from "../../stocktake/stocktake-flow";
+import { RecentsList } from "../../stocktake/recents";
 import type { Variant } from "./variants";
 import {
   DETECTIONS,
@@ -19,7 +26,10 @@ import {
   RESULT_EMPTY,
   RESULT_NO_CATALOGUE,
   STEPS,
+  confirmed,
   drawShelf,
+  history,
+  reopened,
 } from "./fixtures";
 
 const BUSINESSES = [
@@ -48,6 +58,9 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [startedAt] = useState(() => Date.now() - 48_000);
   const [businessId, setBusinessId] = useState("b1");
+  const [crops, setCrops] = useState<Record<string, string>>({});
+  // Set after mount: fixture times relative to it would differ between server and client render.
+  const [now, setNow] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -55,11 +68,76 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
     drawShelf().then((blob) => {
       url = URL.createObjectURL(blob);
       setPhoto({ blob, url, width: 1600, height: 1000 });
+      // Stands in for the stored R2 crops of a reopened scan.
+      cropThumbs(blob, DETECTIONS, 160).then(setCrops, () => undefined);
     });
+    setNow(Date.now());
     return () => URL.revokeObjectURL(url);
   }, []);
 
   if (variant === "loading") return <PickSkeleton />;
+
+  if (variant.startsWith("recents")) {
+    if (now === null) return null;
+    const data = variant === "recents-loading" ? null : variant === "recents-failed" ? "failed" : { businessId: "b1", entries: variant === "recents-empty" ? [] : history(now) };
+    // The sidebar's stock-take section (stocktake/recents.tsx), at the sidebar's width.
+    return (
+      <div className="flex h-[560px] w-60 flex-col rounded-[18px] bg-gray-100 px-3 py-3">
+        <RecentsList data={data as Parameters<typeof RecentsList>[0]["data"]} active="r2" newActive={false} onRetry={noop} />
+      </div>
+    );
+  }
+  if (variant === "history-loading") return <HistorySkeleton />;
+  if (variant.startsWith("history")) {
+    if (now === null) return null;
+    return (
+      <HistoryView
+        businesses={BUSINESSES}
+        businessId={businessId}
+        entries={variant === "history-failed" ? null : variant === "history-empty" ? [] : history(now)}
+        error={variant === "history-failed" ? "Something went wrong on our side. Try again." : undefined}
+        onBusiness={setBusinessId}
+        onRetry={noop}
+      />
+    );
+  }
+  if (variant === "session-loading") return <SessionSkeleton />;
+  if (variant === "session-failed") {
+    if (now === null) return null;
+    return <RunFailed business={BUSINESSES[0]!} startedAt={new Date(now - 27 * 3_600_000).toISOString()} error="First pass failed: Database busy, retry shortly" />;
+  }
+  if (variant === "session-not-found") {
+    // session.tsx's SessionLoadFailed needs a router; same parts.
+    return (
+      <div className="q-rise">
+        <PageHeader title="Stock-take" className="[&_h1]:whitespace-normal" actions={<HistoryButton href="#" />} />
+        <LoadFailed title="We couldn't open this stock-take" body={ERRORS.failed} onRetry={noop} />
+      </div>
+    );
+  }
+  if (variant === "session-confirmed") {
+    if (Object.keys(crops).length === 0 || now === null) return <p className="text-sm text-gray-500">Drawing the fixture crops…</p>;
+    return <ConfirmedView scan={confirmed(crops, now)} businessName={BUSINESSES[0]!.name} kind="stocktake" actions={<HistoryButton href="#" />} />;
+  }
+  if (variant === "session-working-no-photo") {
+    return <Working photo={null} phase={{ name: "working", mode: "agent", steps: STEPS, startedAt }} businessName={BUSINESSES[0]!.name} />;
+  }
+  if (variant === "session-reopened") {
+    if (Object.keys(crops).length === 0 || now === null) return <p className="text-sm text-gray-500">Drawing the fixture crops…</p>;
+    return (
+      <ReviewTable
+        businessId="b1"
+        businessName={BUSINESSES[0]!.name}
+        result={reopened(crops, now)}
+        fallback={false}
+        photo={null}
+        photoUrl={null}
+        onRestart={noop}
+        actions={<HistoryButton href="#" />}
+        confirm={async () => ({ ok: true, data: OUTCOME })}
+      />
+    );
+  }
   if (variant === "businesses-failed") return <BusinessesLoadFailed onRetry={noop} />;
   if (variant === "route-error") {
     // stocktake/error.tsx, which needs a router; same parts.
@@ -86,6 +164,7 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
         onFile={noop}
         onAgent={noop}
         onQuick={noop}
+        historyHref="#"
       />
     );
   }

@@ -7,6 +7,7 @@ import {
   Param,
   ParseFilePipeBuilder,
   Post,
+  Query,
   UploadedFile,
   UseFilters,
   UseInterceptors,
@@ -16,7 +17,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { BusinessParams } from "../businesses/businesses.dto";
 import { VisionExceptionFilter } from "./vision-errors";
-import { ConfirmBody, IdentifyConfirmBody, RunParams, ScanParams } from "./vision.dto";
+import { ConfirmBody, HistoryQuery, IdentifyConfirmBody, RunParams, ScanParams } from "./vision.dto";
 import { VisionService } from "./vision.service";
 
 export const MAX_SHELF_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -101,10 +102,39 @@ export class VisionController {
     return this.vision.startStocktake(businessId, user.sub, file.buffer);
   }
 
+  @Get("stocktakes")
+  @ApiOperation({
+    summary:
+      "Stock-take history: the business's stock-take runs and quick scans, newest first. Status running, review (scan open), confirmed or failed; line count and decided lines by action. Open one with …/stocktakes/:runId or …/shelf-scans/:scanId.",
+  })
+  @ApiOkResponse({
+    schema: {
+      example: [
+        {
+          id: "5b0e…",
+          kind: "stocktake",
+          runId: "5b0e…",
+          scanId: "9a41…",
+          status: "confirmed",
+          fallback: false,
+          startedAt: "2026-10-29T09:12:00.000Z",
+          confirmedAt: "2026-10-29T09:20:31.000Z",
+          error: null,
+          lines: 8,
+          decided: { add: 2, restock: 5, restore: 0, skip: 1 },
+          preview: ["Peak", "Milo", "Indomie"],
+        },
+      ],
+    },
+  })
+  history(@CurrentUser() user: AuthenticatedUser, @Param() { businessId }: BusinessParams, @Query() { limit }: HistoryQuery) {
+    return this.vision.history(businessId, user.sub, limit ?? 30);
+  }
+
   @Get("stocktakes/:runId")
   @ApiOperation({
     summary:
-      "A stock-take run: status (running, done, fallback, failed), the agent's step trace so far, and once finished the result in the shelf-scans shape. Confirm it with …/shelf-scans/:scanId/confirm.",
+      "A stock-take run: status (running, done, fallback, failed), the agent's step trace so far, and once finished its stored scan (as GET …/shelf-scans/:scanId). Confirm it with …/shelf-scans/:scanId/confirm.",
   })
   getStocktake(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, runId }: RunParams) {
     return this.vision.getStocktake(businessId, user.sub, runId);
@@ -165,7 +195,10 @@ export class VisionController {
   }
 
   @Get("shelf-scans/:scanId")
-  @ApiOperation({ summary: "A stored shelf scan: detections, counts, candidate Qore IDs + scores, inventory match and decisions." })
+  @ApiOperation({
+    summary:
+      "A stored shelf scan, reopened: status, detections in the shelf-scans shape (candidate names and prices fetched again from Qore Catalog, store state as of now), the agent's review reason, a crop URL and each line's decision.",
+  })
   getScan(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
     return this.vision.getScan(businessId, user.sub, scanId);
   }

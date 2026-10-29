@@ -61,7 +61,20 @@ export type Detection = {
   inventoryNeedsConfirm: boolean;
   /** Agent scans only: why the merchant should look closely (escalated, or never reviewed by the agent). */
   review?: string | null;
-  evidence?: { turn: number; tool: string; summary: string }[];
+  evidence?: { turn: number; tool: string; summary: string }[] | null;
+  /** A reopened scan only: order in the scan, the stored crop and the line's decision. */
+  position?: number;
+  cropUrl?: string | null;
+  decision?: LineDecision | null;
+};
+
+export type LineDecision = {
+  action: "restock" | "restore" | "add" | "skip";
+  itemId: string | null;
+  itemName: string | null;
+  quantity: number | null;
+  confirmedQid: string | null;
+  decidedAt: string;
 };
 
 export type ShelfScanResult = {
@@ -69,6 +82,32 @@ export type ShelfScanResult = {
   catalogueAvailable?: boolean;
   timings?: { totalMs: number };
   detections: Detection[];
+  /** A reopened scan only (GET …/shelf-scans/:scanId, or a finished run's result). */
+  status?: "open" | "confirmed";
+  createdAt?: string;
+  confirmedAt?: string | null;
+  /** False when some candidate names and prices couldn't be fetched again. */
+  candidateDetails?: boolean;
+};
+
+/** A stored scan, as the API returns it on reopen. */
+export type ScanView = ShelfScanResult & { status: "open" | "confirmed"; createdAt: string; confirmedAt: string | null };
+
+/** One row of GET …/vision/stocktakes. */
+export type HistoryEntry = {
+  id: string;
+  kind: "stocktake" | "quick";
+  runId: string | null;
+  scanId: string | null;
+  status: "running" | "review" | "confirmed" | "failed";
+  fallback: boolean;
+  startedAt: string;
+  confirmedAt: string | null;
+  error: string | null;
+  lines: number | null;
+  decided: { add: number; restock: number; restore: number; skip: number };
+  /** Up to 3 distinct products read: the entry's title. */
+  preview: string[];
 };
 
 export type RunStatus = "running" | "done" | "fallback" | "failed";
@@ -82,9 +121,9 @@ export type AgentStep = {
 };
 
 export type StocktakeRun = {
-  run: { id: string; status: RunStatus; scanId: string | null; turns: number; error: string | null };
+  run: { id: string; status: RunStatus; scanId: string | null; turns: number; error: string | null; startedAt: string };
   steps: AgentStep[];
-  result: ShelfScanResult | null;
+  result: ScanView | null;
 };
 
 export type Decision =

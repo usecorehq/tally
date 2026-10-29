@@ -1,4 +1,4 @@
-import type { AgentStep, ConfirmResult, Detection, ShelfScanResult } from "../../stocktake/types";
+import type { AgentStep, ConfirmResult, Detection, HistoryEntry, ScanView, ShelfScanResult } from "../../stocktake/types";
 
 // Fixture data for /design/stocktake. Boxes are on the 0–1000 grid; the placeholder photo is drawn from them.
 
@@ -235,4 +235,73 @@ export async function drawShelf(width = 1600, height = 1000): Promise<Blob> {
     }
   }
   return new Promise((resolve) => canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.85));
+}
+
+// ── History and reopened sessions ──
+// Times are relative to `now`, which the preview sets after mount so server and client render the same.
+
+const agoFrom = (now: number) => (min: number) => new Date(now - min * 60_000).toISOString();
+const none = { add: 0, restock: 0, restore: 0, skip: 0 };
+
+export function history(now: number): HistoryEntry[] {
+  const ago = agoFrom(now);
+  return [
+    { id: "r1", kind: "stocktake", runId: "r1", scanId: null, status: "running", fallback: false, startedAt: ago(1), confirmedAt: null, error: null, lines: null, decided: none , preview: [] },
+    { id: "r2", kind: "stocktake", runId: "r2", scanId: "s2", status: "review", fallback: false, startedAt: ago(42), confirmedAt: null, error: null, lines: 7, decided: { ...none, restock: 2 } , preview: ["Peak", "Milo", "Indomie"] },
+    { id: "s3", kind: "quick", runId: null, scanId: "s3", status: "review", fallback: false, startedAt: ago(95), confirmedAt: null, error: null, lines: 0, decided: none , preview: [] },
+    { id: "r4", kind: "stocktake", runId: "r4", scanId: "s4", status: "confirmed", fallback: true, startedAt: ago(26 * 60), confirmedAt: ago(26 * 60 - 9), error: null, lines: 8, decided: { add: 2, restock: 5, restore: 0, skip: 1 } , preview: ["Golden Penny", "Dettol", "Zobo"] },
+    { id: "r5", kind: "stocktake", runId: "r5", scanId: null, status: "failed", fallback: false, startedAt: ago(27 * 60), confirmedAt: null, error: "First pass failed: Database busy, retry shortly", lines: null, decided: none , preview: [] },
+    { id: "s6", kind: "quick", runId: null, scanId: "s6", status: "confirmed", fallback: false, startedAt: ago(5 * 24 * 60), confirmedAt: ago(5 * 24 * 60 - 4), error: null, lines: 3, decided: { add: 1, restock: 1, restore: 1, skip: 0 } , preview: ["Cooking Oil", "Blue box"] },
+  ];
+}
+
+/** A reopened open scan: crops instead of the photo, two lines confirmed earlier, one catalogue lookup missing. */
+export function reopened(crops: Record<string, string>, now: number): ScanView {
+  const ago = agoFrom(now);
+  return {
+    scanId: "scan-fixture",
+    status: "open",
+    createdAt: ago(42),
+    confirmedAt: null,
+    catalogueAvailable: true,
+    candidateDetails: false,
+    detections: DETECTIONS.map((d, position) => ({
+      ...d,
+      position,
+      cropUrl: crops[d.id] ?? null,
+      decision:
+        position < 2 ? { action: "restock", itemId: d.inventoryItemId, itemName: "Peak Evaporated Milk 160g", quantity: d.count, confirmedQid: null, decidedAt: ago(40) } : null,
+    })),
+  };
+}
+
+const ACTIONS = ["restock", "restore", "add", "add", "skip", "restock", "add"] as const;
+
+/** A confirmed scan, read-only. */
+export function confirmed(crops: Record<string, string>, now: number): ScanView {
+  const ago = agoFrom(now);
+  return {
+    scanId: "scan-fixture",
+    status: "confirmed",
+    createdAt: ago(26 * 60),
+    confirmedAt: ago(26 * 60 - 9),
+    catalogueAvailable: true,
+    detections: DETECTIONS.map((d, position) => {
+      const action = ACTIONS[position % ACTIONS.length]!;
+      const name = d.candidates[0]?.name ?? [d.brand, d.name, d.pack].filter(Boolean).join(" ");
+      return {
+        ...d,
+        position,
+        cropUrl: crops[d.id] ?? null,
+        decision: {
+          action,
+          itemId: action === "skip" ? null : `item-${position}`,
+          itemName: action === "skip" ? null : name,
+          quantity: action === "skip" ? null : position === 2 ? d.count - 1 : d.count,
+          confirmedQid: null,
+          decidedAt: ago(26 * 60 - 9),
+        },
+      };
+    }),
+  };
 }
