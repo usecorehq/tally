@@ -130,7 +130,9 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
           "packQty": 1,
           "score": 0.94,
           "price": { "median": 4500, "min": 4200, "max": 5100 },
-          "inventoryItemId": null
+          "inventoryItemId": null,
+          "match": "strong",
+          "image": null
         }
       ]
     }
@@ -142,6 +144,24 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 - `count` is SAM's when SAM found this product's units (`countSource: "sam"`), else Spark's. Both raw counts are returned; `samCount` is `null` when SAM didn't run for the product (more than 20 distinct looks, or the SAM request failed). `boxes`: one per counted unit, at most 50 products per photo.
 - `timings`: `samMs` and `matchMs` run in parallel after `readMs`.
 - `candidates`: up to 3 plausible matches, best first. When a brand was read, only products of that brand count. Without one, the name must match on meaning: `/v1/match` `signals.text` ≥ 0.50. Measured on 92 unbranded reads after Qore Catalog added semantic search, this keeps 58 of 61 right-type matches and 1 of 31 wrong ones. Unbranded matches are always suggestions (`inventoryNeedsConfirm`), never sure. `/v1/match` always returns its nearest products, so without this filter a brand the catalogue lacks comes back as another brand's lookalike. Empty means the catalogue doesn't have it: the merchant adds it as their own item. `price` is `null` when the catalogue has no price.
+- `candidates[].match`: how well the candidate fits what was read, from the catalogue's match signals:
+  - `strong`: the brand and size both agree with the label;
+  - `medium`: the brand agrees (the size doesn't, or wasn't read), or no brand was read but the name matches well (text ≥ 0.7);
+  - `low`: it passed the filter above, but only just.
+- `candidates[].image`: the catalogue's approved picture `{ url, width, height }`, or `null` until a curator approves one, which is the case for all products today. Show the line's crop or a placeholder instead.
+
+#### Showing a line (clients)
+
+- **Pre-fill by the top candidate's `match`:**
+  - `strong`: pre-fill its name and price.
+  - `medium`: pre-fill, but ask "Is this your item?".
+  - `low`: **don't pre-fill.** Default the line to "New item" with the label's reading as the name (e.g. "Blue box") and no price; the low suggestions appear only in the picker. Live, an unbranded "Blue box" otherwise pre-filled a hair dye at ₦11,499.
+- **Product picker** (tapping a line's product):
+  - **Suggested:** the line's `candidates`, each with its image or the crop, name, size or variant, ~₦ median and a match pill. The current pick is selected.
+  - **Other sizes of the selected product:** `GET /api/catalog/products/:qid` returns `variants: [{ qid, variantLabel, packQty }]`. A variant carries no price, so fetch the chosen variant the same way for its price. Picking another size fixes the most common error: right product, wrong size.
+  - **Search the catalogue:** `GET /api/catalog/products?q=…&limit=10`, debounced.
+  - **New item (not in catalogue):** no Qore ID.
+- **On confirm:** send `add` with the picked `qid` (or none for a new item), or `restock`, as before. The server derives the feedback: the top suggestion kept is `accepted`, any other product (another size, a search result) is `corrected`, and no Qore ID is `new_item`.
 - `inventoryItemId` (on a candidate): the business's active item linked to that Qore ID.
 - `catalogueAvailable: false`: Qore Catalog failed; detections come back without candidates rather than failing the scan.
 - `scanId` and detection `id`s are stored: confirm uses them. Only the photo's sha256 is kept, not the photo.
