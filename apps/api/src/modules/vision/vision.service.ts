@@ -87,7 +87,7 @@ export type IdentifyResult = {
     inventoryMatch: InventoryMatch;
     /** An item the merchant removed: offer to restore it. */
     archived: boolean;
-    /** Ask "Is this your X?" before selling it. */
+    /** Ask "Is this your X?" before counting it as that item. */
     needsConfirm: boolean;
   } | null;
   /** Catalogue suggestions when it isn't in store (asked only then). */
@@ -539,7 +539,7 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Point-to-sell: product photo → label (Spark) → the merchant's own item, matched in Tally. The catalogue
+   * Identify one product: product photo → label (Spark) → the merchant's own item, matched in Tally. The catalogue
    * is asked only when nothing in store matches, so a known item costs one model call. Stores nothing.
    */
   async identify(businessId: string, userId: string, image: Buffer): Promise<IdentifyResult> {

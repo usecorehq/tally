@@ -15,7 +15,7 @@ const COMPACT_FIELD = "h-10 text-[14px]";
 
 export const PICK_HEADING = {
   title: "Pick your starter items",
-  subtitle: "Products shops like yours usually stock, with typical Nigerian prices. Keep what you sell and set your own price.",
+  subtitle: "Products shops like yours usually stock, with typical Nigerian prices. Keep what you stock and set your own price.",
 };
 
 /** The footer line while picking: how many rows are kept. */

@@ -18,7 +18,7 @@ A **scan** (`vision_scans`) is one shelf photo. Each product found in it is a **
 | `vision_agent_runs` | One stock-take: status, model, turns, tokens, error, the resulting scan, and for a rerun the photo's first scan | `businesses` | `POST …/vision/stocktakes` or `…/shelf-scans/:scanId/rerun` creates it; the background run updates it |
 | `vision_agent_steps` | One step of a run: `baseline` (first pass), `thought` or `tool` with its arguments and a short summary | `vision_agent_runs` | The background run, as it goes |
 
-Identify calls (point to sell) write nothing until the merchant confirms, and then only a reading.
+Identify calls (identify one product) write nothing until the merchant confirms, and then only a reading.
 
 ## Relationships
 

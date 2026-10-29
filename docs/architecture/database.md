@@ -20,18 +20,17 @@ One store per business, Naira only, no VAT. Money is `numeric(12,2)`; Drizzle re
 
 | Table | Holds |
 |---|---|
-| `businesses` | A merchant's shop: owner (`auth.users`), name, Qore Catalog vertical + sub-type, `sale_counter` |
+| `businesses` | A merchant's shop: owner (`auth.users`), name, Qore Catalog vertical + sub-type |
 | `business_members` | Who can use the shop: `owner` or `staff` |
-| `inventory_items` | What the shop sells: optional `core_qid` link to Qore Catalog, name/variant/pack, price, cost, `quantity_on_hand`, `source` (template, photo, manual). Removing an item sets `archived_at`; rows are never deleted |
-| `stock_movements` | Append-only log of every stock change: `opening`, `restock`, `sale`, `adjustment`, `void` |
-| `sales` | One checkout: per-business `sale_number`, `completed` or `voided`, `subtotal − discount = total`, `paid_amount` |
-| `sale_items` | Lines of a sale, with `item_name` and `unit_price` copied as sold |
-| `sale_payments` | Money received for a sale: amount and method (`cash`, `transfer`, `card`, `other`); recorded, not processed |
+| `inventory_items` | What the shop stocks: optional `core_qid` link to Qore Catalog, name/variant/pack, price, cost, `quantity_on_hand`, `source` (template, photo, manual). Removing an item sets `archived_at`; rows are never deleted |
+| `stock_movements` | Append-only log of every stock change: `opening`, `restock`, `adjustment` (the `sale` and `void` types are unused) |
 | `vision_scans` | One shelf photo recognised by the camera flow: status (`open`, `confirmed`), image sha256 and size (the photo itself is in R2 at `tally/scans/<scanId>.jpg`, not in the database), models and timings |
 | `vision_detections` | One product found in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates as Qore IDs + scores only, the item the merchant seems to stock, and the merchant's decision (`restock`, `restore`, `add`, `skip`) with its feedback outcome |
 | `vision_agent_runs` | A stock-take agent run: status (`running`, `done`, `fallback`, `failed`), model, turns, tokens, error, the resulting scan |
 | `vision_agent_steps` | The run's audit trail: one row per step (`baseline`, `thought`, `tool`) with tool, arguments and a short summary |
 | `inventory_item_readings` | What the camera read for an item the merchant confirmed (`brand\|name\|pack`), so later scans recognise it; one reading → one item per business |
+
+`sales`, `sale_items`, `sale_payments` and their functions came with the initial schema and are unused; Tally doesn't record sales. Removing them needs a migration (planned decision).
 
 Child tables carry `business_id` and use composite foreign keys (`(business_id, x_id)`), so no row can point at another business's data.
 
@@ -39,25 +38,11 @@ Child tables carry `business_id` and use composite foreign keys (`(business_id, 
 
 | Rule | How |
 |---|---|
-| `sales.paid_amount` is the sum of its payments | Trigger on `sale_payments` recomputes it on every insert/update/delete; direct writes raise an error |
 | `inventory_items.quantity_on_hand` moves only through `stock_movements` | Trigger on insert applies the delta under a row lock and sets `quantity_after`; direct writes raise an error; new items start at 0 (record an `opening` movement) |
 | Stock history can't be rewritten | `stock_movements` rejects UPDATE and DELETE; corrections are new `adjustment` rows |
-| A sale's stock is deducted once | `tally.deduct_sale_stock(sale_id, user_id)` is a no-op if `stock_deducted_at` is set |
-| Voiding returns stock once | `tally.void_sale(sale_id, user_id, reason)`; raises if already voided |
 | One item per barcode | Unique `(business_id, barcode)` among active items (`0003`); 12-digit UPC-A stored as 13-digit EAN |
-| Retries don't duplicate | Optional `client_sale_id`, `client_payment_id`, `client_movement_id`, unique per business |
-| Negative stock | Allowed (shops sell before they count), raised as a NOTICE |
-
-### Recording a sale (one transaction in apps/api)
-
-1. `select tally.next_sale_number(business_id)`
-2. insert `sales` (with `subtotal`, `discount`, `total`; leave `paid_amount` alone) and its `sale_items`
-3. insert `sale_payments`
-4. `select tally.deduct_sale_stock(sale_id, user_id)`
-
-### Money rule
-
-Revenue and reports read `sale_payments` (or `sales.paid_amount`) for `completed` sales — never `total` or `subtotal`. A stored total is what the cashier charged; payments are what came in.
+| Retries don't duplicate | Optional `client_movement_id`, unique per business |
+| Negative stock | Allowed (real stock can run ahead of the last count), raised as a NOTICE |
 
 ## Connection pooling
 
@@ -85,8 +70,7 @@ Drizzle's default ledger is `drizzle.__drizzle_migrations`, and bookmi already u
 - Applied migration files are frozen. Fix forward with a new migration.
 - Grants and tightenings never share a migration.
 - Staging only from this repo; production is applied by the CTO.
-- Revenue and reporting read paid amounts (`sale_payments`, `sales.paid_amount`), never totals.
-- Never write `sales.paid_amount` or `inventory_items.quantity_on_hand` from app code; the database rejects it.
+- Never write `inventory_items.quantity_on_hand` from app code; the database rejects it.
 
 ## PostgREST
 

@@ -83,7 +83,7 @@ const PROMPT = [
   "List every distinct packaged product you can see. Units with the same brand, name and pack size are one product; different sizes or flavours are different products.",
   "For each product, read the brand, product name and pack size exactly as printed on the packaging. Do not guess text you cannot read: leave brand or pack as an empty string instead.",
   "Give one bounding box per visible unit of that product, as [x_min, y_min, x_max, y_max] on a normalized 0-1000 grid with (0,0) at the top-left of the image. Do not miss any units.",
-  "Ignore shelving, price tags, people and anything that is not a product for sale.",
+  "Ignore shelving, price tags, people and anything that is not a stocked product.",
   "confidence: high when the label is clearly legible, medium when partly legible, low when you are inferring from shape or colour.",
   "look: the unit's main colour and container for a segmentation model, as exactly two words: one colour + one container (e.g. 'red box', 'yellow bucket', 'white bottle'). Never two colours, never a brand.",
 ].join("\n");

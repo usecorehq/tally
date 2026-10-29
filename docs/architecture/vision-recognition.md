@@ -1,15 +1,15 @@
 # Vision recognition
 
-> Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [point to sell](../diagrams/images/vision-identify-sequence.svg), [stock-take history](../diagrams/images/stocktake-history-sequence.svg).
+> Diagrams: [shelf scan](../diagrams/images/vision-shelf-scan-sequence.svg), [identify one product](../diagrams/images/vision-identify-sequence.svg), [stock-take history](../diagrams/images/stocktake-history-sequence.svg).
 >
-> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, point-to-sell identify (tier 1), product crops (R2) sent to Qore Catalog as pictures, and stock-take history (every scan reopenable at its own URL in apps/mp). **Planned:** an on-device model. Planned endpoint shapes may change before they ship.
+> **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, identify one product (tier 1), product crops (R2) sent to Qore Catalog as pictures, and stock-take history (every scan reopenable at its own URL in apps/mp). **Planned:** an on-device model. Planned endpoint shapes may change before they ship.
 
 The merchant points the phone camera at products and Tally recognises them. Product side (users, screens, metrics, delivery slices): [photo-to-inventory PRD](../prd-photo-to-inventory.md). There are two flows. Stock-taking can also run as an agent; see [Stock-take agent](stocktake-agent.md).
 
 On the web, the merchant portal's `/stocktake` page runs the shelf scan from an uploaded or captured photo (see [Web stock-take](#web-stock-take-apps-mp)).
 
 - **Shelf scan (photo → inventory).** Photograph a shelf or a pile of stock. Tally identifies every product in the frame and matches each one to a Qore Catalog product with an indicative ₦ price. The merchant confirms or corrects the results, and the items land in their inventory with counts. Accuracy matters more than speed here.
-- **Point to sell.** Point the camera at one item to find it at the till. Speed matters most here.
+- **Identify one product.** Point the camera at one item to find it in the merchant's stock, e.g. to check or count it.
 
 Every confirmation or correction goes back to Qore Catalog as feedback with `source: "photo"`. Qore Catalog uses those labels for recognition training (see [Q Vision](qvision-distillation.md)).
 
@@ -21,7 +21,7 @@ Every confirmation or correction goes back to Qore Catalog as feedback with `sou
 | Read the products in a photo (brand, name, pack size, rough count, box) | apps/api → Meta Model API | Muse Spark (`muse-spark-1.3`), structured JSON output |
 | Count each product's units | apps/api → Meta Model API | SAM 3.1 (`sam-3.1`), one concept prompt per distinct look |
 | Match to the catalogue, with prices | apps/api → Qore Catalog | `POST /v1/match` |
-| Identify one item at the till | apps/api → Meta Model API, then Tally | Muse Spark (minimal reasoning) reads the label; Tally matches it to the merchant's items |
+| Identify one product | apps/api → Meta Model API, then Tally | Muse Spark (minimal reasoning) reads the label; Tally matches it to the merchant's items |
 | On-device recognition | Device | Planned: a model provided by Qore Catalog, trained on Muse Spark labels and merchant confirmations |
 
 All model calls go through apps/api. `META_MODEL_API_KEY` is server-only, like `QORE_CATALOG_API_KEY`. The mobile app and the web apps never hold it. Requests use Meta's Standard mode, so merchants' photos are not used to train Meta's models.
@@ -88,7 +88,7 @@ Every stock-take is its own session with its own URL (`?business=<id>` picks the
 - **Calls:** every call is a server action (`apps/mp/app/stocktake/actions.ts`) that uses the session's Supabase token. The browser never sees the token, and the Meta key stays in apps/api. Server actions accept up to 5 MB (`experimental.serverActions.bodySizeLimit`).
 - **States:** 503 "not configured" or rate-limited, 413, 504, a `failed` run, and a `fallback` run ("the agent couldn't finish; showing the first pass") each get their own message. Polling stops after 5 failed polls in a row, with a retry; the API itself marks a run that ran past its deadline `failed`. History and sessions each have loading, failed (retry) and empty states, all previewed at `/design/stocktake`.
 
-## Point to sell
+## Identify one product
 
 Latency comes from tiers. The cheapest tier that answers wins.
 
@@ -100,7 +100,7 @@ Latency comes from tiers. The cheapest tier that answers wins.
 
 - **Why read the label instead of asking Spark to pick from the item list:** measured on a 640 px Close-Up photo, picking from a 20-item list took 3.3–6.2 s and mostly answered "none". Reading the label took 2.4–3.0 s and got the brand every time.
 - **It learns:** the first time a product is identified it usually needs the catalogue and a "Is this your X?" tap. Once the merchant confirms (`identify/confirm`, or a shelf-scan confirm), the reading is remembered. Live, Close-Up went from 3.7 s via the catalogue, asking first, to 2.7 s via the remembered reading, sure, with no catalogue call.
-- **The tap is always required:** the app shows the result as a suggestion, and a recognised item is never added to a sale without the merchant's tap.
+- **The tap is always required:** the app shows the result as a suggestion, and a recognised item is never acted on without the merchant's tap.
 
 ## API
 
@@ -205,7 +205,7 @@ Before a scan. Multipart, one field `image`: JPEG, PNG or WebP, at most 1 MB (se
 
 ### `POST /api/businesses/:id/vision/identify` (built)
 
-Point-to-sell. Multipart, one field `image`: JPEG, PNG or WebP, at most 1 MB. Send about a 640 px long edge (JPEG ~80 KB). Nothing is stored. Returns 200:
+Identify one product. Multipart, one field `image`: JPEG, PNG or WebP, at most 1 MB. Send about a 640 px long edge (JPEG ~80 KB). Nothing is stored. Returns 200:
 
 ```json
 {
