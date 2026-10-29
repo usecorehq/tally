@@ -10,7 +10,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { createHash } from "node:crypto";
-import type { MatchResult } from "@tally/catalog-client";
+import type { ImageSampleContext, MatchResult } from "@tally/catalog-client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
@@ -100,13 +100,25 @@ export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
   /** Best-effort: a catalogue outage never undoes the stock changes; feedback is retried on the next confirm. */
   feedback: { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string };
   /**
-   * Crops sent to Qore Catalog for lines confirmed with a Qore ID. Best-effort; skippedBy says why lines sent
-   * nothing: no Qore ID (new item, skip), no stored crop (R2 off, box too small to store), or under 160 px.
+   * Crops sent to Qore Catalog as training samples for lines confirmed with a Qore ID. Best-effort; skippedBy says why
+   * lines sent nothing (no Qore ID, no stored crop, under 96 px); samples are what Qore Catalog stored.
    */
-  images: { uploaded: number; skipped: number; failed: number; skippedBy: { noProduct: number; noCrop: number; tooSmall: number } };
+  images: {
+    uploaded: number;
+    skipped: number;
+    failed: number;
+    skippedBy: { noProduct: number; noCrop: number; tooSmall: number };
+    samples: { ref: string; sampleId: string | null; status: string }[];
+  };
 };
 
-const NO_IMAGES = (): ConfirmResponse["images"] => ({ uploaded: 0, skipped: 0, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
+const NO_IMAGES = (): ConfirmResponse["images"] => ({
+  uploaded: 0,
+  skipped: 0,
+  failed: 0,
+  skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 },
+  samples: [],
+});
 
 export type ShelfScanResult = {
   /** The stored scan; confirm it to stock the detections. */
@@ -839,10 +851,25 @@ export class VisionService implements OnApplicationBootstrap {
 
   /**
    * Sends each confirmed line's crop to Qore Catalog as an on_shelf picture, linked by clientRef. Lines without a
-   * Qore ID or under the 160 px minimum send nothing; stored by sha256, so resends are harmless.
+   * Qore ID or under the 96 px minimum send nothing; stored by sha256, so resends are harmless.
    */
   private async uploadCrops(lines: ConfirmResult["pendingFeedback"]): Promise<ConfirmResponse["images"]> {
     const images = NO_IMAGES();
+    // The stored shelf photo's size, read once per scan: boxes are sent in its pixels.
+    const photoSizes = new Map<string, Promise<{ width: number; height: number } | null>>();
+    const photoSize = (scanId: string) => {
+      if (!photoSizes.has(scanId)) {
+        photoSizes.set(
+          scanId,
+          this.media
+            .get(shelfPhotoKey(scanId))
+            .then(async (photo) => (photo ? await cropSize(photo) : null))
+            .then((size) => (size && size.width > 0 && size.height > 0 ? size : null))
+            .catch(() => null),
+        );
+      }
+      return photoSizes.get(scanId)!;
+    };
     const skip = (line: (typeof lines)[number], why: keyof ConfirmResponse["images"]["skippedBy"], detail: string) => {
       images.skipped++;
       images.skippedBy[why]++;
@@ -862,15 +889,19 @@ export class VisionService implements OnApplicationBootstrap {
         if (Math.min(size.width, size.height) < MIN_CROP_SIDE) {
           return skip(line, "tooSmall", `crop ${size.width}×${size.height} is under Qore Catalog's ${MIN_CROP_SIDE} px minimum`);
         }
+        const ref = feedbackRef(line.scanId, line.position);
         try {
-          await this.catalog.client.uploadImage({
+          const res = await this.catalog.client.uploadImage({
             file: crop,
             filename: `${line.position}.webp`,
             qid,
             view: "on_shelf",
-            feedbackClientRef: feedbackRef(line.scanId, line.position),
+            feedbackClientRef: ref,
+            sample: sampleContext(line, await photoSize(line.scanId)),
           });
           images.uploaded++;
+          images.samples.push({ ref, sampleId: res.sampleId ?? null, status: res.status });
+          this.logger.log(`Crop ${ref} sent: sample ${res.sampleId ?? "none"} (${res.status})`);
         } catch (err) {
           images.failed++;
           // CatalogError's message carries the status and Qore Catalog's reason, with the key redacted.
@@ -880,7 +911,8 @@ export class VisionService implements OnApplicationBootstrap {
     );
     this.logger.log(
       `Crops to Qore Catalog: ${images.uploaded} uploaded, ${images.failed} failed, ${images.skipped} skipped ` +
-        `(${images.skippedBy.noProduct} no product, ${images.skippedBy.noCrop} no crop, ${images.skippedBy.tooSmall} too small)`,
+        `(${images.skippedBy.noProduct} no product, ${images.skippedBy.noCrop} no crop, ${images.skippedBy.tooSmall} too small); ` +
+        `samples ${images.samples.filter((x) => x.status === "accepted").length} accepted, ${images.samples.filter((x) => x.status === "pending").length} pending`,
     );
     return images;
   }
@@ -932,4 +964,27 @@ export function withDeadline<T>(promise: Promise<T>, ms: number, message: string
     timer.unref?.();
   });
   return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+/** A crop upload's training context: its box in the stored photo's pixels (none without the photo), what counted it,
+ *  when it was scanned and the label as read. Tally keeps no numeric detector confidence, so none is sent. */
+export function sampleContext(
+  line: ConfirmResult["pendingFeedback"][number],
+  photo: { width: number; height: number } | null,
+): ImageSampleContext {
+  const box = bestBox(line.sample.boxes);
+  const px = (v: number, side: number) => Math.round((v / 1000) * side);
+  return {
+    ...(box &&
+      photo && {
+        box: { x: px(box.x1, photo.width), y: px(box.y1, photo.height), w: px(box.x2 - box.x1, photo.width), h: px(box.y2 - box.y1, photo.height) },
+        sourceWidth: photo.width,
+        sourceHeight: photo.height,
+      }),
+    detectorModel: line.sample.countSource === "sam" ? line.sample.countModel : line.sample.readModel,
+    capturedAt: line.sample.capturedAt.toISOString(),
+    labelBrand: line.brand,
+    labelName: line.name,
+    labelPack: line.pack,
+  };
 }
