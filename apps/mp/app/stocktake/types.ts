@@ -145,6 +145,8 @@ export type StocktakeRun = {
   run: { id: string; status: RunStatus; scanId: string | null; turns: number; error: string | null; startedAt: string };
   steps: AgentStep[];
   result: ScanView | null;
+  /** The shelf photo while a rerun is still running (the scan it reruns); the result carries its own once saved. */
+  photoUrl?: string | null;
 };
 
 export type Decision =

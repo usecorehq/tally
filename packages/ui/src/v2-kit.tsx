@@ -104,7 +104,8 @@ export function SegmentedControl<K extends string>({
   label,
 }: {
   options: ReadonlyArray<{ key: K; label: React.ReactNode; disabled?: boolean }>;
-  value: K;
+  /** null: nothing chosen yet. */
+  value: K | null;
   onChange: (key: K) => void;
   block?: boolean;
   label?: string;

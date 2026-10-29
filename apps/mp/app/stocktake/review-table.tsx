@@ -29,7 +29,7 @@ import type { ActionResult, Candidate, ConfirmResult, Decision, Detection, Shelf
 
 type Action = "restock" | "restore" | "add" | "skip";
 /** pick: null until the merchant chooses (a flagged or low-match line pre-fills nothing). */
-type RowState = { action: Action; quantity: string; pick: Pick | null; name: string; price: string };
+type RowState = { action: Action | null; quantity: string; pick: Pick | null; name: string; price: string };
 
 const NAIRA = /^\d{1,10}(\.\d{1,2})?$/;
 const naira = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
@@ -69,8 +69,13 @@ export function initialPick(d: Detection): Pick | null {
 
 function initialState(d: Detection): RowState {
   const pick = initialPick(d);
+  const first = actionsFor(d)[0]!;
+  // Never pre-choose changing stock on a line that asks "Is this your item?", or is flagged and wasn't
+  // matched by a branded reading the merchant already confirmed.
+  const unsure =
+    (first === "restock" || first === "restore") && (d.inventoryNeedsConfirm || (Boolean(d.review) && d.inventoryMatch !== "reading"));
   return {
-    action: actionsFor(d)[0]!,
+    action: unsure ? null : first,
     quantity: String(d.count),
     pick,
     name: pick?.kind === "product" ? pick.name : reading(d),
@@ -82,8 +87,10 @@ function initialState(d: Detection): RowState {
 const needsPick = (s: RowState) => s.action === "add";
 
 function rowProblems(d: Detection, s: RowState) {
-  if (s.action === "skip") return { quantity: false, name: false, price: false, product: false };
+  if (s.action === null) return { action: true, quantity: false, name: false, price: false, product: false };
+  if (s.action === "skip") return { action: false, quantity: false, name: false, price: false, product: false };
   return {
+    action: false,
     quantity: !/^\d{1,6}$/.test(s.quantity.trim()),
     name: s.action === "add" && s.name.trim().length === 0,
     price: s.action === "add" && !NAIRA.test(s.price.trim()),
@@ -91,7 +98,8 @@ function rowProblems(d: Detection, s: RowState) {
   };
 }
 
-function toDecision(d: Detection, s: RowState): Decision {
+/** Only called once every row passed rowProblems, so each has an action. */
+function toDecision(d: Detection, s: RowState & { action: Action }): Decision {
   if (s.action === "skip") return { detectionId: d.id, action: "skip" };
   const quantity = Number(s.quantity);
   const qid = s.pick?.kind === "product" ? s.pick.qid : undefined;
@@ -117,7 +125,7 @@ function storeStatus(d: Detection): { label: string; tone: "green" | "amber" | "
 }
 
 
-const NO_PROBLEMS = { quantity: false, name: false, price: false, product: false };
+const NO_PROBLEMS = { action: false, quantity: false, name: false, price: false, product: false };
 
 export function ReviewTable({
   businessId,
@@ -167,10 +175,11 @@ export function ReviewTable({
 
   const update = (id: string, patch: Partial<RowState>) => setState((prev) => ({ ...prev, [id]: { ...prev[id]!, ...patch } }));
   const invalidIds = rows.filter((d) => Object.values(rowProblems(d, state[d.id]!)).some(Boolean)).map((d) => d.id);
-  const counts = rows.reduce<Record<Action, number>>(
-    (acc, d) => ({ ...acc, [state[d.id]!.action]: acc[state[d.id]!.action] + 1 }),
-    { restock: 0, restore: 0, add: 0, skip: 0 },
-  );
+  const counts = rows.reduce<Record<Action, number>>((acc, d) => {
+    const a = state[d.id]!.action;
+    return a ? { ...acc, [a]: acc[a] + 1 } : acc;
+  }, { restock: 0, restore: 0, add: 0, skip: 0 });
+  const undecided = rows.filter((d) => state[d.id]!.action === null).length;
 
   if (outcome) return <Outcome businessName={businessName} result={outcome} rows={rows} onRestart={onRestart} />;
 
@@ -182,7 +191,7 @@ export function ReviewTable({
     }
     setError(null);
     startTransition(async () => {
-      const decisions = rows.map((d) => toDecision(d, state[d.id]!));
+      const decisions = rows.map((d) => toDecision(d, state[d.id]! as RowState & { action: Action }));
       const res = await (confirm ? confirm(decisions) : confirmScan(businessId, result.scanId, decisions));
       if (res.ok) {
         setOutcome(res.data);
@@ -199,11 +208,20 @@ export function ReviewTable({
   }
 
   // Only the actions in use, so the bar reads "3 restock 2 add" rather than a row of zeros.
-  const summary = (["restock", "restore", "add", "skip"] as const).filter((a) => counts[a] > 0).map((a) => (
-    <span key={a} className="whitespace-nowrap">
-      <span className="font-medium tabular-nums text-gray-900">{counts[a]}</span> {a}
-    </span>
-  ));
+  const summary = [
+    ...(["restock", "restore", "add", "skip"] as const).filter((a) => counts[a] > 0).map((a) => (
+      <span key={a} className="whitespace-nowrap">
+        <span className="font-medium tabular-nums text-gray-900">{counts[a]}</span> {a}
+      </span>
+    )),
+    ...(undecided > 0
+      ? [
+          <span key="choose" className="whitespace-nowrap text-amber-700">
+            <span className="font-medium tabular-nums">{undecided}</span> to choose
+          </span>,
+        ]
+      : []),
+  ];
 
   return (
     <div className="q-rise">
@@ -415,7 +433,7 @@ function Row({
   s: RowState;
   thumb: string | undefined;
   selected: boolean;
-  problems: { quantity: boolean; name: boolean; price: boolean; product: boolean };
+  problems: { action: boolean; quantity: boolean; name: boolean; price: boolean; product: boolean };
   onChange: (patch: Partial<RowState>) => void;
 }) {
   const [picking, setPicking] = useState(false);
@@ -476,6 +494,9 @@ function Row({
             onChange={(action) => onChange({ action })}
             options={actionsFor(d).map((a) => ({ key: a, label: ACTION_LABEL[a] }))}
           />
+          {s.action === null && (
+            <p className={cn("mt-1.5 text-xs", problems.action ? "text-red-600" : "text-amber-700")}>Not sure it&apos;s your item: choose one.</p>
+          )}
         </div>
       </div>
 
