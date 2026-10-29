@@ -5,8 +5,8 @@
 import sharp from "sharp";
 import type { Box } from "./shelf-reader";
 
-/** Qore Catalog rejects pictures whose short side is under 160 px: smaller crops stay in R2 only. */
-export const MIN_CROP_SIDE = 160;
+/** Qore Catalog rejects pictures whose short side is under 96 px for training samples: smaller crops stay in R2 only. */
+export const MIN_CROP_SIDE = 96;
 /** Smallest crop worth keeping in R2 for Tally's own dataset; below this it is noise. */
 export const MIN_STORED_CROP_SIDE = 48;
 const MAX_CROP_SIDE = 640;
