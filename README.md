@@ -1,12 +1,12 @@
 # Tally — by Qorelly
 
-> Inventory and point of sale for Nigerian SMEs, plus the Q Vision console that trains product-recognition models against the Qore Catalog.
+> Inventory and point of sale for Nigerian SMEs, built on the Qore Catalog.
 
 - **Merchants** sign in with their Qorelly account and run stock and sales from the web portal (`mp`) or the mobile app (`qore_tally`).
-- **Q Vision operators** upload product images in the `console`, link them to Qore Catalog products, and run distillation in `services/train`.
+- **Qore Catalog** (a separate product) owns product images and recognition training; Tally sends it confirmed shelf crops and feedback.
 - **Tally** lives in the `tally` schema of the shared Qorelly Supabase project and reuses Qorelly's `auth.users`.
 
-Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile. Photo → inventory, POS and Q Vision are planned (see the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
+Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile. Photo → inventory and POS are planned (see the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
 
 ---
 
@@ -18,7 +18,7 @@ This repository was created for the **Meta Global AI Developer Hackathon**. The 
 
 | Area | What | PRs |
 |---|---|---|
-| Platform | pnpm + turbo monorepo (api, mp, console, mobile, train), CI (path-filtered jobs, tests, schema-drift check), secret-scanning guard, architecture docs and diagrams | [#1](https://github.com/usecorehq/tally/pull/1), [#6](https://github.com/usecorehq/tally/pull/6), [#11](https://github.com/usecorehq/tally/pull/11), [#14](https://github.com/usecorehq/tally/pull/14) |
+| Platform | pnpm + turbo monorepo (api, mp, mobile), CI (path-filtered jobs, tests, schema-drift check), secret-scanning guard, architecture docs and diagrams | [#1](https://github.com/usecorehq/tally/pull/1), [#6](https://github.com/usecorehq/tally/pull/6), [#11](https://github.com/usecorehq/tally/pull/11), [#14](https://github.com/usecorehq/tally/pull/14) |
 | Database | `tally` schema: businesses, inventory, append-only stock movements, sales and payments, with triggers that keep stock and paid amounts consistent | [#9](https://github.com/usecorehq/tally/pull/9), [#10](https://github.com/usecorehq/tally/pull/10) |
 | Catalogue integration | Typed client for the Qore Catalog v1 API; Tally's API is the only place holding the catalogue key | [#3](https://github.com/usecorehq/tally/pull/3), [#12](https://github.com/usecorehq/tally/pull/12), [#13](https://github.com/usecorehq/tally/pull/13) |
 | Onboarding | Create a business from a catalogue business type; turn its template into a starter inventory; every keep/swap/remove decision is sent back to the catalogue as feedback | [#15](https://github.com/usecorehq/tally/pull/15), [#16](https://github.com/usecorehq/tally/pull/16) |
@@ -38,10 +38,9 @@ This repository was created for the **Meta Global AI Developer Hackathon**. The 
 
 | Layer | Tech |
 |---|---|
-| Web | Next.js 16 (App Router), Tailwind 4, NextAuth v5 (Credentials → Supabase) — `apps/mp`, `apps/console` |
+| Web | Next.js 16 (App Router), Tailwind 4, NextAuth v5 (Credentials → Supabase) — `apps/mp` |
 | Mobile | Flutter, clean architecture, flutter_bloc (bloc + cubit), dartz `Either`, get_it, supabase_flutter, Dio — `apps/mobile` |
 | Backend | NestJS 11, Drizzle on `postgres.js`, class-validator env, Swagger at `/docs` — `apps/api` |
-| Training | Python 3.12, FastAPI, uv — `services/train` |
 | DB | Shared Qorelly Supabase Postgres, `tally` schema only; ledger `tally.__drizzle_migrations` |
 | Auth | Qorelly Supabase Auth. API verifies JWTs (HS256 or JWKS), `audience: authenticated` enforced |
 | Product data | Qore Catalog API (`/v1`, `x-api-key`, server-only) |
@@ -50,22 +49,20 @@ This repository was created for the **Meta Global AI Developer Hackathon**. The 
 
 ## Quick start
 
-**Prerequisites:** Node ≥ 20.19, pnpm ≥ 10, Python 3.12 + uv, Flutter (for mobile), a running Qore Catalog API, and access to the Qorelly Supabase staging project.
+**Prerequisites:** Node ≥ 20.19, pnpm ≥ 10, Flutter (for mobile), a running Qore Catalog API, and access to the Qorelly Supabase staging project.
 
 ```bash
 pnpm install                  # also turns on the secret-scanning pre-commit hook
 cp .env.example .env          # one root env; apps may also have their own .env (see each app's .env.example)
 # fill Supabase + Qore Catalog values — docs/guides/local-development.md
-pnpm dev                      # builds packages, then api + mp + console
+pnpm dev                      # builds packages, then api + mp
 ```
 
 | URL | What |
 |---|---|
-| http://localhost:3000 | console |
 | http://localhost:3001 | mp (merchant portal) |
 | http://localhost:4100/api/health | API health + Qore Catalog status |
 | http://localhost:4100/docs | Swagger — paste a Supabase access token |
-| http://localhost:4200/health | train service (`uv run uvicorn train.main:app --port 4200`) |
 
 Full walkthrough: **[docs/guides/local-development.md](docs/guides/local-development.md)**.
 
@@ -76,11 +73,8 @@ Full walkthrough: **[docs/guides/local-development.md](docs/guides/local-develop
 ```
 apps/
   api/               NestJS + Drizzle. Global SupabaseJwtGuard, health, catalog.   README + .env.example
-  console/           Next.js. Q Vision distillation console.                       README + .env.example
   mp/                Next.js. Merchant portal: signup, onboarding, POS, inventory.  README + .env.example
   mobile/            Flutter app qore_tally: android + ios, dev/staging/prod flavors. README + .env.example
-services/
-  train/             FastAPI + uv. Q Vision training / distillation.                README
 packages/
   db/                Drizzle schema + client for the tally schema, migrations/.
   auth/              NextAuth v5 config over shared Supabase Auth.
@@ -105,12 +99,12 @@ Everything lives under [`docs/`](docs/README.md). Docs ship in the same PR as th
 
 <table>
 <tr>
-<td align="center"><img src="docs/diagrams/images/c4-context.svg" alt="Tally C4 system context diagram" width="450"><br/><b>A</b> — C4 Context: merchants, Q Vision operators, Tally, the shared Qorelly Supabase and the Qore Catalog API</td>
-<td align="center"><img src="docs/diagrams/images/c4-container.svg" alt="Tally C4 container diagram" width="450"><br/><b>B</b> — C4 Container: mp, console, mobile, api, train and Postgres, and how they authenticate and talk</td>
+<td align="center"><img src="docs/diagrams/images/c4-context.svg" alt="Tally C4 system context diagram" width="450"><br/><b>A</b> — C4 Context: merchants, Tally, the shared Qorelly Supabase and the Qore Catalog API</td>
+<td align="center"><img src="docs/diagrams/images/c4-container.svg" alt="Tally C4 container diagram" width="450"><br/><b>B</b> — C4 Container: mp, mobile, api and Postgres, and how they authenticate and talk</td>
 </tr>
 </table>
 
-More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (web + mobile), database isolation, migration flow, mobile layers and flavors, system flowchart, Q Vision flow, merchant journey.
+More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (web + mobile), database isolation, migration flow, mobile layers and flavors, system flowchart, merchant journey.
 
 ### Architecture
 
@@ -121,7 +115,7 @@ More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (we
 - **[Qore Catalog integration](docs/architecture/catalog.md)** — Where the API key may and may not go.
 - **[Mobile app](docs/architecture/mobile.md)** — Layers, `Either<Failure, T>`, get_it, bloc vs cubit.
 - **[Mobile flavors](docs/architecture/mobile-flavors.md)** — `dev` / `staging` / `prod`, per-environment `.env`, gotchas.
-- **[Q Vision distillation](docs/architecture/qvision-distillation.md)** — Planned flow and the open questions.
+- **[Q Vision](docs/architecture/qvision-distillation.md)** — Moved to Qore Catalog.
 
 ### Guides
 
@@ -138,7 +132,6 @@ More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (we
 pnpm dev                              # every app (packages built first)
 pnpm --filter @tally/api dev
 pnpm --filter @tally/mp dev
-pnpm --filter @tally/console dev
 (cd apps/mobile && flutter run --flavor dev -t lib/main_dev.dart --dart-define-from-file=.env.dev)   # flavors: apps/mobile/README.md
 
 # Quality (same as CI)
@@ -146,7 +139,6 @@ pnpm typecheck
 pnpm test                             # every package's tests (turbo)
 pnpm db:check                         # schema.ts matches the committed migrations
 pnpm build
-(cd services/train && uv run ruff check . && uv run pytest -q)
 (cd apps/mobile && flutter analyze && flutter test)
 
 # Database (staging only — production is applied by the CTO)

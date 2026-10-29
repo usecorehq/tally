@@ -8,14 +8,14 @@ Visual companion to [`docs/architecture/`](../architecture/). Each diagram is [M
 
 | Diagram | Description |
 |---|---|
-| [`c4-context.svg`](images/c4-context.svg) ([source](mermaid/c4-context.mmd)) | System context — merchants and Q Vision operators, Tally, the shared Qorelly Supabase and the Qore Catalog API. |
-| [`c4-container.svg`](images/c4-container.svg) ([source](mermaid/c4-container.mmd)) | Containers — mp, console, mobile, api, train, Postgres (`tally` schema) and how they authenticate and talk. |
+| [`c4-context.svg`](images/c4-context.svg) ([source](mermaid/c4-context.mmd)) | System context — merchants, Tally (POS + inventory, web + mobile), the shared Qorelly Supabase and the Qore Catalog API. |
+| [`c4-container.svg`](images/c4-container.svg) ([source](mermaid/c4-container.mmd)) | Containers — mp, mobile, api, Postgres (`tally` schema) and how they authenticate and talk. |
 
 ## System overview
 
 | Diagram | Description |
 |---|---|
-| [`system-flowchart.svg`](images/system-flowchart.svg) ([source](mermaid/system-flowchart.mmd)) | Merchant flow (sign in → onboard → inventory → POS) and Q Vision flow (upload → match → train → ship). Marks what is built vs planned. |
+| [`system-flowchart.svg`](images/system-flowchart.svg) ([source](mermaid/system-flowchart.mmd)) | Merchant flow (sign in → onboard → inventory → POS), with recognition training shown as external (Qore Catalog). Marks what is built vs planned. |
 
 ## Auth
 
@@ -23,7 +23,7 @@ See [`architecture/auth.md`](../architecture/auth.md).
 
 | Diagram | Description |
 |---|---|
-| [`auth-web-sequence.svg`](images/auth-web-sequence.svg) ([source](mermaid/auth-web-sequence.mmd)) | mp / console: proxy redirect → NextAuth Credentials → Supabase → JWT cookie → token refresh → Bearer call to the API. |
+| [`auth-web-sequence.svg`](images/auth-web-sequence.svg) ([source](mermaid/auth-web-sequence.mmd)) | mp: proxy redirect → NextAuth Credentials → Supabase → JWT cookie → token refresh → Bearer call to the API. |
 | [`auth-mobile-sequence.svg`](images/auth-mobile-sequence.svg) ([source](mermaid/auth-mobile-sequence.mmd)) | Mobile: AuthBloc session restore, SignInCubit → use case → repository → Supabase, Dio bearer interceptor. |
 
 ## Onboarding
@@ -69,12 +69,6 @@ See [`architecture/database.md`](../architecture/database.md) and [`guides/datab
 |---|---|
 | [`mobile-flavors.svg`](images/mobile-flavors.svg) ([source](mermaid/mobile-flavors.mmd)) | One `flutter run --flavor … -t … --dart-define-from-file …` split into native identity (Android productFlavor / iOS scheme → build config → xcconfig) and Dart runtime config (`.env` → FlavorConfig → bootstrap). See [`architecture/mobile-flavors.md`](../architecture/mobile-flavors.md). |
 | [`mobile-clean-architecture.svg`](images/mobile-clean-architecture.svg) ([source](mermaid/mobile-clean-architecture.mmd)) | presentation → domain ← data, with get_it wiring. |
-
-## Q Vision (planned)
-
-| Diagram | Description |
-|---|---|
-| [`qvision-distillation-flow.svg`](images/qvision-distillation-flow.svg) ([source](mermaid/qvision-distillation-flow.mmd)) | Upload → link to catalog products → training run → model artifact. Not built; open questions in the prose doc. |
 
 ## User journeys
 

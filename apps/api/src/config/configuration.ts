@@ -19,7 +19,7 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
     },
 
     catalog: {
-      /** Qore Catalog API — products the Q Vision models are trained against. */
+      /** Qore Catalog API — the product catalogue Tally reads and sends feedback to. */
       baseUrl: env.QORE_CATALOG_BASE_URL ?? "http://localhost:3100",
       apiKey: env.QORE_CATALOG_API_KEY!,
     },

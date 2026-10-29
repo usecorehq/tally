@@ -162,7 +162,7 @@ e.g. `QC-XXXX-XXXX-X`). Tally stores the `qid`, not a copy of the product record
 
 | Endpoint | Use in Tally |
 | --- | --- |
-| `GET /v1/health` | Health check (already in `catalog-client` + `services/train`) |
+| `GET /v1/health` | Health check (already in `catalog-client`) |
 | `POST /v1/match` | Batch match Muse's detected items to ranked candidates (§6, Match) |
 | `GET /v1/products?q=&brand=&category=&offset=&limit=` | Match picker (S5) via the built `GET /api/catalog/products`. Typo-tolerant. |
 | `GET /v1/products/{qid}` | Item detail: product record, indicative price, **sibling pack sizes** (lets the review screen offer "70g → 120g" swaps) |
@@ -277,7 +277,7 @@ Config and secrets: `META_MODEL_API_KEY` (server-only, new); `QORE_CATALOG_API_K
 | Catalog match rate | from `GET /v1/feedback/stats` for our key |
 
 Test set: 20–30 real shelf photos from Nigerian stores with hand-counted ground truth, committed
-under `services/train` or `docs/` fixtures (decide in Slice 0).
+under `docs/` fixtures (decide in Slice 0).
 
 ## 11. Delivery plan (one verifiable slice at a time)
 
