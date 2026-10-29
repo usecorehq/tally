@@ -169,3 +169,15 @@ export type ConfirmResult = {
 };
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
+
+/** POST …/vision/photo-check: Muse Spark's verdict on a photo before scanning. Advice only. */
+export type PhotoCheck = {
+  verdict: "good" | "usable" | "retake";
+  issues: ("not_shelf" | "too_far" | "too_close" | "angled" | "blurry" | "dark" | "glare" | "obstructed" | "cut_off")[];
+  instruction: string;
+  productsVisible: number;
+  labelsLegible: "most" | "some" | "few" | "none";
+  region: Box | null;
+  model: string;
+  ms: number;
+};

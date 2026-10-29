@@ -20,8 +20,9 @@ import {
   cn,
   type SolarIconName,
 } from "@tally/ui";
-import { quickScan, startStocktake } from "./actions";
-import { resizeForScan } from "./image";
+import { checkPhoto, quickScan, startStocktake } from "./actions";
+import { checkCopy, localCheck, resizeForScan } from "./image";
+import { PhotoCheckPanel, type CheckState } from "./photo-check";
 import { PICK_SUBTITLE, PICK_TITLE } from "./copy";
 import { runKey, savePhoto, scanKey } from "./photo-store";
 import { historyHref, sessionHref } from "./urls";
@@ -43,7 +44,27 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
   const [phase, setPhase] = useState<Phase>({ name: "pick" });
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
+  const [check, setCheck] = useState<CheckState | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Check each new photo: the browser's own checks at once, then Muse Spark's verdict. Advice only.
+  useEffect(() => {
+    if (!photo) return setCheck(null);
+    let alive = true;
+    setCheck({ status: "checking", local: null });
+    (async () => {
+      const local = await localCheck(photo.blob).catch(() => null);
+      if (alive) setCheck({ status: "checking", local });
+      const f = new FormData();
+      const copy = await checkCopy(photo.blob).catch(() => null);
+      if (copy) f.append("image", copy, "check.jpg");
+      const res = copy ? await checkPhoto(businessId, f) : null;
+      if (alive) setCheck({ status: "done", local, result: res?.ok ? res.data : null });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [photo, businessId]);
 
   useEffect(() => () => {
     if (photo) URL.revokeObjectURL(photo.url);
@@ -114,6 +135,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
       error={error}
       preparing={preparing}
       photo={photo}
+      check={check}
       fileRef={fileRef}
       onFile={onFile}
       onAgent={runAgent}
@@ -131,6 +153,7 @@ export function PickView({
   error,
   preparing,
   photo,
+  check = null,
   fileRef,
   onFile,
   onAgent,
@@ -143,6 +166,8 @@ export function PickView({
   error: string | null;
   preparing: boolean;
   photo: Photo | null;
+  /** The photo check for the picked photo; null before one is picked. */
+  check?: CheckState | null;
   fileRef: React.RefObject<HTMLInputElement | null>;
   onFile: (file: File | undefined) => void;
   onAgent: () => void;
@@ -191,8 +216,23 @@ export function PickView({
             {/* The tray hugs the photo, whatever its shape. */}
             <Tray className="w-fit max-w-full">
               <TraySheet className="p-1">
-                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-                <img src={photo.url} alt="Shelf photo to scan" className="block max-h-[420px] w-auto max-w-full rounded-[10px] object-contain" />
+                <div className="relative w-fit max-w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+                  <img src={photo.url} alt="Shelf photo to scan" className="block max-h-[420px] w-auto max-w-full rounded-[10px] object-contain" />
+                  {/* The area Muse Spark found most readable, when the photo could be better. */}
+                  {check?.status === "done" && check.result?.region && check.result.verdict !== "good" && (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute rounded-[6px] border-2 border-dashed border-emerald-400"
+                      style={{
+                        left: `${check.result.region.x1 / 10}%`,
+                        top: `${check.result.region.y1 / 10}%`,
+                        width: `${(check.result.region.x2 - check.result.region.x1) / 10}%`,
+                        height: `${(check.result.region.y2 - check.result.region.y1) / 10}%`,
+                      }}
+                    />
+                  )}
+                </div>
               </TraySheet>
               <TrayFooter>
                 <span className="tabular-nums">
@@ -205,6 +245,7 @@ export function PickView({
               </TrayFooter>
             </Tray>
 
+            {check && <PhotoCheckPanel check={check} onRetake={() => fileRef.current?.click()} />}
             {Math.max(photo.width, photo.height) < SMALL_PHOTO_EDGE && (
               <FormMessage
                 variant="warning"

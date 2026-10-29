@@ -23,7 +23,8 @@ import {
 import { confirmScan } from "./actions";
 import { STOCKTAKE_CHANGED } from "./recents";
 import { describeCells, MIN_UNREAD_CELLS, unreadCells } from "./coverage";
-import { cropThumbs } from "./image";
+import { cropThumbs, largestBox, remoteThumb } from "./image";
+import { ThumbImage, type Thumb } from "./thumb";
 import { pickFromCandidate, ProductPicker, type Pick } from "./product-picker";
 import type { ActionResult, Candidate, ConfirmResult, Decision, Detection, ShelfScanResult } from "./types";
 
@@ -161,7 +162,7 @@ export function ReviewTable({
   );
   const decidedEarlier = result.detections.length - rows.length;
   const [state, setState] = useState<Record<string, RowState>>(() => Object.fromEntries(rows.map((d) => [d.id, initialState(d)])));
-  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [thumbs, setThumbs] = useState<Record<string, Thumb>>({});
   const [attempted, setAttempted] = useState(initial?.attempted ?? false);
   const [error, setError] = useState<string | null>(initial?.error ?? null);
   const [outcome, setOutcome] = useState<ConfirmResult | null>(null);
@@ -169,9 +170,32 @@ export function ReviewTable({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    if (photo) cropThumbs(photo, rows).then(setThumbs, () => undefined);
-    else setThumbs(Object.fromEntries(rows.flatMap((d) => (d.cropUrl ? [[d.id, d.cropUrl]] : []))));
-  }, [photo, rows]);
+    if (photo) {
+      cropThumbs(photo, rows).then(setThumbs, () => undefined);
+      return;
+    }
+    const crops = () => setThumbs(Object.fromEntries(rows.flatMap((d) => (d.cropUrl ? [[d.id, d.cropUrl]] : []))));
+    if (!photoUrl) return crops();
+    // The stored photo: every line gets a thumbnail from it, including lines too small to have a stored crop.
+    let alive = true;
+    const img = new Image();
+    img.onload = () => {
+      if (!alive) return;
+      setThumbs(
+        Object.fromEntries(
+          rows.flatMap((d) => {
+            const box = largestBox(d.boxes);
+            return box ? [[d.id, remoteThumb(photoUrl, box, img.naturalWidth, img.naturalHeight)]] : [];
+          }),
+        ),
+      );
+    };
+    img.onerror = () => alive && crops();
+    img.src = photoUrl;
+    return () => {
+      alive = false;
+    };
+  }, [photo, photoUrl, rows]);
 
   const update = (id: string, patch: Partial<RowState>) => setState((prev) => ({ ...prev, [id]: { ...prev[id]!, ...patch } }));
   const invalidIds = rows.filter((d) => Object.values(rowProblems(d, state[d.id]!)).some(Boolean)).map((d) => d.id);
@@ -431,7 +455,7 @@ function Row({
 }: {
   d: Detection;
   s: RowState;
-  thumb: string | undefined;
+  thumb: Thumb | undefined;
   selected: boolean;
   problems: { action: boolean; quantity: boolean; name: boolean; price: boolean; product: boolean };
   onChange: (patch: Partial<RowState>) => void;
@@ -464,8 +488,7 @@ function Row({
           skipped && "opacity-50",
         )}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element -- cut from the local photo, or the stored crop */}
-        {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" onError={(e) => (e.currentTarget.style.display = "none")} />}
+        <ThumbImage thumb={thumb} />
       </div>
 
       <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6 lg:flex-col lg:gap-3 xl:flex-row xl:gap-6">
