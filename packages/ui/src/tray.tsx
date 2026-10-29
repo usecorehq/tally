@@ -20,7 +20,7 @@ import { cn } from "./lib/cn";
 type TraySize = "default" | "lg";
 const TRAY_SIZE: Record<TraySize, string> = {
   default: "rounded-[18px] p-1",
-  lg: "rounded-[32px] p-2 ring-1 ring-black/[0.04]",
+  lg: "rounded-[32px] p-2 ring-1 ring-hairline/[0.04]",
 };
 const SHEET_SIZE: Record<TraySize, string> = {
   default: "rounded-[14px] p-5",
@@ -38,7 +38,7 @@ export function Tray({ size = "default", className, ...props }: TrayProps) {
 export function TraySheet({ size = "default", className, ...props }: TrayProps) {
   return (
     <div
-      className={cn("bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.04]", SHEET_SIZE[size], className)}
+      className={cn("bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.04]", SHEET_SIZE[size], className)}
       {...props}
     />
   );
@@ -177,7 +177,7 @@ export function SheetTable({
       {header.title != null && <WellHeader {...(header as WellHeaderProps)} />}
       <div
         className={cn(
-          "overflow-x-auto rounded-[14px] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.04]",
+          "overflow-x-auto rounded-[14px] bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.04]",
           "[&_table]:w-full [&_table]:text-left [&_table]:text-sm [&_table]:text-gray-900",
           "[&_th]:whitespace-nowrap [&_th]:px-4 [&_th]:py-3 [&_th]:text-[13px] [&_th]:font-normal [&_th]:text-gray-500",
           "[&_td]:px-4 [&_td]:py-3 [&_td]:align-middle",
@@ -197,7 +197,7 @@ export function InsetPanel({ className, ...props }: React.HTMLAttributes<HTMLDiv
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-1 flex-col overflow-clip rounded-2xl bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.05]",
+        "flex min-w-0 flex-1 flex-col overflow-clip rounded-2xl bg-surface shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.05]",
         className,
       )}
       {...props}

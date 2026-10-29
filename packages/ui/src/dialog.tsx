@@ -39,7 +39,7 @@ export function DialogContent({
       <DialogPrimitive.Overlay className="q-fade-in fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px]" />
       <DialogPrimitive.Content
         className={cn(
-          "q-pop fixed left-1/2 top-1/2 z-50 flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-[24px] bg-gray-100 p-2 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.35)] ring-1 ring-black/5 outline-none",
+          "q-pop fixed left-1/2 top-1/2 z-50 flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-[24px] bg-gray-100 p-2 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.35)] ring-1 ring-hairline/5 outline-none",
           className,
         )}
       >
@@ -57,7 +57,7 @@ export function DialogContent({
           </DialogPrimitive.Close>
         </div>
         {children != null && (
-          <div className={cn("min-h-0 overflow-y-auto rounded-[20px] bg-white p-5 ring-1 ring-black/[0.04]", sheetClassName)}>{children}</div>
+          <div className={cn("min-h-0 overflow-y-auto rounded-[20px] bg-surface p-5 ring-1 ring-hairline/[0.04]", sheetClassName)}>{children}</div>
         )}
         {footer && <div className="flex flex-col-reverse gap-2 px-1 pb-1 pt-2 sm:flex-row sm:justify-end">{footer}</div>}
       </DialogPrimitive.Content>

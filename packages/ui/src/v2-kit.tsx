@@ -32,9 +32,9 @@ export function IconButton({
       title={label}
       {...props}
       className={cn(
-        "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-700 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-gray-900/15 active:scale-[0.97]",
+        "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-700 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-gray-900/15 dark:focus-visible:ring-gray-900/40 active:scale-[0.97]",
         tone === "soft" && "bg-gray-100 hover:bg-gray-200",
-        tone === "quiet" && "bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.06] hover:bg-gray-50",
+        tone === "quiet" && "bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.06] hover:bg-gray-50",
         tone === "ghost" && "text-gray-500 hover:bg-gray-100 hover:text-gray-900",
         className,
       )}
@@ -52,7 +52,7 @@ export function CloseButton({ className, ...props }: React.ButtonHTMLAttributes<
       aria-label="Close"
       {...props}
       className={cn(
-        "flex size-8 shrink-0 items-center justify-center rounded-full bg-gray-200/70 text-gray-700 outline-none transition-colors hover:bg-gray-300/70 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gray-900/15 disabled:pointer-events-none disabled:opacity-50",
+        "flex size-8 shrink-0 items-center justify-center rounded-full bg-gray-200/70 text-gray-700 outline-none transition-colors hover:bg-gray-300/70 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gray-900/15 dark:focus-visible:ring-gray-900/40 disabled:pointer-events-none disabled:opacity-50",
         className,
       )}
     >
@@ -87,7 +87,7 @@ export function FilterChip({
         <span
           className={cn(
             "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums",
-            active ? "bg-white text-primary" : "bg-primary-light text-primary",
+            active ? "bg-surface text-primary" : "bg-primary-light text-primary",
           )}
         >
           {count}
@@ -126,7 +126,10 @@ export function SegmentedControl<K extends string>({
             className={cn(
               "rounded-lg px-3.5 py-1.5 text-[14px] font-medium transition-[color,background-color,box-shadow] duration-150 ease-out disabled:opacity-40",
               block && "flex-1",
-              on ? "bg-white text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "text-gray-500 hover:text-gray-900",
+              // Dark: the surface barely lifts off the grey-100 track, so the thumb steps up a grey and takes a hairline.
+              on
+                ? "bg-surface text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] dark:bg-gray-200 dark:ring-1 dark:ring-hairline/[0.08]"
+                : "text-gray-500 hover:text-gray-900",
             )}
           >
             {o.label}
@@ -156,7 +159,7 @@ export function SearchWell({
       <input
         type="search"
         {...props}
-        className="h-11 w-full rounded-xl bg-gray-100 pl-10 pr-10 text-[15px] text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-gray-900/10 [&::-webkit-search-cancel-button]:hidden"
+        className="h-11 w-full rounded-xl bg-gray-100 pl-10 pr-10 text-[15px] text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:bg-surface focus:ring-2 focus:ring-gray-900/10 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-search-cancel-button]:hidden"
       />
       {onClear && props.value ? (
         <button
@@ -244,7 +247,7 @@ export function ChoiceMark({ checked, multiple = false }: { checked: boolean; mu
       className={cn(
         "flex h-5 w-5 shrink-0 items-center justify-center border transition-colors",
         multiple ? "rounded-md" : "rounded-full",
-        checked ? "border-primary bg-primary text-white" : "border-gray-300 bg-white",
+        checked ? "border-primary bg-primary text-white" : "border-gray-300 bg-surface dark:border-gray-400",
       )}
     >
       {checked && (
@@ -286,8 +289,8 @@ export function ChoiceCard({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-3 rounded-[14px] border p-3 text-left transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light disabled:cursor-not-allowed disabled:opacity-50",
-        selected ? "border-primary bg-primary-light" : "border-gray-200 bg-white hover:bg-gray-50",
+        "flex w-full items-center gap-3 rounded-[14px] border p-3 text-left transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50",
+        selected ? "border-primary bg-primary-light" : "border-gray-200 bg-surface hover:bg-gray-50",
         !media && "px-4",
         className,
       )}
@@ -295,7 +298,7 @@ export function ChoiceCard({
       {media}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-medium text-gray-900">{title}</span>
-        {description != null && <span className="mt-0.5 block truncate text-[13px] text-gray-500">{description}</span>}
+        {description != null && <span className="mt-0.5 line-clamp-2 block text-[13px] text-gray-500">{description}</span>}
       </span>
       {trailing}
       <ChoiceMark checked={selected} multiple={multiple} />
@@ -531,15 +534,14 @@ export function PageHeader({
 
 // ── Initials ───────────────────────────────────────────────────────────────
 
-const TONES = [
-  ["#FFF7ED", "#C2410C"],
-  ["#ECFDF5", "#047857"],
-  ["#EEF2FF", "#4338CA"],
-  ["#FDF2F8", "#BE185D"],
-  ["#F0F9FF", "#0369A1"],
-  ["#FEFCE8", "#A16207"],
-  ["#F5F3FF", "#6D28D9"],
-] as const;
+// Light values inline; dark ones come from --tone-* in theme.css (Qorelly's tone vars).
+const TONES = ["orange", "emerald", "indigo", "pink", "sky", "yellow", "violet"].map(
+  (t, i) =>
+    [
+      `var(--tone-${t}-bg, ${["#FFF7ED", "#ECFDF5", "#EEF2FF", "#FDF2F8", "#F0F9FF", "#FEFCE8", "#F5F3FF"][i]})`,
+      `var(--tone-${t}-ink, ${["#C2410C", "#047857", "#4338CA", "#BE185D", "#0369A1", "#A16207", "#6D28D9"][i]})`,
+    ] as const,
+);
 
 /** A stable soft tone for a name, so a business keeps its colour everywhere. */
 export function nameTone(name: string): { backgroundColor: string; color: string } {

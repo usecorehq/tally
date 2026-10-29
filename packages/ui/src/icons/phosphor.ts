@@ -58,6 +58,7 @@ export const SOLAR_TO_PHOSPHOR = {
   "User-Circle": "user-circle",
   "Widget-4": "layout",
   "Widget-5": "squares-four",
+  "Monitor": "monitor",
 } as const;
 
 export const LIGHT: Record<string, Shape[]> = {
@@ -215,6 +216,10 @@ export const LIGHT: Record<string, Shape[]> = {
   ],
   "minus": [
     ["line", {"x1":"40","y1":"128","x2":"216","y2":"128","fill":"none","stroke":"currentColor","strokeLinecap":"round","strokeLinejoin":"round","strokeWidth":"12"}],
+  ],
+  "monitor": [
+    ["rect", {"x":"32","y":"48","width":"192","height":"144","rx":"16","transform":"translate(256 240) rotate(180)","fill":"none","stroke":"currentColor","strokeLinecap":"round","strokeLinejoin":"round","strokeWidth":"12"}],
+    ["line", {"x1":"160","y1":"224","x2":"96","y2":"224","fill":"none","stroke":"currentColor","strokeLinecap":"round","strokeLinejoin":"round","strokeWidth":"12"}],
   ],
   "moon": [
     ["path", {"d":"M108.11,28.11A96.09,96.09,0,0,0,227.89,147.89,96,96,0,1,1,108.11,28.11Z","fill":"none","stroke":"currentColor","strokeLinecap":"round","strokeLinejoin":"round","strokeWidth":"12"}],
@@ -420,6 +425,10 @@ export const FILL: Record<string, Shape[]> = {
   ],
   "minus": [
     ["path", {"d":"M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM184,136H72a8,8,0,0,1,0-16H184a8,8,0,0,1,0,16Z"}],
+  ],
+  "monitor": [
+    ["rect", {"x":"24","y":"40","width":"208","height":"160","rx":"24"}],
+    ["path", {"d":"M160,216H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16Z"}],
   ],
   "moon": [
     ["path", {"d":"M235.54,150.21a104.84,104.84,0,0,1-37,52.91A104,104,0,0,1,32,120,103.09,103.09,0,0,1,52.88,57.48a104.84,104.84,0,0,1,52.91-37,8,8,0,0,1,10,10,88.08,88.08,0,0,0,109.8,109.8,8,8,0,0,1,10,10Z"}],
