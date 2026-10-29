@@ -33,9 +33,8 @@ const BUSINESSES = [
 ];
 
 /**
- * /design/inventory?state=loaded|empty|failed|loading|single|error — fixture
- * data, not served in production. `single` is a merchant with one business
- * (no picker); `error` is the route's error boundary.
+ * /design/inventory?state=loaded|empty|failed|loading|single|error: fixture previews, not served in production.
+ * `single` is a one-business merchant (no picker); `error` is the route's error boundary.
  */
 export default async function InventoryPreview({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
   if (process.env.NODE_ENV === "production") notFound();

@@ -50,10 +50,8 @@ const SHELF_TIMEOUT_MS = 45_000;
 const SAM_TIMEOUT_MS = 20_000;
 const LABEL_TIMEOUT_MS = 10_000;
 /**
- * Hard limits for a background stock-take, so every run ends done, fallback or
- * failed. Each phase is raced against its own deadline; a hung model call or a
- * database connection that never comes (a full Supabase pooler) can't leave a
- * run "running" forever.
+ * Per-phase deadlines so every background stock-take ends done, fallback or failed, even when a model call
+ * hangs or a full Supabase pooler never hands out a connection.
  */
 export const STOCKTAKE_DEADLINES = {
   /** Quick-scan analysis: Spark read (45 s) + SAM / catalogue in parallel, plus DB reads. */
@@ -94,9 +92,8 @@ export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
   /** Best-effort: a catalogue outage never undoes the stock changes; feedback is retried on the next confirm. */
   feedback: { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string };
   /**
-   * Crops sent to Qore Catalog (POST /v1/images) for lines confirmed with a
-   * Qore ID, after their feedback. Best-effort; skipped = no crop stored
-   * (R2 off, box too small) or no Qore ID.
+   * Crops sent to Qore Catalog for lines confirmed with a Qore ID. Best-effort;
+   * skipped = no stored crop (R2 off, box too small) or no Qore ID.
    */
   images: { uploaded: number; skipped: number; failed: number };
 };
@@ -135,11 +132,8 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Shelf photo → products (Muse Spark) → unit counts (SAM 3.1) and catalogue
-   * candidates with prices (Qore Catalog /v1/match), in parallel → flagged where
-   * the business already stocks them.
-   * The scan and its detections are stored for confirm; the image itself is not
-   * (only its sha256), and is dropped after the call.
+   * Shelf photo → products (Spark) → unit counts (SAM) and catalogue candidates in parallel → in-stock flags.
+   * The scan and detections are stored for confirm; the image is not (only its sha256).
    */
   async recogniseShelf(businessId: string, userId: string, image: Buffer): Promise<ShelfScanResult> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
@@ -163,9 +157,8 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * The quick scan's analysis, shared with the stock-take agent's first pass:
-   * membership check (before any paid call), Muse Spark read, then SAM counts
-   * and catalogue candidates in parallel. Stores nothing.
+   * The quick scan's analysis, shared with the agent's first pass: membership check before any paid call,
+   * Spark read, then SAM counts and catalogue candidates in parallel. Stores nothing.
    */
   private async analyse(businessId: string, userId: string, image: Buffer, type: ImageType) {
     // listInventory checks membership; the other two only read this business's rows.
@@ -234,9 +227,8 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Start a stock-take: returns at once with a run id; the work runs in the
-   * background (about 1–2 minutes) and is polled with getStocktake. The quick
-   * scan runs first as the agent's starting checklist and as the fallback.
+   * Starts a stock-take and returns a run id at once; the work runs in the background, polled via getStocktake.
+   * The quick scan runs first as the agent's starting checklist and as the fallback.
    */
   async startStocktake(businessId: string, userId: string, image: Buffer): Promise<{ runId: string; status: "running" }> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
@@ -360,9 +352,8 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * One crop per detection (its largest box) to R2 at tally/crops/<scanId>/<position>.webp,
-   * read back on confirm. Kept down to MIN_STORED_CROP_SIDE for Tally's own dataset;
-   * only crops Qore Catalog accepts are uploaded there. Best-effort: a crop failure never fails the scan.
+   * Stores one crop per detection in R2 (tally/crops/<scanId>/<position>.webp), read back on confirm.
+   * Best-effort: a crop failure never fails the scan.
    */
   private async storeCrops(scanId: string, image: Buffer, detections: Detection[]): Promise<number> {
     if (!this.media.enabled || detections.length === 0) return 0;
@@ -381,10 +372,8 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Point-to-sell: one product photo → its label (Muse Spark, minimal
-   * reasoning) → the merchant's own item, matched in Tally (a remembered
-   * reading, then brand + name). Qore Catalog is asked only when nothing in
-   * store matches, so a known item costs one model call. Nothing is stored.
+   * Point-to-sell: product photo → label (Spark) → the merchant's own item, matched in Tally. The catalogue
+   * is asked only when nothing in store matches, so a known item costs one model call. Stores nothing.
    */
   async identify(businessId: string, userId: string, image: Buffer): Promise<IdentifyResult> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
@@ -470,10 +459,8 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Apply the merchant's decisions (restock / restore / add / skip), then send
-   * every decided line to Qore Catalog as photo feedback. Stock changes commit
-   * first; feedback is best-effort and anything unsent goes out on the next
-   * confirm of this scan.
+   * Applies the merchant's decisions, then sends decided lines to Qore Catalog as feedback. Stock commits first;
+   * feedback is best-effort and anything unsent goes out on the next confirm of this scan.
    */
   async confirm(businessId: string, userId: string, scanId: string, decisions: ConfirmDecision[]): Promise<ConfirmResponse> {
     const business = await this.businesses.getForMember(businessId, userId);
@@ -493,10 +480,8 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Send each confirmed line's crop to Qore Catalog as an on_shelf picture of
-   * its Qore ID, linked to the line's feedback (same clientRef). Lines without
-   * a Qore ID (new_item, skip), or whose crop is under Qore Catalog's 160 px
-   * minimum, send nothing. Stored by sha256 there, so a resend is harmless.
+   * Sends each confirmed line's crop to Qore Catalog as an on_shelf picture, linked by clientRef. Lines without a
+   * Qore ID or under the 160 px minimum send nothing; stored by sha256, so resends are harmless.
    */
   private async uploadCrops(lines: ConfirmResult["pendingFeedback"]): Promise<ConfirmResponse["images"]> {
     const images = { uploaded: 0, skipped: 0, failed: 0 };

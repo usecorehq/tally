@@ -1,14 +1,6 @@
 /**
- * Shelf-scan confirm: the catalogue side of each decision. Pure, no IO; the
- * inventory side (restock / restore / add) runs in VisionService's transaction.
- *
- *   restock → stock more of an active item; may link a hand-typed item to a Qore ID
- *   restore → un-archive an item the merchant removed, then stock it
- *   add     → create the merchant's own copy (with the Qore ID when it came from the catalogue)
- *   skip    → stock nothing
- *
- * Feedback outcome: a confirmed Qore ID equal to the top candidate is
- * `accepted`, any other Qore ID `corrected`, no Qore ID `new_item`, skip `removed`.
+ * Shelf-scan confirm, catalogue side (restock / restore / add / skip); the inventory side runs in VisionService.
+ * Feedback: top candidate → accepted, another Qore ID → corrected, none → new_item, skip → removed.
  */
 import type { FeedbackItem, FeedbackOutcome } from "@tally/catalog-client";
 

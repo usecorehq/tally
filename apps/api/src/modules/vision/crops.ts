@@ -1,8 +1,6 @@
 /**
- * One tight product crop per detection, cut from the shelf photo while it is
- * still in memory: the product only, never the whole shelf or the people in
- * it. Crops train recognition and, once a curator approves one, can become the
- * product's picture in Qore Catalog (POST /v1/images).
+ * One tight crop per detection, cut while the photo is in memory: the product only, never the shelf or people.
+ * Crops train recognition and can become the product's Qore Catalog picture once a curator approves one.
  */
 import sharp from "sharp";
 import type { Box } from "./shelf-reader";
@@ -38,11 +36,7 @@ export function pixelRegion(box: Box, width: number, height: number): { left: nu
   return { left: x1, top: y1, width: Math.max(0, x2 - x1), height: Math.max(0, y2 - y1) };
 }
 
-/**
- * WebP crops for each box (null where none is worth keeping: no box, or a
- * short side under minSide, MIN_CROP_SIDE by default). Decodes the photo once; honours EXIF
- * orientation; output carries no metadata.
- */
+/** WebP crops per box (null when there's no box or its short side is under minSide); EXIF-oriented, no metadata. */
 export async function makeCrops(
   image: Buffer,
   boxes: (Box | null)[],

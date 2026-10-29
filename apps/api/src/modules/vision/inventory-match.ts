@@ -1,26 +1,6 @@
 /**
- * "Does this merchant already have it?" — answered in Tally against the
- * business's own items; Qore Catalog never sees merchant inventory. Pure, no IO.
- * Checked in this order (store first, then catalogue):
- *
- *   reading   → the camera read exactly this before and the merchant confirmed
- *               it as this item (inventory_item_readings). Works for products
- *               the catalogue doesn't know. Branded readings only: "cooking oil"
- *               or "bucket" alone could be any product.
- *   catalogue → an active item is linked to one of the plausible candidates'
- *               Qore IDs: "in stock", never a duplicate. Sure only when that
- *               candidate also agrees on size (/v1/match signals.size = 1);
- *               otherwise "is this your X?" — Peak 900g on the shelf must not
- *               restock the merchant's Peak 400g.
- *   catalogue + archived → only an archived item has that Qore ID: "you
- *               removed X, restore?" (restoring keeps its name, price, history).
- *               Same size rule.
- *   name      → a hand-typed item (no Qore ID) whose name holds the brand and
- *               name read off the pack: "is this your X?". Never sure. Needs a
- *               legible brand, exactly one such item and no conflicting size.
- *
- * Within each step, a size-agreeing candidate beats a better-scored one that
- * doesn't; otherwise candidates keep /v1/match's order.
+ * "Does this merchant already have it?", answered in Tally against its own items. Pure, no IO. Checked in order:
+ * remembered branded reading, linked Qore ID (active, then archived), hand-typed name; sure only when sizes agree.
  */
 
 export type InventoryMatch = "reading" | "catalogue" | "name";
@@ -40,11 +20,7 @@ export type Reading = { brand: string; name: string; pack: string };
 /** sure = false: ask the merchant to confirm before treating it as in stock. */
 export type StockedMatch = { itemId: string; match: InventoryMatch; archived: boolean; sure: boolean };
 
-/**
- * A plausible catalogue candidate, best first. sizeAgrees: /v1/match says both
- * brand and size agree with the label (signals.brand === 1 && signals.size === 1),
- * so an unbranded read never counts as sure.
- */
+/** A plausible catalogue candidate, best first. sizeAgrees: /v1/match says both brand and size match the label. */
 export type CandidateRef = { qid: string; sizeAgrees: boolean };
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}.]+/gu, " ").replace(/\s+/g, " ").trim();

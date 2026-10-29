@@ -13,9 +13,8 @@ async function signOutAction() {
 }
 
 /**
- * The signed-in frame (Qorelly V2 DashboardLayout): a grey-100 frame, the nav
- * on the grey, each page on a white panel inset into it. Pages put their own
- * PageHeader inside; `width` caps the content column.
+ * The signed-in frame: nav on a grey-100 frame, each page on an inset white panel.
+ * Pages render their own PageHeader; `width` caps the content column.
  */
 export async function AppShell({ children, width = "default" }: { children: React.ReactNode; width?: "default" | "wide" | "narrow" }) {
   const session = await auth();

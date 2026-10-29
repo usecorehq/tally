@@ -1,9 +1,6 @@
 /**
- * Nested config namespace consumed by providers via `config.get('supabase.url')`.
- *
- * The flat process.env is validated in env.validation.ts, then this factory
- * maps it into the shape services actually read — so a rename in the env
- * doesn't ripple into every consumer.
+ * Nested config read via `config.get('supabase.url')`, mapped from the env validated in env.validation.ts
+ * so an env rename doesn't ripple into every consumer.
  */
 export type TallyConfig = ReturnType<typeof buildConfig>;
 

@@ -5,9 +5,8 @@ import Link from "next/link";
 import { Button, SolarIcon, Tray, TraySheet } from "@tally/ui";
 
 /**
- * Something threw while rendering Inventory (the page's own reads already
- * show their failures inline). The shell is a server component, so this
- * stands alone on the grey frame.
+ * Render error for Inventory (its own reads show failures inline). The shell is a server component,
+ * so this stands alone on the grey frame.
  */
 export default function InventoryError({ error, retry }: { error: unknown; retry: () => void }) {
   useEffect(() => {

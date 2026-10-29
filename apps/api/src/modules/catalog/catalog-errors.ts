@@ -19,14 +19,8 @@ export class CatalogRateLimitedException extends HttpException {
 const logger = new Logger("Catalog");
 
 /**
- * Map a Qore Catalog failure to what the browser may see. One table, used by
- * every catalog route. Never puts the catalogue key, the upstream URL or the
- * raw upstream body into a response or a log line — only status codes and the
- * catalogue's own validation message.
- *
- *   400 → 400 (catalogue's message)      404 → 404 (notFoundMessage)
- *   401/403 → 502, logged: Tally's key is wrong or revoked
- *   429 → 503 + Retry-After 30           anything else → 502
+ * Maps a Qore Catalog failure to a browser-safe HttpException; never exposes the key, upstream URL or raw body.
+ * 400/404 pass through, 401/403 → 502 (logged), 429 → 503 + Retry-After, anything else → 502.
  */
 export function toHttpException(err: unknown, notFoundMessage: string): HttpException {
   if (!(err instanceof CatalogError)) {

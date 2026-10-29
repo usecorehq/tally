@@ -1,11 +1,5 @@
-// Review one shelf scan or stock-take run from the database: per line, what Muse Spark read, the catalogue
-// candidates (with their names), what the agent concluded, and what the merchant decided. Read-only.
-// Use it to see whether a wrong item came from the catalogue's ranking, the agent, or the merchant keeping a default.
-//   pnpm turbo run build --filter=@tally/db --filter=@tally/catalog-client
-//   node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs <runId or scanId>
-//   node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs --business "Superbox"   (its latest run)
-// Needs SUPABASE_DB_URL; QORE_CATALOG_BASE_URL + QORE_CATALOG_API_KEY to name candidates (else Qore IDs only).
-// Prints merchant shelf data to the terminal only. Never prints a key.
+// Read-only review of a shelf scan or stock-take run: per line, the reading, catalogue candidates,
+// the agent's verdict and the merchant's decision. Usage: apps/api/README.md#vision-review.
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 

@@ -1,23 +1,6 @@
 /**
- * Tally drizzle schema — the shared Qorelly Supabase Postgres, isolated in the
- * `tally` schema. Identity is Qorelly's auth.users; tally tables reference
- * auth.users(id) by uuid and never write to public.* or auth.*.
- *
- * Migration workflow:
- *   pnpm db:generate --name=<what_changed>
- *   pnpm db:migrate            (staging only — production is applied by the CTO)
- *
- * Always pass --name; migrations are named semantically after what they do
- * (e.g. tally_setup, add_vision_datasets) — never drizzle's random codenames.
- * Applied migration files are frozen.
- *
- * Invariants (enforced in SQL, see migrations/*_tally_stock_and_payment_functions.sql):
- *   - Money is numeric(12,2) Naira. Drizzle reads numeric as string — never parse to float.
- *   - inventory_items.quantity_on_hand moves only through stock_movements (trigger).
- *   - sales.paid_amount is the sum of sale_payments (trigger). No app code writes it.
- *   - Reporting reads sale_payments / sales.paid_amount, never total or subtotal.
- *   - Child rows carry business_id and use composite FKs (business_id, x_id), so a
- *     row can never point at another business's data.
+ * Tally drizzle schema, isolated in the shared Supabase's `tally` schema; never writes public.* or auth.*.
+ * Money is numeric(12,2) read as string (never float); paid_amount and stock are trigger-maintained in SQL.
  */
 
 import { sql } from "drizzle-orm";
@@ -300,9 +283,7 @@ export const stockMovements = tally.table(
 );
 
 // ─── Vision (camera recognition) ─────────────────────────────────────────
-// A shelf scan and what Muse Spark / SAM 3.1 found in it. Tally keeps its own
-// readings and only Qore IDs + match scores from the catalogue (no names or
-// prices): catalogue data stays in Qore Catalog. See docs/architecture/vision-recognition.md.
+// Tally keeps its own readings and only Qore IDs + match scores from the catalogue, never names or prices.
 
 export const visionScans = tally.table(
   "vision_scans",
@@ -414,9 +395,8 @@ export const visionDetections = tally.table(
 );
 
 /**
- * A stock-take agent run: Muse Spark working through one shelf photo with
- * tools until every product is resolved or flagged. The result lands as a
- * normal vision_scan (scan_id) so the merchant confirms it the same way.
+ * A stock-take agent run on one shelf photo. Its result lands as a normal vision_scan (scan_id),
+ * so the merchant confirms it the same way.
  */
 export const visionAgentRuns = tally.table(
   "vision_agent_runs",
@@ -482,9 +462,8 @@ export const visionAgentSteps = tally.table(
 );
 
 /**
- * What the camera read for an item the merchant confirmed ("Lady B · Custard
- * Powder · 2kg" → their item), so the next scan recognises it even when Qore
- * Catalog doesn't know the product. One reading maps to one item per business.
+ * A branded reading the merchant confirmed as one of their items, so the next scan recognises it even when
+ * Qore Catalog doesn't know the product. One reading maps to one item per business.
  */
 export const inventoryItemReadings = tally.table(
   "inventory_item_readings",

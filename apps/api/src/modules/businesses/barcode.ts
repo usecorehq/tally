@@ -2,9 +2,8 @@
 export const BARCODE_PATTERN = /^[0-9A-Za-z.\-]{4,64}$/;
 
 /**
- * One stored form per product. A UPC-A (12 digits) is the same product as the
- * EAN-13 with a leading zero, and scanners return either, so 12-digit codes
- * are stored and looked up as 13.
+ * One stored form per product: scanners return a UPC-A (12 digits) or its EAN-13 (leading zero),
+ * so 12-digit codes are stored and looked up as 13.
  */
 export function normalizeBarcode(code: string): string {
   const trimmed = code.trim();

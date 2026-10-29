@@ -1,13 +1,6 @@
 /**
- * The stock-take agent loop on Meta's Responses API: plan → call tools →
- * observe, until the model submits or a budget runs out. Tool calls in one
- * turn run in parallel. Context travels by stateless encrypted replay (Meta's
- * recommended path for agents): store: false, the reasoning comes back
- * encrypted and is re-sent with the whole conversation each turn, so Meta keeps
- * no copy of the merchant's photo. (previous_response_id was tried first and a
- * live run failed on turn 4 with "referenced response not found or expired".)
- * Each turn re-sends the photo and history, so turns are slow (~5–19 s
- * measured): the budget is a few turns of batched calls, not many small ones.
+ * Stock-take agent loop on Meta's Responses API: plan, call tools in parallel, observe, until submit or budget.
+ * Stateless encrypted replay (store: false) keeps no copy of the photo at Meta, but makes turns slow: batch calls.
  */
 import type { MetaModelClient, ResponsesUsage } from "../meta-model.client";
 import { STOCKTAKE_INSTRUCTIONS, STOCKTAKE_TOOLS, type StocktakeSession } from "./stocktake-session";

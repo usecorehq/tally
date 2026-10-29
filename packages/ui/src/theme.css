@@ -1,13 +1,6 @@
 /*
- * Tally design tokens — Qorelly Design V2 ("Tray") for Tailwind 4.
- * Source: Qorelly packages/ui/src/styles/v2-tokens.css and v2-motion.css,
- * rules at design.qorelly.com. Grey trays hold white sheets; buttons and
- * fields are 12–14px rectangles; colour is for meaning. Dark follows
- * Qorelly's V2 dark (apps/mp/src/index.css): an inverted neutral scale, white
- * sheets become --color-surface, hairlines turn white, pale status tints
- * become translucent washes with light ink. `.dark` on <html> switches it.
- *
- * Import once per app:  @import "@tally/ui/theme.css";
+ * Tally design tokens: Qorelly Design V2 ("Tray") for Tailwind 4, from Qorelly's v2-tokens.css and v2-motion.css.
+ * Dark mode (`.dark` on <html>) inverts the neutral scale and turns status tints into translucent washes.
  */
 @theme {
   --color-background: hsl(0 0% 100%);
@@ -222,9 +215,8 @@
   --color-sky-900: rgb(125 211 252);
 }
 
-/* V2 motion (v2-motion.css): enter once, never loop; still under reduced motion.
- * `backwards`, not `both`: a filled transform would make the element the
- * containing block for fixed children and break sticky footers. */
+/* V2 motion: enter once, never loop; still under reduced motion. `backwards`, not `both`:
+ * a filled transform would become the containing block for fixed children and break sticky footers. */
 @keyframes q-rise {
   from {
     opacity: 0;

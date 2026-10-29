@@ -1,12 +1,6 @@
 /**
- * Count each product's units with SAM 3.1. Pure: builds the requests, parses the
- * special-token output, assigns instances to products. No IO.
- *
- * SAM matches what a pack looks like, not its brand text (live: "Diplomat
- * toothpaste" → 0, "green toothpaste box" → 38). So each Spark product carries
- * a `look` phrase, SAM segments every instance of each distinct look, and an
- * instance counts for a product only when it sits where Spark saw that product.
- * Grammar: https://dev.meta.ai/docs/sam/reading-segmentation
+ * Counts each product's units with SAM 3.1. Pure, no IO. SAM matches a pack's look, not its brand text, so each
+ * product carries a `look` phrase and an instance counts only where Spark saw that product.
  */
 import type { Box, ImageType, ShelfProduct } from "./shelf-reader";
 
@@ -39,9 +33,8 @@ export function samRequest(image: Buffer, type: ImageType, phrase: string): Reco
 const BOX_TOKEN = /<\|box;([^|]*)\|>/g;
 
 /**
- * Boxes from SAM's output text, converted from source pixels to the same 0–1000
- * grid Spark uses. Fields are read by key, so a token reads the same with or
- * without `c`. Masks are ignored. Empty text = zero matches (a valid outcome).
+ * SAM output text → boxes on Spark's 0–1000 grid. Fields are read by key, masks ignored;
+ * empty text means zero matches, a valid outcome.
  */
 export function parseSamInstances(text: string): SamInstance[] {
   const out: SamInstance[] = [];
@@ -74,13 +67,8 @@ export function distinctLooks(products: ShelfProduct[]): string[] {
 }
 
 /**
- * For every product whose look SAM ran on, the SAM boxes that belong to it.
- * An instance belongs to the product (among those sharing its look) whose Spark
- * boxes it sits among: its centre inside the area Spark's boxes span, widened by
- * one typical unit. Ties go to the product with the nearest Spark box. Dropped:
- * instances near no product with that look, and instances sitting on a unit
- * Spark gave to a different-looking product (a blue neighbour of another brand).
- * Overlapping duplicates are merged. Products whose look wasn't run are absent.
+ * Assigns SAM instances to the same-look product whose Spark boxes they sit among (widened by one unit).
+ * Instances near no such product or on a different-looking product's unit are dropped; overlaps merge.
  */
 export function assignInstances(
   products: ShelfProduct[],

@@ -6,10 +6,8 @@ import { AwsClient } from "aws4fetch";
 export const TALLY_PREFIX = "tally/";
 
 /**
- * Tally's own files in Cloudflare R2 (S3 API, signed with aws4fetch). The
- * credentials stay in apps/api: clients only ever get short-lived presigned
- * URLs. Not Supabase Storage, which would write to the shared project's
- * `storage` schema. Disabled (enabled = false) until R2_* are set.
+ * Tally's own files in Cloudflare R2; clients only get short-lived presigned URLs. Not Supabase Storage,
+ * which would write to the shared project's `storage` schema. Disabled until R2_* are set.
  */
 @Injectable()
 export class R2Storage {
