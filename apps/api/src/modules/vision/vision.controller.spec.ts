@@ -1031,6 +1031,18 @@ describe("VisionController stock-takes (HTTP)", () => {
     expect(res.body.steps).toEqual([{ turn: 1, kind: "tool", tool: "zoom", summary: "zoomed 1,2,3,4", ms: 900, at: "2026-10-29T10:00:00Z" }]);
     expect(res.body.result).toMatchObject({ scanId: SCAN, status: "open", detections: [{ id: DET }, { review: "Agent couldn't confirm: label unreadable" }] });
   });
+
+  it("a running rerun already has the photo of the scan it reruns", async () => {
+    ctx.media.enabled = true;
+    try {
+      ctx.repo.getRun.mockResolvedValueOnce({ id: RUN, status: "running", scanId: null, rerunOfScanId: "root-scan", startedAt: new Date(), steps: [] } as never);
+      const res = await request(nest.getHttpServer()).get(`${startPath}/${RUN}`).set(auth).expect(200);
+      expect(res.body.result).toBeNull();
+      expect(res.body.photoUrl).toBe("https://r2.example/tally/scans/root-scan.jpg?sig=1");
+    } finally {
+      ctx.media.enabled = false;
+    }
+  });
 });
 
 describe("VisionController rerun and discard (HTTP)", () => {

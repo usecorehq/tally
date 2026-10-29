@@ -97,7 +97,8 @@ export function RunSession({ business, initial }: { business: Business; initial:
     }
     return (
       <Working
-        photo={photo}
+        // This browser's copy, else a rerun's stored photo (size unknown until it loads).
+        photo={photo ?? (data.photoUrl ? { url: data.photoUrl, width: 0, height: 0 } : null)}
         phase={{ name: "working", mode: "agent", steps: data.steps, startedAt: new Date(data.run.startedAt).getTime() }}
         businessName={business.name}
       />
