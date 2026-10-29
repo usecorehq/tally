@@ -368,8 +368,14 @@ export class VisionService implements OnApplicationBootstrap {
     // The fresh result saves the catalogue lookups; status and decisions always come from the stored scan.
     const fresh = this.stocktakeResults.get(runId);
     const result = run.scanId ? await this.scanView(businessId, run.scanId, fresh?.detections) : null;
+    // A running rerun already has its photo: the one stored with the scan it reruns.
+    const photoUrl =
+      !result && run.rerunOfScanId && this.media.enabled
+        ? await this.media.presignedGetUrl(shelfPhotoKey(run.rerunOfScanId), CROP_URL_SECONDS).catch(() => null)
+        : (result?.photoUrl ?? null);
     return {
       run,
+      photoUrl,
       steps: steps.map(({ turn, kind, tool, summary, ms, createdAt }) => ({ turn, kind, tool, summary, ms, at: createdAt })),
       result,
     };

@@ -304,7 +304,7 @@ export function Working({
         )}
         <TrayFooter>
           <span>{phase.mode === "quick" ? "Quick scan" : "Stock-take agent"}</span>
-          {photo && <span className="tabular-nums">{photo.width}×{photo.height}</span>}
+          {photo && photo.width > 0 && <span className="tabular-nums">{photo.width}×{photo.height}</span>}
         </TrayFooter>
       </Tray>
 
