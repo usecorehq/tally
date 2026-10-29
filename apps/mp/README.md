@@ -31,7 +31,7 @@ app/onboarding/                  setup wizard (Qorelly /setup port): business ty
   [businessId]/items/            starter items for a business that already exists
 app/stocktake/                   shelf photo → review → confirm (?business=<id>)
   actions.ts                     server actions: start/poll the stock-take agent, quick scan, confirm
-  image.ts                       browser-side resize (1600 px JPEG) and per-product thumbnails
+  image.ts                       browser-side resize (2560 px JPEG) and per-product thumbnails
   stocktake-flow.tsx             business + photo picker, live agent trace
   review-table.tsx               one row per detection: count, candidate, store status, action; then the outcome
 ```

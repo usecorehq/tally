@@ -1,9 +1,11 @@
 import type { Box } from "./types";
 
-const LONG_EDGE = 1600;
+// Big enough that most packs on a full shelf crop to 160+ px (Qore Catalog's minimum);
+// ~1-2 MB as JPEG, under the API's 4 MB limit.
+const LONG_EDGE = 2560;
 const MAX_BYTES = 4 * 1024 * 1024;
 
-/** Scale a photo to a ~1600 px long edge and re-encode it as JPEG, as the API expects (EXIF rotation applied). */
+/** Scale a photo to at most a 2560 px long edge and re-encode it as JPEG, as the API expects (EXIF rotation applied). */
 export async function resizeForScan(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   const scale = Math.min(1, LONG_EDGE / Math.max(bitmap.width, bitmap.height));
