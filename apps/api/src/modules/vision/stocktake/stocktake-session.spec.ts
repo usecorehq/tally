@@ -67,6 +67,8 @@ describe("StocktakeSession", () => {
       { type: "input_image", image_url: "data:image/webp;base64,AAAA" },
     ]);
     expect(deps.zoom).toHaveBeenCalledWith(box(100));
+    // The trace names the product, never box coordinates.
+    expect(r.summary).toBe('read the label of "Garri" up close');
     for (let i = 1; i < STOCKTAKE_LIMITS.maxZooms; i++) await s.execute("zoom", '{"line":1}', 1);
     expect((await s.execute("zoom", '{"line":1}', 2)).summary).toBe("zoom refused: budget");
   });
