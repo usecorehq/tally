@@ -496,6 +496,43 @@ export class VisionRepository {
     });
   }
 
+  // ── Qore Catalog resolutions of new-item lines ──
+
+  /** The latest resolution applied: the next poll's (inclusive) since. */
+  async resolutionCursor(): Promise<Date | null> {
+    const [row] = await this.db.select({ at: sql<Date | null>`max(${visionDetections.catalogResolvedAt})` }).from(visionDetections);
+    return row?.at ? new Date(row.at) : null;
+  }
+
+  /**
+   * Records what curators did with a line, once; on created or linked, links the merchant's item to the Qore ID,
+   * keeping its name and price. Skips the link when the item has one, or another active item already uses it.
+   */
+  async applyResolution(
+    scanId: string,
+    position: number,
+    r: { resolution: "created" | "linked" | "dismissed"; qid: string | null; resolvedAt: Date },
+  ): Promise<"unknown" | "duplicate" | "recorded" | "linked" | "kept"> {
+    return this.db.transaction(async (tx) => {
+      const [det] = await tx
+        .select({ id: visionDetections.id, businessId: visionDetections.businessId, itemId: visionDetections.itemId, at: visionDetections.catalogResolvedAt })
+        .from(visionDetections)
+        .where(and(eq(visionDetections.scanId, scanId), eq(visionDetections.position, position)))
+        .for("update");
+      if (!det) return "unknown";
+      if (det.at) return "duplicate";
+      await tx
+        .update(visionDetections)
+        .set({ catalogResolution: r.resolution, catalogResolvedAt: r.resolvedAt })
+        .where(eq(visionDetections.id, det.id));
+      if (r.resolution === "dismissed" || !r.qid || !det.itemId) return "recorded";
+      const item = await this.item(tx, det.businessId, det.itemId);
+      if (!item || item.coreQid || (!item.archivedAt && (await this.activeByQid(tx, det.businessId, r.qid, item.id)))) return "kept";
+      await tx.update(inventoryItems).set({ coreQid: r.qid, updatedAt: new Date() }).where(eq(inventoryItems.id, item.id));
+      return "linked";
+    });
+  }
+
   async markFeedbackSent(detectionIds: string[]): Promise<void> {
     if (detectionIds.length === 0) return;
     await this.db.update(visionDetections).set({ feedbackSentAt: new Date() }).where(inArray(visionDetections.id, detectionIds));

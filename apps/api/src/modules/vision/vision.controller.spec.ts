@@ -188,6 +188,8 @@ async function app(apiKey: string | undefined) {
       pendingFeedback: [pending],
     })),
     markFeedbackSent: jest.fn(async () => undefined),
+    resolutionCursor: jest.fn(async () => null as Date | null),
+    applyResolution: jest.fn(async (_s: string, _p: number, _r: Record<string, unknown>) => "recorded" as string),
     rememberReading: jest.fn(async () => true),
     isActiveItem: jest.fn(async () => true),
     createRun: jest.fn(async (..._args: unknown[]) => "run-1"),
@@ -215,6 +217,7 @@ async function app(apiKey: string | undefined) {
         role: "training",
         sampleId: "smp_1",
       })),
+      feedbackResolutions: jest.fn(async (_p: Record<string, unknown>) => ({ items: [] as Record<string, unknown>[] })),
       getProduct: jest.fn(async (qid: string): Promise<Record<string, unknown>> => {
         if (qid === peakDetail.qid) return peakDetail;
         throw Object.assign(new Error("not found"), { status: 404 });
@@ -643,7 +646,7 @@ describe("VisionController confirm + get (HTTP)", () => {
         skipped: 0,
         failed: 0,
         skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 },
-        samples: [{ ref: `${SCAN}:0`, sampleId: "smp_1", status: "accepted" }],
+        samples: [{ ref: `${SCAN}:0`, qid: "QC-7K2M-9XQ4-R", sampleId: "smp_1", status: "accepted" }],
       });
     });
 
@@ -657,24 +660,37 @@ describe("VisionController confirm + get (HTTP)", () => {
       ctx.media.get.mockImplementation(async () => (await webp(400, 600)) as Uint8Array | null);
     });
 
-    it("sends nothing for a new item (no Qore ID) or a line without a stored crop", async () => {
+    it("sends a new item's crop without a qid; a skipped line or one without a stored crop sends nothing", async () => {
       ctx.repo.confirm.mockResolvedValueOnce({
         created: 2,
         restocked: 0,
         restored: 0,
-        skipped: 0,
+        skipped: 1,
         alreadyDecided: 0,
         invalid: [],
         scanConfirmed: true,
+        superseded: 0,
         pendingFeedback: [
           { ...pending, outcome: "new_item", confirmedQid: null },
           { ...pending, detectionId: "d2", position: 1 },
+          { ...pending, detectionId: "d3", position: 2, outcome: "removed", confirmedQid: null },
         ],
       } as never);
-      ctx.media.get.mockResolvedValueOnce(null);
+      ctx.media.get.mockImplementation(async (key: string) => (key.endsWith("/1.webp") ? null : await webp(400, 600)));
+      ctx.catalog.client.uploadImage.mockResolvedValueOnce({ sha256: "cd", qid: null, view: "on_shelf", status: "pending", width: 400, height: 600, role: "training", sampleId: "smp_new" } as never);
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
-      expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 2, failed: 0, skippedBy: { noProduct: 1, noCrop: 1, tooSmall: 0 }, samples: [] });
+      expect(ctx.catalog.client.uploadImage).toHaveBeenCalledTimes(1);
+      const sent = ctx.catalog.client.uploadImage.mock.calls[0]![0] as Record<string, unknown>;
+      expect(sent).not.toHaveProperty("qid");
+      expect(sent).toMatchObject({ view: "on_shelf", feedbackClientRef: `${SCAN}:0`, sample: { labelBrand: "Peak" } });
+      expect(res.body.images).toEqual({
+        uploaded: 1,
+        skipped: 2,
+        failed: 0,
+        skippedBy: { noProduct: 1, noCrop: 1, tooSmall: 0 },
+        samples: [{ ref: `${SCAN}:0`, qid: null, sampleId: "smp_new", status: "pending" }],
+      });
+      ctx.media.get.mockImplementation(async () => (await webp(400, 600)) as Uint8Array | null);
     });
 
     it("keeps a crop under 96 px out of Qore Catalog", async () => {
@@ -1376,5 +1392,67 @@ describe("VisionController stock-take history (HTTP)", () => {
   it("empty history is an empty list", async () => {
     const res = await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
     expect(res.body).toEqual([]);
+  });
+});
+
+describe("VisionService.syncResolutions", () => {
+  let ctx: Awaited<ReturnType<typeof app>>;
+  let vision: VisionService;
+  const LINE = "00000000-0000-4000-8000-0000000000c9";
+  const res = (n: number, minute: number, resolution = "linked") => ({
+    clientRef: `${LINE}:${n}`,
+    resolution,
+    qid: resolution === "dismissed" ? null : "QC-7K2M-9XQ4-R",
+    resolvedAt: new Date(Date.UTC(2026, 9, 29, 10, minute)).toISOString(),
+  });
+
+  beforeAll(async () => {
+    ctx = await app("LLM_000_not-a-real-key");
+    vision = ctx.nest.get(VisionService);
+  });
+  afterAll(() => ctx.nest.close());
+  beforeEach(() => {
+    ctx.repo.applyResolution.mockReset().mockResolvedValue("recorded");
+    ctx.catalog.client.feedbackResolutions.mockReset();
+    ctx.repo.resolutionCursor.mockResolvedValue(new Date("2026-10-29T09:00:00.000Z"));
+  });
+
+  it("asks from the last applied resolution and applies scan lines; others are ignored", async () => {
+    ctx.repo.applyResolution.mockResolvedValueOnce("linked").mockResolvedValueOnce("recorded");
+    ctx.catalog.client.feedbackResolutions.mockResolvedValueOnce({ items: [res(0, 1), res(1, 2, "dismissed"), { ...res(9, 3), clientRef: "starter-item-7" }] });
+    expect(await vision.syncResolutions()).toEqual({ applied: 2, linked: 1, ignored: 1 });
+    expect(ctx.catalog.client.feedbackResolutions).toHaveBeenCalledWith({ since: "2026-10-29T09:00:00.000Z", limit: 200 });
+    expect(ctx.repo.applyResolution).toHaveBeenNthCalledWith(1, LINE, 0, expect.objectContaining({ resolution: "linked", qid: "QC-7K2M-9XQ4-R", resolvedAt: new Date(res(0, 1).resolvedAt) }));
+    expect(ctx.repo.applyResolution).toHaveBeenNthCalledWith(2, LINE, 1, expect.objectContaining({ resolution: "dismissed", qid: null }));
+  });
+
+  it("an inclusive cursor repeats the last line: already applied, not counted again", async () => {
+    ctx.repo.applyResolution.mockResolvedValueOnce("duplicate");
+    ctx.catalog.client.feedbackResolutions.mockResolvedValueOnce({ items: [res(0, 0)] });
+    expect(await vision.syncResolutions()).toEqual({ applied: 0, linked: 0, ignored: 0 });
+  });
+
+  it("pages on from the last resolvedAt while pages are full, and starts from the beginning without a cursor", async () => {
+    ctx.repo.resolutionCursor.mockResolvedValue(null);
+    const full = Array.from({ length: 200 }, (_, i) => res(i, i % 50));
+    ctx.catalog.client.feedbackResolutions.mockResolvedValueOnce({ items: full }).mockResolvedValueOnce({ items: [res(200, 59)] });
+    await vision.syncResolutions();
+    expect(ctx.catalog.client.feedbackResolutions.mock.calls.map(([p]) => p)).toEqual([{ limit: 200 }, { since: full[199]!.resolvedAt, limit: 200 }]);
+  });
+
+  it("stops when a full page doesn't move the cursor, rather than looping", async () => {
+    const stuck = Array.from({ length: 200 }, (_, i) => ({ ...res(i, 0) }));
+    ctx.repo.resolutionCursor.mockResolvedValue(new Date(stuck[0]!.resolvedAt));
+    ctx.catalog.client.feedbackResolutions.mockResolvedValue({ items: stuck });
+    await vision.syncResolutions();
+    expect(ctx.catalog.client.feedbackResolutions).toHaveBeenCalledTimes(1);
+  });
+
+  it("a catalogue error is logged, not thrown", async () => {
+    const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    ctx.catalog.client.feedbackResolutions.mockRejectedValueOnce(Object.assign(new Error("Catalog GET /v1/feedback/resolutions failed: 403"), { status: 403 }));
+    expect(await vision.syncResolutions()).toBeNull();
+    expect(warn).toHaveBeenCalledWith("Catalogue resolutions not synced: Catalog GET /v1/feedback/resolutions failed: 403");
+    warn.mockRestore();
   });
 });

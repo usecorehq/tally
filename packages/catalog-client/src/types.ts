@@ -11,7 +11,8 @@ export type ImageView = "front" | "back" | "side" | "top" | "label" | "barcode" 
 
 export type UploadImageResponse = {
   sha256: string;
-  qid: string;
+  /** null for a new item's crop (no catalogue product yet). */
+  qid: string | null;
   view: ImageView;
   /** accepted: stored as a training sample at once (trusted key); pending: waits for a curator. */
   status: "pending" | "accepted";
@@ -201,6 +202,17 @@ export type FeedbackResponse = {
   duplicates: number;
   learnedAliases: number;
 };
+
+export type FeedbackResolution = {
+  clientRef: string;
+  /** created: a new catalogue product; linked: an existing one; dismissed: not catalogued. */
+  resolution: "created" | "linked" | "dismissed";
+  qid: string | null;
+  /** ISO 8601. */
+  resolvedAt: string;
+};
+
+export type FeedbackResolutions = { items: FeedbackResolution[] };
 
 export type FeedbackStats = {
   total: number;

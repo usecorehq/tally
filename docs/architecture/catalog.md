@@ -54,12 +54,13 @@ Responses and logs never contain the catalogue key, the upstream URL or the raw 
 | `brands({ q, limit, offset })` | `GET /v1/brands` | |
 | `categories()` | `GET /v1/categories` | |
 | `sendFeedback(items)` | `POST /v1/feedback` | Scope `feedback:write`, 1-100 items (checked client-side), idempotent per `clientRef` |
+| `feedbackResolutions({ since, limit })` | `GET /v1/feedback/resolutions` | Scope `feedback:write`. What curators did with new-item lines (`created`, `linked`, `dismissed`, with the Qore ID), oldest first; `since` is inclusive. Polled every 15 minutes by apps/api |
 | `feedbackStats(since?)` | `GET /v1/feedback/stats` | |
-| `uploadImage({ file, filename, qid, view, feedbackClientRef, sample })` | `POST /v1/images` | Multipart, ≤ 8 MB. `sample` is the optional training context: `box` (sent as `boxX/Y/W/H`, all four or none), `sourceWidth/Height`, `detectorModel`, `detectorConfidence`, `capturedAt`, `labelBrand/Name/Pack`. Returns `status` (`accepted` or `pending`), `role` and `sampleId` |
+| `uploadImage({ file, filename, qid, view, feedbackClientRef, sample })` | `POST /v1/images` | Multipart, ≤ 8 MB. No `qid` for a new item's crop, which then needs `feedbackClientRef`. `sample` is the optional training context: `box` (sent as `boxX/Y/W/H`, all four or none), `sourceWidth/Height`, `detectorModel`, `detectorConfidence`, `capturedAt`, `labelBrand/Name/Pack`. Returns `status` (`accepted` or `pending`), `role` and `sampleId` |
 | `whoAmI()` | `GET /v1/keys/me` | Key name, prefix, scopes, expiry. `GET /api/health` reports only whether the key is accepted (`catalog.key`: `valid`, `rejected`, `unknown`), cached 5 minutes |
 
 Prices are indicative, whole Naira (`currency: "NGN"`). Requests time out after 10s (20s for templates with suggestions). Non-2xx responses and client-side guard failures throw `CatalogError` (`status`, `path`, `body`); the key never appears in error messages. 429 means the 120 requests/min per-key limit was hit.
 
-apps/api calls `health`, `whoAmI` (health check), `searchProducts`, `getProduct`, `match`, `businessTaxonomy`, `subtypeTemplates`, `sendFeedback` and `uploadImage`; `brands`, `categories` and `feedbackStats` are not used yet.
+apps/api calls `health`, `whoAmI` (health check), `searchProducts`, `getProduct`, `match`, `businessTaxonomy`, `subtypeTemplates`, `sendFeedback`, `uploadImage` and `feedbackResolutions`; `brands`, `categories` and `feedbackStats` are not used yet.
 
 Tests: `pnpm --filter @tally/catalog-client test` (vitest, mocked fetch). Live check against a deployed catalog: build the package, then `pnpm --filter @tally/catalog-client smoke` with `QORE_CATALOG_BASE_URL` and `QORE_CATALOG_API_KEY` set.
