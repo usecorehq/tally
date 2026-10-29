@@ -2,7 +2,7 @@
 
 > Diagram: [vision tables (ERD)](../diagrams/images/vision-schema-erd.svg). Part of [vision recognition](vision-recognition.md) and the [stock-take agent](stocktake-agent.md). The whole schema: [database](database.md).
 
-How the camera tables in the `tally` schema relate, who writes each row, and which links are foreign keys versus plain values. Migrations `0004_add_vision_scans`, `0005_add_vision_decisions`, `0006_add_stocktake_agent` and `0007_add_detection_review`; source of truth is `packages/db/src/schema.ts`.
+How the camera tables in the `tally` schema relate, who writes each row, and which links are foreign keys versus plain values. Migrations `0004_add_vision_scans`, `0005_add_vision_decisions`, `0006_add_stocktake_agent`, `0007_add_detection_review` and `0008_add_stocktake_rerun_discard`; source of truth is `packages/db/src/schema.ts`.
 
 ## The shape in one paragraph
 
@@ -12,10 +12,10 @@ A **scan** (`vision_scans`) is one shelf photo. Each product found in it is a **
 
 | Table | One row is | Parent | Written by |
 |---|---|---|---|
-| `vision_scans` | One shelf photo: sha256 and size (never the photo), model ids, time per stage, `open` → `confirmed` | `businesses` | `POST …/vision/shelf-scans`, or a stock-take run when it saves its result |
+| `vision_scans` | One shelf photo: sha256 and size (never the photo), model ids, time per stage, `open` → `confirmed`, `discarded` or `superseded` | `businesses` | `POST …/vision/shelf-scans`, or a stock-take run when it saves its result |
 | `vision_detections` | One product in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates, the store match, the `review` reason (agent verdict or count disagreement), and then the merchant's decision | `vision_scans` | Inserted with its scan; decision columns set by `POST …/shelf-scans/:scanId/confirm` |
 | `inventory_item_readings` | "The camera read `brand\|name\|pack`, and the merchant said it is this item" | `inventory_items` | Scan confirm (every non-skip line with a brand) and `POST …/vision/identify/confirm` |
-| `vision_agent_runs` | One stock-take: status, model, turns, tokens, error, the resulting scan | `businesses` | `POST …/vision/stocktakes` creates it; the background run updates it |
+| `vision_agent_runs` | One stock-take: status, model, turns, tokens, error, the resulting scan, and for a rerun the photo's first scan | `businesses` | `POST …/vision/stocktakes` or `…/shelf-scans/:scanId/rerun` creates it; the background run updates it |
 | `vision_agent_steps` | One step of a run: `baseline` (first pass), `thought` or `tool` with its arguments and a short summary | `vision_agent_runs` | The background run, as it goes |
 
 Identify calls (point to sell) write nothing until the merchant confirms, and then only a reading.
@@ -33,6 +33,11 @@ Identify calls (point to sell) write nothing until the merchant confirms, and th
 | `inventory_item_readings (business_id, item_id)` | `inventory_items` | many → one | cascade | Readings that point at this item; `(business_id, reading_key)` is unique, so one reading maps to one item |
 | `vision_agent_runs.business_id` | `businesses` | many → one | cascade | The shop the stock-take is for |
 | `vision_agent_runs (business_id, scan_id)` | `vision_scans` | zero or one → zero or one | no action | The run's result. Null while running and for a failed run; set on `done` and on `fallback` (the quick scan) |
+| `vision_agent_runs (business_id, rerun_of_scan_id)` | `vision_scans` | many → zero or one | no action | **Rerun of:** the group's root, the first scan of the photo (never a rerun's own scan). Null for a new stock-take. Indexed for history |
+
+### Groups: one photo, several runs
+
+A photo's first scan (a quick scan or an agent run's) is the **root**. Each rerun is a run with `rerun_of_scan_id` = the root, and saves its own scan, with the photo stored again under that scan's id. The group is the root plus those scans. At most one scan in a group moves stock: once one has a decided line, the others still `open` become `superseded` (and a rerun finishing later is saved superseded). Confirm, rerun and discard check this; nothing else in the database links the siblings.
 | `vision_agent_steps (business_id, run_id)` | `vision_agent_runs` | many → one | cascade | The trace |
 
 `inventory_item_id` and `item_id` are often the same item, but not always. The merchant can pick a different item, add a new one, or restore an archived one.
@@ -72,7 +77,14 @@ confirm       POST shelf-scans/:scanId/confirm, one transaction
               → vision_detections decision columns
               → inventory_item_readings upsert (every non-skip line with a brand)
               → vision_scans confirmed once no line is undecided
+              → the group's other open scans superseded (all of the group's scans locked, in id order)
+              refused (409) when this scan is discarded or superseded, or a sibling is confirmed
               after commit, best-effort: catalogue feedback → feedback_sent_at, crop uploads
+
+rerun         POST shelf-scans/:scanId/rerun → vision_agent_runs (running, rerun_of_scan_id = root) → as stock-take,
+              its scan superseded at once if a sibling has moved stock meanwhile
+
+discard       POST shelf-scans/:scanId/discard → vision_scans discarded (open only; nothing else changes)
 
 identify      POST identify/confirm → inventory_item_readings upsert (with a brand)
 
@@ -84,7 +96,7 @@ The next scan checks the store before the catalogue: first `inventory_item_readi
 
 ## What the database enforces
 
-- **Scan status:** `open` or `confirmed`, and `confirmed_at` is set exactly when confirmed. `image_sha256` is 64 hex characters.
+- **Scan status:** `open`, `confirmed`, `discarded` or `superseded`. `confirmed_at`, `discarded_at` and `superseded_at` are each set exactly when the status says so. `image_sha256` is 64 hex characters.
 - **Detection:** `position >= 0` and unique per scan. `confidence` is `high`, `medium` or `low`. `count_source` is `sam` or `spark`. Counts are not negative. The name is 1 to 200 characters, and `review`, when set, 1 to 500.
 - **Match:** `inventory_item_id` and `inventory_match` are both set or both null.
 - **Decision:** `action`, `outcome`, `decided_by` and `decided_at` are all set or all null. `skip` ⇔ `removed`. Every decision except `skip` has an `item_id`. `confirmed_qid` matches the Qore ID format.

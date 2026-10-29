@@ -6,6 +6,7 @@ erDiagram
     BUSINESSES ||--o{ INVENTORY_ITEMS : stocks
     VISION_SCANS ||--o{ VISION_DETECTIONS : "finds (cascade)"
     VISION_AGENT_RUNS |o--o| VISION_SCANS : "result (scan_id, set when saved)"
+    VISION_AGENT_RUNS }o--o| VISION_SCANS : "rerun of (rerun_of_scan_id, the photo's first scan)"
     VISION_AGENT_RUNS ||--o{ VISION_AGENT_STEPS : "trace (cascade)"
     INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "looks like (inventory_item_id)"
     INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "decided as (item_id)"
@@ -28,7 +29,7 @@ erDiagram
     VISION_SCANS {
         uuid id PK
         uuid business_id FK
-        text status "open | confirmed"
+        text status "open | confirmed | discarded | superseded"
         text image_sha256 "photo itself never stored"
         int image_bytes
         text read_model "muse-spark-1.3"
@@ -39,6 +40,8 @@ erDiagram
         int match_ms
         uuid created_by
         timestamptz confirmed_at "set when every line is decided"
+        timestamptz discarded_at "set when discarded"
+        timestamptz superseded_at "set when a sibling run moved stock"
     }
     VISION_DETECTIONS {
         uuid id PK
@@ -79,6 +82,7 @@ erDiagram
         uuid id PK
         uuid business_id FK
         uuid scan_id FK "nullable"
+        uuid rerun_of_scan_id FK "nullable, a rerun's group root"
         text status "running | done | fallback | failed"
         text model
         int turns

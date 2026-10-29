@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Skeleton, SolarIcon, cn } from "@tally/ui";
 import { recentStocktakes } from "./actions";
-import { entryTitle } from "./entry-text";
+import { entryTitle, flatEntries } from "./entry-text";
 import { formatWhen } from "./format";
 import { historyHref, newHref, sessionHref } from "./urls";
 import type { HistoryEntry } from "./types";
@@ -40,7 +40,7 @@ export function StocktakeRecents() {
   }, []);
 
   // A running entry changes on its own: refresh until it settles.
-  const running = data && data !== "failed" && data.entries.some((e) => e.status === "running");
+  const running = data && data !== "failed" && flatEntries(data.entries).some((e) => e.status === "running");
   useEffect(() => {
     if (!running) return;
     const t = setTimeout(() => setTick((n) => n + 1), POLL_MS);
@@ -106,7 +106,7 @@ export function RecentsList({
           <p className="px-3 text-[13px] text-gray-500">No stock-takes yet. Each one you take is kept here.</p>
         ) : (
           <ul className="flex flex-col gap-0.5">
-            {data.entries.map((e) => {
+            {flatEntries(data.entries).map((e) => {
               const on = active === e.id;
               return (
                 <li key={e.id}>
@@ -121,7 +121,10 @@ export function RecentsList({
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{entryTitle(e)}</span>
-                      <span className="block truncate text-xs tabular-nums text-gray-500">{formatWhen(e.startedAt)}</span>
+                      <span className="block truncate text-xs tabular-nums text-gray-500">
+                        {e.rerunOf ? "Rerun · " : ""}
+                        {formatWhen(e.startedAt)}
+                      </span>
                     </span>
                     {/* Only the states that need the merchant get a mark. */}
                     {e.status === "running" && <span aria-label="Running" className="mt-1.5 size-2 shrink-0 animate-pulse rounded-full bg-primary" />}

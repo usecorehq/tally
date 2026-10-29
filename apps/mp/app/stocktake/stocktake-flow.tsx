@@ -30,6 +30,9 @@ import type { AgentStep } from "./types";
 export type Business = { id: string; name: string };
 export type Photo = { blob: Blob; url: string; width: number; height: number };
 
+/** Below this long edge, packs on a whole shelf are too small to read reliably. */
+const SMALL_PHOTO_EDGE = 1500;
+
 export type Phase = { name: "pick" } | { name: "working"; mode: "agent" | "quick"; steps: AgentStep[]; startedAt: number };
 
 /** A new stock-take: business, photo, then the kind of run. Each run continues at its own URL. */
@@ -202,6 +205,12 @@ export function PickView({
               </TrayFooter>
             </Tray>
 
+            {Math.max(photo.width, photo.height) < SMALL_PHOTO_EDGE && (
+              <FormMessage
+                variant="warning"
+                message="This photo is small, so products may be missed. Use the camera's full-size photo, or take a closer one of each shelf."
+              />
+            )}
             <FormMessage message={error} />
             {/* One primary, last: on the right on desktop, on top on phones. */}
             <div className="flex flex-col-reverse gap-3 sm:flex-row">

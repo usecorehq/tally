@@ -67,9 +67,9 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
 `/stocktake` in the merchant portal (built) runs the same flow from a browser, so the shelf scan doesn't need the mobile app:
 
 1. Pick one of the user's businesses (`GET /api/businesses`).
-2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to at most a 2560 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation.
+2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to at most a 2560 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation. A photo under 1500 px on its long edge gets a warning before the scan: products on a whole shelf are likely too small to read.
 3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then the page moves to the run's own URL, `/stocktake/history/<runId>`, which polls `GET …/stocktakes/:runId` every 1.5 s and shows the step trace as it grows. **Quick scan** calls `POST …/shelf-scans`, waits, then moves to `/stocktake/history/<scanId>`.
-4. The review table has one row per undecided detection, `review` lines first: the reading, an editable count, the product (opens the picker; pre-filled by the rules in [Showing a line](#showing-a-line-clients)), the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box, or is the stored crop when this browser doesn't have the photo.
+4. The review table has one row per undecided detection, `review` lines first: the reading, an editable count, the product (opens the picker; pre-filled by the rules in [Showing a line](#showing-a-line-clients)), the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box, or is the stored crop when this browser doesn't have the photo. A restock line names the store item (`inventoryItemName`). **Coverage:** the photo is split into a 3 × 3 grid; when two or more cells have no counted unit, they are shaded and a warning names them ("Nothing was read in parts of this photo…"), so a missed shelf is never silent.
 5. Confirm sends every row to `…/shelf-scans/:scanId/confirm` and shows the outcome: created, restocked, restored, skipped, invalid lines with their reasons, and the feedback sent.
 
 #### Stock-take history (built)
@@ -81,6 +81,9 @@ Every stock-take is its own session with its own URL (`?business=<id>` picks the
 - **`/stocktake/history/<id>`** (a run id or a quick scan's id; the page tries the run first) loads the session from the API, so a refresh or a link restores it: a running run resumes polling, an open scan opens the review table, a confirmed scan opens a read-only list of each line's decision and when it was made, and a failed run says why.
 - **The photo is kept with the stock-take.** The API stores it in R2, and a reopened scan returns a short-lived `photoUrl`, so any device sees the photo with its outlines, including on a confirmed stock-take. The page also keeps a copy in IndexedDB per session (the newest 30) so it shows at once. Only scans from before photos were kept show each line's crop instead.
 - **Lines confirmed earlier** (a confirm that left some lines invalid) are not shown again; only the undecided ones are confirmed.
+- **Rerun** (on any stock-take whose photo was kept, until a run of that photo moves stock) runs the agent again on the stored photo and opens the new run. Reruns are grouped under the photo's first scan: nested under it in history ("Rerun", each with its own status and URL), and flat in Recents with a "Rerun ·" label.
+- **Only one run of a photo is confirmed.** Confirming any of them makes the others **superseded**: read-only, kept for audit.
+- **Discard** (review screen, and the bin on a history row that is ready to review) asks first, then makes the scan **discarded**: read-only, kept, and no longer "ready to review". A discarded stock-take can still be rerun.
 
 - **Calls:** every call is a server action (`apps/mp/app/stocktake/actions.ts`) that uses the session's Supabase token. The browser never sees the token, and the Meta key stays in apps/api. Server actions accept up to 5 MB (`experimental.serverActions.bodySizeLimit`).
 - **States:** 503 "not configured" or rate-limited, 413, 504, a `failed` run, and a `fallback` run ("the agent couldn't finish; showing the first pass") each get their own message. Polling stops after 5 failed polls in a row, with a retry; the API itself marks a run that ran past its deadline `failed`. History and sessions each have loading, failed (retry) and empty states, all previewed at `/design/stocktake`.
@@ -178,7 +181,7 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 - `inventoryItemId` (on a candidate): the business's active item linked to that Qore ID.
 - `catalogueAvailable: false`: Qore Catalog failed; detections come back without candidates rather than failing the scan.
 - `scanId` and detection `id`s are stored: confirm uses them. Only the photo's sha256 is kept, not the photo.
-- **Does the merchant already have it?** Tally answers this against the business's own items; Qore Catalog never sees merchant inventory. The detection's `inventoryItemId`, `inventoryMatch`, `inventoryItemArchived` and `inventoryNeedsConfirm` are set by the first rule that applies:
+- **Does the merchant already have it?** Tally answers this against the business's own items; Qore Catalog never sees merchant inventory. The detection's `inventoryItemId`, `inventoryItemName` (the item's name, with its variant), `inventoryMatch`, `inventoryItemArchived` and `inventoryNeedsConfirm` are set by the first rule that applies:
   1. `reading`: the camera read exactly this before and the merchant confirmed it as this item. Works for products the catalogue doesn't know.
   2. `catalogue`: an active item is linked to one of the plausible candidates' Qore IDs. It is "in stock" only when that candidate agrees on both brand and size (`/v1/match` `signals.brand = 1` and `signals.size = 1`); an unbranded read always asks. Otherwise `inventoryNeedsConfirm: true` ("Is this your Peak Milk 400g?"): a Peak 900g on the shelf must not restock the merchant's Peak 400g. A size-agreeing candidate beats a better-scored one that doesn't. Never create a duplicate.
   3. `catalogue` with `inventoryItemArchived: true`: only an item the merchant removed has that Qore ID. Show "You removed X. Restore?"; restoring keeps their name, price and history. The same size rule sets `inventoryNeedsConfirm`.
@@ -259,10 +262,24 @@ Stock-take history: the business's stock-take runs and quick scans (scans no run
 ]
 ```
 
-- `status`: `running`, `review` (the scan is open), `confirmed`, or `failed` (`error` says why). Runs past their deadline are marked failed before the list is read.
+- `status`: `running`, `review` (the scan is open), `confirmed`, `discarded`, `superseded`, or `failed` (`error` says why). Runs past their deadline are marked failed before the list is read.
+- **Grouped like threads:** a rerun appears in its root's `reruns` (oldest first), not at the top level; `rerunOf` is the root's scan id. Groups sort by their newest run, so a fresh rerun brings its group to the top.
 - `preview`: up to 3 distinct products read (brand, else name), in scan order; the entry's title.
 - `lines` is null while running or when the run failed. `decided` counts lines by the action the merchant chose: an `add` lands as a restock when the item already exists, so it can differ from the confirm response's `created`.
 - Open an entry with `GET …/stocktakes/:runId` (a run) or `GET …/shelf-scans/:scanId` (a quick scan).
+
+### `POST /api/businesses/:id/vision/shelf-scans/:scanId/rerun` (built)
+
+Runs the stock-take agent again on the scan's stored photo (`tally/scans/<scanId>.jpg`). Returns `202 { runId, status: "running", rerunOf }`; poll `GET …/stocktakes/:runId` as for a new one. Same membership check and deadlines.
+
+- `rerunOf` is the group's root, the photo's first scan, whichever run you rerun. The new run stores it in `vision_agent_runs.rerun_of_scan_id`, and its own scan stores the photo again under its own id.
+- **409** when no photo was kept (scans from before photos were stored, or R2 off), or when a run of this photo has already moved stock (confirmed, or any line decided). Take new stock instead.
+- A rerun that finishes after a sibling moved stock saves its scan as `superseded` straight away.
+- The reopened scan says whether it can be rerun: `canRerun` (photo stored, group not settled), plus `rerunOf`, `discardedAt` and `supersededAt`.
+
+### `POST /api/businesses/:id/vision/shelf-scans/:scanId/discard` (built)
+
+Drops an open scan: `status: "discarded"`, `discarded_at` set, everything else kept. Returns `{ status, discardedAt }`, the same again on a repeat. **409** when it is confirmed or superseded. Lines confirmed earlier (a partial confirm) stay applied.
 
 ### `POST /api/businesses/:id/vision/shelf-scans/:scanId/confirm` (built)
 
@@ -291,7 +308,8 @@ Stock-take history: the business's stock-take runs and quick scans (scans no run
   - `scanConfirmed` is true once every detection is decided.
   - `feedback` is `{ sent, recorded, duplicates }`, or `{ sent: 0, error }` when Qore Catalog was down.
   - `images` is `{ uploaded, skipped, failed }`: crops sent to Qore Catalog for lines confirmed with a Qore ID.
-- **Errors:** 400 for an invalid body, 403 for a non-member, 404 for an unknown scan.
+  - `superseded`: how many other runs of the same photo this confirm made read-only. Once a scan has a decided line, its still-open siblings become `superseded`, in the same transaction (the whole group is locked).
+- **Errors:** 400 for an invalid body, 403 for a non-member, 404 for an unknown scan, 409 when the scan is discarded or superseded, or another run of this photo is already confirmed. A retried confirm on a confirmed scan still returns 200 with `alreadyDecided`.
 
 ### Removing an item (built)
 

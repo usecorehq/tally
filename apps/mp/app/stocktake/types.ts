@@ -59,6 +59,8 @@ export type Detection = {
   inventoryMatch: "reading" | "catalogue" | "name" | null;
   inventoryItemArchived: boolean;
   inventoryNeedsConfirm: boolean;
+  /** The store item's name, for a line that matched one. */
+  inventoryItemName?: string | null;
   /** Agent scans only: why the merchant should look closely (escalated, or never reviewed by the agent). */
   review?: string | null;
   evidence?: { turn: number; tool: string; summary: string }[] | null;
@@ -83,7 +85,7 @@ export type ShelfScanResult = {
   timings?: { totalMs: number };
   detections: Detection[];
   /** A reopened scan only (GET …/shelf-scans/:scanId, or a finished run's result). */
-  status?: "open" | "confirmed";
+  status?: ScanStatus;
   createdAt?: string;
   confirmedAt?: string | null;
   /** False when some candidate names and prices couldn't be fetched again. */
@@ -93,7 +95,20 @@ export type ShelfScanResult = {
 };
 
 /** A stored scan, as the API returns it on reopen. */
-export type ScanView = ShelfScanResult & { status: "open" | "confirmed"; createdAt: string; confirmedAt: string | null };
+/** discarded: dropped unconfirmed; superseded: another run of the same photo was confirmed. Both read-only. */
+export type ScanStatus = "open" | "confirmed" | "discarded" | "superseded";
+
+export type ScanView = ShelfScanResult & {
+  status: ScanStatus;
+  createdAt: string;
+  confirmedAt: string | null;
+  discardedAt: string | null;
+  supersededAt: string | null;
+  /** The photo's first scan when this one is a rerun. */
+  rerunOf: string | null;
+  /** The photo is stored and no run of it has moved stock yet. */
+  canRerun: boolean;
+};
 
 /** One row of GET …/vision/stocktakes. */
 export type HistoryEntry = {
@@ -101,7 +116,11 @@ export type HistoryEntry = {
   kind: "stocktake" | "quick";
   runId: string | null;
   scanId: string | null;
-  status: "running" | "review" | "confirmed" | "failed";
+  status: "running" | "review" | "confirmed" | "failed" | "discarded" | "superseded";
+  /** The group's root scan when this is a rerun. */
+  rerunOf: string | null;
+  /** On a root only: its reruns, oldest first. */
+  reruns?: HistoryEntry[];
   fallback: boolean;
   startedAt: string;
   confirmedAt: string | null;
@@ -141,6 +160,8 @@ export type ConfirmResult = {
   alreadyDecided: number;
   invalid: { detectionId: string; reason: string }[];
   scanConfirmed: boolean;
+  /** Other runs of the same photo this confirm made read-only. */
+  superseded?: number;
   feedback: { sent: number; recorded?: number; duplicates?: number; error?: string };
   images?: { uploaded: number; skipped: number; failed: number };
 };

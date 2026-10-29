@@ -10,6 +10,7 @@ import { formatDateTime } from "./format";
 import { LoadFailed } from "./load-failed";
 import { loadPhoto, runKey, scanKey } from "./photo-store";
 import { ReviewTable } from "./review-table";
+import { DiscardButton, RerunButton } from "./scan-actions";
 import { HistoryButton, Working, type Photo } from "./stocktake-flow";
 import { historyHref, newHref } from "./urls";
 import type { ScanView, StocktakeRun } from "./types";
@@ -42,6 +43,8 @@ function usePhoto(key: string): Photo | null | undefined {
 /** A stock-take run at /stocktake/history/<runId>: progress while it runs, then its scan; polling resumes after a refresh. */
 export function RunSession({ business, initial }: { business: Business; initial: StocktakeRun }) {
   const [data, setData] = useState(initial);
+  // A server refresh (after a discard) brings a newer snapshot.
+  useEffect(() => setData(initial), [initial]);
   const [pollError, setPollError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const photo = usePhoto(runKey(initial.run.id));
@@ -132,7 +135,8 @@ function ScanContent({
   const history = <HistoryButton href={historyHref(business.id)} />;
   // This browser's copy shows at once; otherwise the photo stored with the scan.
   const photoUrl = photo?.url ?? scan.photoUrl ?? null;
-  if (scan.status === "confirmed") {
+  const rerun = scan.canRerun && <RerunButton businessId={business.id} scanId={scan.scanId} />;
+  if (scan.status !== "open") {
     return (
       <ConfirmedView
         scan={scan}
@@ -142,6 +146,7 @@ function ScanContent({
         actions={
           <>
             {history}
+            {rerun}
             <Button asChild>
               <Link href={newHref(business.id)}>
                 <SolarIcon name="Gallery-Add" iconStyle="Bold" size={16} />
@@ -162,7 +167,13 @@ function ScanContent({
       photo={photo?.blob ?? null}
       photoUrl={photoUrl}
       onRestart={() => router.push(newHref(business.id))}
-      actions={history}
+      actions={
+        <>
+          {history}
+          {rerun}
+          <DiscardButton businessId={business.id} scanId={scan.scanId} />
+        </>
+      }
     />
   );
 }
