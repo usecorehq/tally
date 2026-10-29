@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import sharp from "sharp";
-import { ForbiddenException, INestApplication, ValidationPipe } from "@nestjs/common";
+import { ConflictException, ForbiddenException, INestApplication, Logger, NotFoundException, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
@@ -13,11 +13,13 @@ import { CatalogService } from "../catalog/catalog.service";
 import { MAX_IDENTIFY_IMAGE_BYTES, MAX_SHELF_IMAGE_BYTES, VisionController } from "./vision.controller";
 import { R2Storage } from "../media/r2-storage";
 import { VisionRepository } from "./vision.repository";
-import { VisionService } from "./vision.service";
+import { STOCKTAKE_DEADLINES, VisionService } from "./vision.service";
 
-// Real guard, controller and service; the business lookup, the catalogue and
-// the Meta Model API (global fetch) are mocked. Live behaviour is checked with
-// scripts/vision-smoke.mjs.
+/** A stored crop of the given size, as R2 would return it. */
+const webp = (width: number, height: number) => sharp({ create: { width, height, channels: 3, background: "#c33" } }).webp().toBuffer();
+
+// Real guard, controller and service; business lookup, catalogue and Meta Model API (fetch) are mocked.
+// Live behaviour is checked by scripts/vision-smoke.mjs.
 const SECRET = "test-jwt-secret-not-real";
 const USER = "00000000-0000-4000-8000-0000000000aa";
 const BIZ = "00000000-0000-4000-8000-000000000001";
@@ -40,6 +42,84 @@ const pending = {
   quantity: 6,
   itemName: "Peak Milk 400g",
   price: "4500.00",
+};
+
+/** A stored scan as repo.getScan returns it: one decided line (restocked) and one the agent flagged. */
+const storedScan = (overrides: Record<string, unknown> = {}) => ({
+  id: SCAN,
+  businessId: BIZ,
+  status: "open",
+  readModel: "muse-spark-1.3",
+  countModel: "sam-3.1",
+  catalogueAvailable: true,
+  createdAt: new Date("2026-10-29T09:00:00Z"),
+  confirmedAt: null,
+  discardedAt: null,
+  supersededAt: null,
+  detections: [
+    {
+      id: DET,
+      position: 0,
+      brand: "Peak",
+      name: "Full Cream Milk Powder",
+      pack: "400g",
+      look: "yellow tin",
+      confidence: "high",
+      sparkCount: 6,
+      samCount: 6,
+      count: 6,
+      countSource: "sam",
+      boxes: [{ x1: 10, y1: 10, x2: 50, y2: 90 }],
+      candidates: [{ qid: "QC-7K2M-9XQ4-R", score: 0.94, match: "strong" }],
+      inventoryItemId: "item-a",
+      inventoryMatch: "catalogue",
+      action: "restock",
+      itemId: "item-a",
+      quantity: 6,
+      confirmedQid: "QC-7K2M-9XQ4-R",
+      decidedAt: new Date("2026-10-29T09:05:00Z"),
+      review: null,
+      evidence: null,
+    },
+    {
+      id: "00000000-0000-4000-8000-0000000000d2",
+      position: 1,
+      brand: "",
+      name: "Cooking Oil",
+      pack: "",
+      look: "clear bottle",
+      confidence: "low",
+      sparkCount: 2,
+      samCount: null,
+      count: 2,
+      countSource: "spark",
+      boxes: [],
+      // Stored before match strengths were saved.
+      candidates: [{ qid: "QC-AAAA-BBBB-C", score: 0.41 }],
+      inventoryItemId: null,
+      inventoryMatch: null,
+      action: null,
+      itemId: null,
+      quantity: null,
+      confirmedQid: null,
+      decidedAt: null,
+      review: "Agent couldn't confirm: label unreadable",
+      evidence: [{ turn: 1, tool: "zoom", summary: "zoomed" }],
+    },
+  ],
+  ...overrides,
+});
+const peakDetail = {
+  qid: "QC-7K2M-9XQ4-R",
+  name: "Peak Full Cream Milk Powder",
+  variantLabel: "400g",
+  size: { value: 400, unit: "g" },
+  packQty: 1,
+  status: "active",
+  brand: { slug: "peak", name: "Peak" },
+  image: null,
+  price: { currency: "NGN", indicative: true, median: 4500, min: 4200, max: 5100, offers: 3, retailers: 2, observedAt: "2026-10-01" },
+  variants: [],
 };
 
 const sparkReply = (products: unknown[]) =>
@@ -80,7 +160,16 @@ async function app(apiKey: string | undefined) {
     readings: jest.fn(async () => [] as { itemId: string; readingKey: string }[]),
     saveScan: jest.fn(async () => "scan-1"),
     archivedLinkedItems: jest.fn(async () => [] as { id: string; name: string; variantLabel: string | null; coreQid: string | null }[]),
-    getScan: jest.fn(async () => ({ id: SCAN, detections: [] })),
+    getScan: jest.fn(async (_b: string, _s: string) => storedScan() as Record<string, unknown>),
+    scanItems: jest.fn(async (_b: string, _ids: string[], _qids: string[]) => [
+      { id: "item-a", name: "Peak Milk 400g", coreQid: "QC-7K2M-9XQ4-R", archived: false },
+    ]),
+    history: jest.fn(async (_b: string, _limit: number) => ({
+      runs: [] as Record<string, unknown>[],
+      quick: [] as Record<string, unknown>[],
+      reruns: [] as Record<string, unknown>[],
+      counts: [] as Record<string, unknown>[],
+    })),
     confirm: jest.fn(async () => ({
       created: 1,
       restocked: 0,
@@ -93,7 +182,12 @@ async function app(apiKey: string | undefined) {
     })),
     markFeedbackSent: jest.fn(async () => undefined),
     rememberReading: jest.fn(async () => true),
-    createRun: jest.fn(async () => "run-1"),
+    isActiveItem: jest.fn(async () => true),
+    createRun: jest.fn(async (..._args: unknown[]) => "run-1"),
+    group: jest.fn(async (_b: string, scanId: string) => ({ root: scanId, scanIds: [scanId] })),
+    groupSettled: jest.fn(async (_ids: string[]) => false),
+    supersedeIfSettled: jest.fn(async (_b: string, _s: string) => false),
+    discard: jest.fn(async (_b: string, _s: string) => ({ status: "discarded", discardedAt: new Date("2026-10-30T09:00:00Z") })),
     failStaleRuns: jest.fn(async (_before: Date) => 0),
     addStep: jest.fn(async (_b: string, _r: string, _s: unknown) => undefined),
     finishRun: jest.fn(async (_r: string, _e: Record<string, unknown>) => undefined),
@@ -105,13 +199,19 @@ async function app(apiKey: string | undefined) {
         items: [{ ref: "0", query: {}, parsedPack: null, candidates: [{ qid: "QC-A", name: "Peak 400g", variantLabel: null, size: null, packQty: 1, brand: null, score: 0.9, signals: { text: 1, brand: 1, size: 0.5 }, price: null }] }],
       })),
       uploadImage: jest.fn(async () => ({ sha256: "ab", qid: "QC-7K2M-9XQ4-R", view: "on_shelf", status: "pending", width: 400, height: 600 })),
+      getProduct: jest.fn(async (qid: string): Promise<Record<string, unknown>> => {
+        if (qid === peakDetail.qid) return peakDetail;
+        throw Object.assign(new Error("not found"), { status: 404 });
+      }),
     },
   };
   // R2 off by default; tests switch it on.
   const media = {
     enabled: false,
     put: jest.fn(async (_key: string, _body: Uint8Array, _type: string) => undefined),
-    get: jest.fn(async (_key: string) => new Uint8Array([1, 2, 3]) as Uint8Array | null),
+    get: jest.fn(async (_key: string) => (await webp(400, 600)) as Uint8Array | null),
+    presignedGetUrl: jest.fn(async (key: string, _seconds?: number) => `https://r2.example/${key}?sig=1`),
+    exists: jest.fn(async (_key: string) => false),
   };
   const config: Record<string, unknown> = { "supabase.jwtSecret": SECRET, "meta.apiKey": apiKey, "meta.baseUrl": "https://api.meta.ai/v1" };
   const moduleRef = await Test.createTestingModule({
@@ -223,21 +323,47 @@ describe("VisionController shelf-scans (HTTP)", () => {
     expect(res.body.detections[0]).toMatchObject({ count: 1, countSource: "spark", sparkCount: 1, samCount: null });
   });
 
-  it("stores one crop per detection in R2 when it is configured; a tiny box gets none", async () => {
+  it("stores one crop per detection in R2 when it is configured, small ones too; a tiny box gets none", async () => {
     media.enabled = true;
     media.put.mockClear();
     try {
       const photo = await sharp({ create: { width: 1000, height: 1000, channels: 3, background: "#c33" } }).jpeg().toBuffer();
       const big = { ...peak, boxes: [{ x_min: 100, y_min: 100, x_max: 600, y_max: 700 }] };
       const tiny = { ...peak, name: "Tiny", boxes: [{ x_min: 900, y_min: 900, x_max: 920, y_max: 930 }] };
-      fetchSpy.mockImplementation(metaApi(() => sparkReply([big, tiny]), () => samReply("")));
+      // ~85 x 106 px: under Qore Catalog's 160 px, still kept for Tally's own dataset.
+      const small = { ...peak, name: "Small", boxes: [{ x_min: 700, y_min: 100, x_max: 780, y_max: 200 }] };
+      fetchSpy.mockImplementation(metaApi(() => sparkReply([big, tiny, small]), () => samReply("")));
+      const log = jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
       const res = await post().set(auth).attach("image", photo, "shelf.jpg").expect(200);
-      expect(res.body.cropsStored).toBe(1);
-      expect(media.put).toHaveBeenCalledTimes(1);
-      const [key, body, type] = media.put.mock.calls[0]!;
-      expect(key).toBe("tally/crops/scan-1/0.webp");
+      expect(res.body.cropsStored).toBe(2);
+      // The tiny one can never become a catalogue picture: say so.
+      expect(log).toHaveBeenCalledWith("Scan scan-1: 2 of 3 crops stored, 1 too small to store (< 48 px)");
+      log.mockRestore();
+      const crops = media.put.mock.calls.filter(([key]) => key.startsWith("tally/crops/"));
+      expect(crops.map(([key]) => key).sort()).toEqual(["tally/crops/scan-1/0.webp", "tally/crops/scan-1/2.webp"]);
+      const [, body, type] = media.put.mock.calls.find(([key]) => key.endsWith("/0.webp"))!;
       expect(type).toBe("image/webp");
       expect((await sharp(Buffer.from(body)).metadata()).format).toBe("webp");
+    } finally {
+      media.enabled = false;
+    }
+  });
+
+  it("keeps the shelf photo in R2 with the scan: upright JPEG, no metadata", async () => {
+    media.enabled = true;
+    media.put.mockClear();
+    try {
+      const photo = await sharp({ create: { width: 1200, height: 900, channels: 3, background: "#c33" } })
+        .jpeg()
+        .withExif({ IFD0: { Copyright: "x" } })
+        .toBuffer();
+      fetchSpy.mockImplementation(metaApi(() => sparkReply([peak]), () => samReply("")));
+      const res = await post().set(auth).attach("image", photo, "shelf.jpg").expect(200);
+      expect(res.body.photoStored).toBe(true);
+      const [, body, type] = media.put.mock.calls.find(([key]) => key === "tally/scans/scan-1.jpg")!;
+      expect(type).toBe("image/jpeg");
+      const meta = await sharp(Buffer.from(body)).metadata();
+      expect([meta.format, meta.width, meta.height, meta.exif]).toEqual(["jpeg", 1200, 900, undefined]);
     } finally {
       media.enabled = false;
     }
@@ -347,11 +473,92 @@ describe("VisionController confirm + get (HTTP)", () => {
     await request(nest.getHttpServer())[method](p).expect(401);
   });
 
-  it("get checks membership and returns the stored scan", async () => {
-    const res = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
-    expect(ctx.businesses.getForMember).toHaveBeenCalledWith(BIZ, USER);
-    expect(ctx.repo.getScan).toHaveBeenCalledWith(BIZ, SCAN);
-    expect(res.body).toEqual({ id: SCAN, detections: [] });
+  describe("get (reopen)", () => {
+    beforeEach(() => {
+      ctx.catalog.client.getProduct.mockClear();
+      ctx.media.enabled = false;
+    });
+
+    it("checks membership and returns the scan with candidate details, store state, review and decisions", async () => {
+      const res = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
+      expect(ctx.businesses.getForMember).toHaveBeenCalledWith(BIZ, USER);
+      expect(ctx.repo.getScan).toHaveBeenCalledWith(BIZ, SCAN);
+      expect(ctx.repo.scanItems).toHaveBeenCalledWith(BIZ, ["item-a"], ["QC-7K2M-9XQ4-R", "QC-AAAA-BBBB-C"]);
+      expect(res.body).toMatchObject({ scanId: SCAN, status: "open", model: "muse-spark-1.3", catalogueAvailable: true, confirmedAt: null });
+      const [peakLine, oil] = res.body.detections;
+      expect(peakLine).toMatchObject({
+        id: DET,
+        position: 0,
+        inventoryItemId: "item-a",
+        inventoryItemArchived: false,
+        inventoryItemName: expect.any(String),
+        // A strong catalogue match is sure.
+        inventoryNeedsConfirm: false,
+        review: null,
+        cropUrl: null,
+        candidates: [
+          { qid: "QC-7K2M-9XQ4-R", score: 0.94, match: "strong", name: "Peak Full Cream Milk Powder", brand: "Peak", price: { median: 4500, min: 4200, max: 5100 }, inventoryItemId: "item-a" },
+        ],
+        decision: { action: "restock", itemId: "item-a", itemName: "Peak Milk 400g", quantity: 6, decidedAt: "2026-10-29T09:05:00.000Z" },
+      });
+      // The flagged line keeps its reason, so the review screen picks nothing for it.
+      expect(oil).toMatchObject({ review: "Agent couldn't confirm: label unreadable", decision: null, evidence: [{ tool: "zoom" }] });
+      expect(oil.candidates).toEqual([{ qid: "QC-AAAA-BBBB-C", score: 0.41, inventoryItemId: null }]);
+      // One product didn't resolve: say so rather than fail.
+      expect(res.body.candidateDetails).toBe(false);
+    });
+
+    it("follows a merged product once, and a catalogue outage still returns the scan", async () => {
+      ctx.catalog.client.getProduct.mockImplementation(async (qid: string) => {
+        if (qid === "QC-AAAA-BBBB-C") return { qid, status: "merged", mergedInto: peakDetail.qid };
+        if (qid === peakDetail.qid) return peakDetail;
+        throw Object.assign(new Error("down"), { status: 503 });
+      });
+      const merged = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
+      expect(merged.body.detections[1].candidates[0]).toMatchObject({ qid: "QC-AAAA-BBBB-C", name: "Peak Full Cream Milk Powder" });
+
+      ctx.catalog.client.getProduct.mockRejectedValue(Object.assign(new Error("down"), { status: 503 }));
+      ctx.repo.getScan.mockResolvedValueOnce(storedScan({ detections: [{ ...storedScan().detections[0], candidates: [{ qid: "QC-ZZZZ-ZZZZ-Z", score: 0.9 }] }] }));
+      const down = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
+      expect(down.body.candidateDetails).toBe(false);
+      expect(down.body.detections[0].candidates).toEqual([{ qid: "QC-ZZZZ-ZZZZ-Z", score: 0.9, inventoryItemId: null }]);
+    });
+
+    it("reports today's store state: an item archived since asks to restore, a name match asks first", async () => {
+      ctx.repo.scanItems.mockResolvedValueOnce([{ id: "item-a", name: "Peak Milk 400g", coreQid: "QC-7K2M-9XQ4-R", archived: true }]);
+      ctx.repo.getScan.mockResolvedValueOnce(
+        storedScan({ detections: [{ ...storedScan().detections[0], action: null, itemId: null, quantity: null, confirmedQid: null, decidedAt: null, inventoryMatch: "name" }] }),
+      );
+      const res = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
+      expect(res.body.detections[0]).toMatchObject({ inventoryItemArchived: true, inventoryNeedsConfirm: true, decision: null });
+      // Archived items aren't "stocked" for a candidate.
+      expect(res.body.detections[0].candidates[0].inventoryItemId).toBeNull();
+    });
+
+    it("gives each line a presigned crop URL when R2 is on", async () => {
+      ctx.media.enabled = true;
+      const res = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
+      expect(res.body.detections.map((d: { cropUrl: string }) => d.cropUrl)).toEqual([
+        `https://r2.example/tally/crops/${SCAN}/0.webp?sig=1`,
+        `https://r2.example/tally/crops/${SCAN}/1.webp?sig=1`,
+      ]);
+      expect(ctx.media.presignedGetUrl).toHaveBeenCalledWith(`tally/crops/${SCAN}/0.webp`, 3600);
+      // Scans from before photos were kept have none.
+      expect(res.body.photoUrl).toBeNull();
+    });
+
+    it("gives the stored shelf photo a presigned URL", async () => {
+      ctx.media.enabled = true;
+      ctx.media.exists.mockResolvedValueOnce(true);
+      const res = await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(200);
+      expect(ctx.media.exists).toHaveBeenCalledWith(`tally/scans/${SCAN}.jpg`);
+      expect(res.body.photoUrl).toBe(`https://r2.example/tally/scans/${SCAN}.jpg?sig=1`);
+    });
+
+    it("another business's scan is a 404", async () => {
+      ctx.repo.getScan.mockRejectedValueOnce(new NotFoundException(`No scan ${SCAN}`));
+      await request(nest.getHttpServer()).get(`${path}/${SCAN}`).set(auth).expect(404);
+    });
   });
 
   it("confirm applies the decisions, sends photo feedback and marks it sent", async () => {
@@ -379,7 +586,7 @@ describe("VisionController confirm + get (HTTP)", () => {
       scanConfirmed: true,
       feedback: { sent: 1, recorded: 1, duplicates: 0 },
       // R2 is off in this suite: no crop to send.
-      images: { uploaded: 0, skipped: 1, failed: 0 },
+      images: { uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 1, tooSmall: 0 } },
     });
   });
 
@@ -397,13 +604,13 @@ describe("VisionController confirm + get (HTTP)", () => {
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.media.get).toHaveBeenCalledWith(`tally/crops/${SCAN}/0.webp`);
       expect(ctx.catalog.client.uploadImage).toHaveBeenCalledWith({
-        file: new Uint8Array([1, 2, 3]),
+        file: expect.any(Uint8Array),
         filename: "0.webp",
         qid: "QC-7K2M-9XQ4-R",
         view: "on_shelf",
         feedbackClientRef: `${SCAN}:0`,
       });
-      expect(res.body.images).toEqual({ uploaded: 1, skipped: 0, failed: 0 });
+      expect(res.body.images).toEqual({ uploaded: 1, skipped: 0, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
     });
 
     it("sends nothing for a new item (no Qore ID) or a line without a stored crop", async () => {
@@ -423,13 +630,34 @@ describe("VisionController confirm + get (HTTP)", () => {
       ctx.media.get.mockResolvedValueOnce(null);
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 2, failed: 0 });
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 2, failed: 0, skippedBy: { noProduct: 1, noCrop: 1, tooSmall: 0 } });
     });
 
-    it("an upload failure is counted, not fatal", async () => {
-      ctx.catalog.client.uploadImage.mockRejectedValueOnce(Object.assign(new Error("store not configured"), { status: 500 }));
+    it("keeps a crop under 160 px out of Qore Catalog", async () => {
+      ctx.media.get.mockResolvedValueOnce(await webp(120, 300));
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 0, failed: 1 });
+      expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 1 } });
+    });
+
+    it("an upload failure is counted, not fatal, and logged with Qore Catalog's reason", async () => {
+      const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+      ctx.catalog.client.uploadImage.mockRejectedValueOnce(
+        Object.assign(new Error(`Catalog POST /v1/images failed: 400 No feedback line ${SCAN}:0 for this key`), { status: 400 }),
+      );
+      const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 0, failed: 1, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
+      expect(warn).toHaveBeenCalledWith(`Crop ${SCAN}:0 rejected by Qore Catalog: Catalog POST /v1/images failed: 400 No feedback line ${SCAN}:0 for this key`);
+      warn.mockRestore();
+    });
+
+    it("logs why each line sent nothing", async () => {
+      const log = jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
+      ctx.media.get.mockResolvedValueOnce(await webp(120, 300));
+      await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+      expect(log).toHaveBeenCalledWith(`Crop ${SCAN}:0 not sent: crop 120×300 is under Qore Catalog's 160 px minimum`);
+      expect(log).toHaveBeenCalledWith("Crops to Qore Catalog: 0 uploaded, 0 failed, 1 skipped (0 no product, 0 no crop, 1 too small)");
+      log.mockRestore();
     });
 
     it("no pictures when feedback didn't go through", async () => {
@@ -468,6 +696,68 @@ describe("VisionController confirm + get (HTTP)", () => {
       .set(auth)
       .send({ decisions: [{ detectionId: DET, action: "skip" }] })
       .expect(200);
+  });
+});
+
+describe("VisionController photo-check (HTTP)", () => {
+  let nest: INestApplication;
+  let ctx: Awaited<ReturnType<typeof app>>;
+  let fetchSpy: ReturnType<typeof jest.spyOn<typeof global, "fetch">>;
+  const checkPath = `/api/businesses/${BIZ}/vision/photo-check`;
+  const verdict = (v: Record<string, unknown>) =>
+    new Response(JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(v) }] }] }), {
+      status: 200,
+    });
+
+  beforeAll(async () => {
+    fetchSpy = jest.spyOn(global, "fetch");
+    ctx = await app("LLM_000_not-a-real-key");
+    nest = ctx.nest;
+  });
+  afterAll(async () => {
+    await nest.close();
+    fetchSpy.mockRestore();
+  });
+  beforeEach(() => fetchSpy.mockReset());
+
+  const post = () => request(nest.getHttpServer()).post(checkPath);
+
+  it("returns Muse Spark's verdict for the photo with one quick call, storing nothing", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      verdict({
+        verdict: "retake",
+        issues: ["too_far", "angled", "made_up"],
+        instruction: "Step closer so one or two shelves fill the photo.",
+        products_visible: 30,
+        labels_legible: "few",
+        has_region: true,
+        region: { x_min: 420, y_min: 120, x_max: 980, y_max: 560 },
+      }),
+    );
+    ctx.media.put.mockClear();
+    const res = await post().set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).reasoning).toEqual({ effort: "minimal" });
+    expect(res.body).toMatchObject({
+      verdict: "retake",
+      issues: ["too_far", "angled"],
+      instruction: "Step closer so one or two shelves fill the photo.",
+      productsVisible: 30,
+      labelsLegible: "few",
+      region: { x1: 420, y1: 120, x2: 980, y2: 560 },
+      model: "muse-spark-1.3",
+    });
+    expect(ctx.media.put).not.toHaveBeenCalled();
+  });
+
+  it("checks membership first, and rejects missing, oversized or non-image uploads", async () => {
+    await post().attach("image", JPEG, "p.jpg").expect(401);
+    ctx.businesses.getForMember.mockRejectedValueOnce(new ForbiddenException());
+    await post().set(auth).attach("image", JPEG, "p.jpg").expect(403);
+    await post().set(auth).expect(400);
+    await post().set(auth).attach("image", Buffer.alloc(MAX_IDENTIFY_IMAGE_BYTES + 1, 1), "big.jpg").expect(413);
+    await post().set(auth).attach("image", Buffer.from("<svg/>"), "s.jpg").expect(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -520,7 +810,7 @@ describe("VisionController identify (HTTP)", () => {
     await post().attach("image", JPEG, "p.jpg").expect(401);
   });
 
-  it("a remembered reading sells straight away with one model call and no catalogue call", async () => {
+  it("a remembered reading is found straight away with one model call and no catalogue call", async () => {
     ctx.repo.readings.mockResolvedValueOnce([{ itemId: "closeup", readingKey: "closeup|toothpaste|130g" }]);
     fetchSpy.mockImplementation(async () => label("Closeup", "Toothpaste", "130g")());
     const res = await post().set(auth).attach("image", JPEG, "p.jpg").expect(200);
@@ -602,6 +892,26 @@ describe("VisionController identify (HTTP)", () => {
       await request(nest.getHttpServer())
         .post(confirmPath)
         .set(auth)
+        .send({ reading: { brand: "Closeup", name: "Toothpaste", pack: "" }, itemId: ITEM })
+        .expect(404);
+    });
+
+    it("doesn't remember a reading without a brand: too vague", async () => {
+      ctx.repo.rememberReading.mockClear();
+      const res = await request(nest.getHttpServer())
+        .post(confirmPath)
+        .set(auth)
+        .send({ reading: { brand: "", name: "Cooking Oil", pack: "" }, itemId: ITEM })
+        .expect(200);
+      expect(ctx.repo.rememberReading).not.toHaveBeenCalled();
+      expect(res.body).toEqual({ itemId: ITEM, readingKey: null });
+    });
+
+    it("404 for an unbranded reading when the item isn't an active item of this business", async () => {
+      ctx.repo.isActiveItem.mockResolvedValueOnce(false);
+      await request(nest.getHttpServer())
+        .post(confirmPath)
+        .set(auth)
         .send({ reading: { brand: "", name: "Toothpaste", pack: "" }, itemId: ITEM })
         .expect(404);
     });
@@ -678,11 +988,13 @@ describe("VisionController stock-takes (HTTP)", () => {
     ]);
     const res = await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
     expect(res.body).toEqual({ runId: "run-1", status: "running" });
-    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3");
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", null);
 
     expect(await waitForFinish()).toMatchObject({ status: "done", scanId: "scan-1", turns: 1, error: null });
     const [, saved] = ctx.repo.saveScan.mock.calls[0] as unknown as [unknown, { evidence?: { tool: string }[] }[]];
     expect(saved[0]!.evidence?.map((e) => e.tool)).toEqual(["record_line"]);
+    // Saved for reopening: the recorded line needs no review, and each candidate keeps its match strength.
+    expect(saved[0]).toMatchObject({ review: null, candidates: [{ qid: "QC-A", match: "medium" }] });
     const kinds = ctx.repo.addStep.mock.calls.map(([, , s]) => (s as { kind: string; tool?: string }).tool ?? (s as { kind: string }).kind);
     expect(kinds).toEqual(["baseline", "thought", "record_line", "submit_stocktake"]);
   });
@@ -706,6 +1018,60 @@ describe("VisionController stock-takes (HTTP)", () => {
     expect(ctx.repo.saveScan).not.toHaveBeenCalled();
   });
 
+  describe("deadlines: every run ends", () => {
+    const saved = { ...STOCKTAKE_DEADLINES };
+    afterEach(() => Object.assign(STOCKTAKE_DEADLINES, saved));
+    /** A call that never answers (ignores its abort signal), like a hung pooler connection. */
+    const never = () => new Promise<Response>(() => undefined);
+
+    it("a first pass that never finishes ends the run failed with the reason", async () => {
+      Object.assign(STOCKTAKE_DEADLINES, { firstPassMs: 50 });
+      fetchSpy.mockImplementation(never);
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      expect(await waitForFinish()).toMatchObject({ status: "failed", error: "First pass failed: First pass took longer than 0.05 s" });
+      expect(ctx.repo.saveScan).not.toHaveBeenCalled();
+    });
+
+    it("store reads that never return (a saturated pool) fail the run fast, before any paid model call", async () => {
+      Object.assign(STOCKTAKE_DEADLINES, { dbReadMs: 50 });
+      ctx.businesses.listInventory.mockImplementationOnce(() => new Promise(() => undefined) as never);
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      expect(await waitForFinish()).toMatchObject({ status: "failed", error: "First pass failed: Database busy, retry shortly" });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("an agent that never finishes falls back to the first pass at the run deadline", async () => {
+      Object.assign(STOCKTAKE_DEADLINES, { runMs: 300 });
+      fetchSpy.mockImplementation(async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (body.tools) return never();
+        if (body.model === "sam-3.1") return reply(text(""));
+        return reply(text(JSON.stringify({ products: [peak] })));
+      });
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      expect(await waitForFinish()).toMatchObject({ status: "fallback", scanId: "scan-1", error: "Agent stopped: Run deadline reached" });
+    });
+
+    it("a status write that fails is retried", async () => {
+      metaRoutes([{ output: [{ type: "function_call", call_id: "c", name: "submit_stocktake", arguments: "{}" }] }]);
+      ctx.repo.finishRun.mockRejectedValueOnce(new Error("connection reset"));
+      await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
+      for (let i = 0; i < 300 && ctx.repo.finishRun.mock.calls.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(ctx.repo.finishRun.mock.calls.map(([, e]) => e.status)).toEqual(["done", "done"]);
+    });
+
+    it("a run still running past the deadline is reported failed when read", async () => {
+      const old = new Date(Date.now() - STOCKTAKE_DEADLINES.runMs - 120_000).toISOString();
+      ctx.repo.getRun
+        .mockResolvedValueOnce({ id: RUN, status: "running", startedAt: old, scanId: null, steps: [] } as never)
+        .mockResolvedValueOnce({ id: RUN, status: "failed", startedAt: old, scanId: null, error: "Interrupted: the API restarted during the run", steps: [] } as never);
+      ctx.repo.failStaleRuns.mockClear();
+      const res = await request(nest.getHttpServer()).get(`${startPath}/${RUN}`).set(auth).expect(200);
+      expect(ctx.repo.failStaleRuns).toHaveBeenCalledTimes(1);
+      expect(res.body.run).toMatchObject({ status: "failed" });
+    });
+  });
+
   it("checks membership and the image before starting anything", async () => {
     ctx.businesses.getForMember.mockRejectedValueOnce(new ForbiddenException("Not a member of this business"));
     await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(403);
@@ -725,6 +1091,246 @@ describe("VisionController stock-takes (HTTP)", () => {
     expect(ctx.repo.getScan).toHaveBeenCalledWith(BIZ, "scan-9");
     expect(res.body.run).toMatchObject({ id: RUN, status: "done", scanId: "scan-9" });
     expect(res.body.steps).toEqual([{ turn: 1, kind: "tool", tool: "zoom", summary: "zoomed 1,2,3,4", ms: 900, at: "2026-10-29T10:00:00Z" }]);
-    expect(res.body.result).toEqual({ id: SCAN, detections: [] });
+    expect(res.body.result).toMatchObject({ scanId: SCAN, status: "open", detections: [{ id: DET }, { review: "Agent couldn't confirm: label unreadable" }] });
+  });
+
+  it("a running rerun already has the photo of the scan it reruns", async () => {
+    ctx.media.enabled = true;
+    try {
+      ctx.repo.getRun.mockResolvedValueOnce({ id: RUN, status: "running", scanId: null, rerunOfScanId: "root-scan", startedAt: new Date(), steps: [] } as never);
+      const res = await request(nest.getHttpServer()).get(`${startPath}/${RUN}`).set(auth).expect(200);
+      expect(res.body.result).toBeNull();
+      expect(res.body.photoUrl).toBe("https://r2.example/tally/scans/root-scan.jpg?sig=1");
+    } finally {
+      ctx.media.enabled = false;
+    }
+  });
+});
+
+describe("VisionController rerun and discard (HTTP)", () => {
+  let nest: INestApplication;
+  let ctx: Awaited<ReturnType<typeof app>>;
+  let fetchSpy: ReturnType<typeof jest.spyOn<typeof global, "fetch">>;
+  const scanPath = `/api/businesses/${BIZ}/vision/shelf-scans/${SCAN}`;
+  const ROOT = "00000000-0000-4000-8000-0000000000e1";
+
+  beforeAll(async () => {
+    fetchSpy = jest.spyOn(global, "fetch");
+    ctx = await app("LLM_000_not-a-real-key");
+    nest = ctx.nest;
+  });
+  afterAll(async () => {
+    await nest.close();
+    fetchSpy.mockRestore();
+  });
+  beforeEach(() => {
+    fetchSpy.mockReset();
+    ctx.media.enabled = true;
+    ctx.media.get.mockReset();
+    ctx.repo.createRun.mockClear();
+    ctx.repo.finishRun.mockClear();
+    ctx.repo.supersedeIfSettled.mockClear();
+    ctx.repo.groupSettled.mockResolvedValue(false);
+    ctx.repo.group.mockResolvedValue({ root: ROOT, scanIds: [ROOT, SCAN] });
+    ctx.businesses.listInventory.mockResolvedValue([] as never);
+  });
+  afterEach(() => {
+    ctx.media.enabled = false;
+  });
+
+  it.each([
+    ["rerun", `${scanPath}/rerun`],
+    ["discard", `${scanPath}/discard`],
+  ])("%s needs a Supabase JWT", async (_name, p) => {
+    await request(nest.getHttpServer()).post(p).expect(401);
+  });
+
+  it("reruns the stored photo as a new run grouped under the photo's first scan", async () => {
+    const photo = await sharp({ create: { width: 400, height: 300, channels: 3, background: "#c33" } }).jpeg().toBuffer();
+    ctx.media.get.mockImplementation(async (key: string) => (key === `tally/scans/${SCAN}.jpg` ? new Uint8Array(photo) : null));
+    // The agent fails, so the run falls back to its first pass and saves that.
+    fetchSpy.mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.tools) return new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 });
+      const textOut = body.model === "sam-3.1" ? "" : JSON.stringify({ products: [peak] });
+      return new Response(JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: textOut }] }] }), { status: 200 });
+    });
+    const res = await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(202);
+    expect(res.body).toEqual({ runId: "run-1", status: "running", rerunOf: ROOT });
+    expect(ctx.businesses.getForMember).toHaveBeenCalledWith(BIZ, USER);
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", ROOT);
+    for (let i = 0; i < 100 && ctx.repo.finishRun.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(ctx.repo.finishRun.mock.calls[0]?.[1]).toMatchObject({ status: "fallback", scanId: "scan-1" });
+    // Its scan checks the group: a sibling confirmed meanwhile supersedes it at once.
+    expect(ctx.repo.supersedeIfSettled).toHaveBeenCalledWith(BIZ, "scan-1");
+  });
+
+  it("409 when no photo was kept for the stock-take, and nothing starts", async () => {
+    ctx.media.get.mockResolvedValue(null);
+    const res = await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(409);
+    expect(res.body.message).toMatch(/photo wasn't kept/);
+    ctx.media.enabled = false;
+    await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(409);
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("409 when a run of this photo has already moved stock", async () => {
+    ctx.repo.groupSettled.mockResolvedValue(true);
+    const res = await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(409);
+    expect(res.body.message).toMatch(/already confirmed/);
+    expect(ctx.media.get).not.toHaveBeenCalled();
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+  });
+
+  it("checks membership before reading the photo", async () => {
+    ctx.businesses.getForMember.mockRejectedValueOnce(new ForbiddenException("Not a member of this business"));
+    await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(403);
+    expect(ctx.media.get).not.toHaveBeenCalled();
+  });
+
+  it("discards an open scan", async () => {
+    const res = await request(nest.getHttpServer()).post(`${scanPath}/discard`).set(auth).expect(200);
+    expect(ctx.repo.discard).toHaveBeenCalledWith(BIZ, SCAN);
+    expect(res.body).toEqual({ status: "discarded", discardedAt: "2026-10-30T09:00:00.000Z" });
+  });
+
+  it("409 when discarding a confirmed scan", async () => {
+    ctx.repo.discard.mockRejectedValueOnce(new ConflictException("This stock-take is confirmed; only an open one can be discarded"));
+    await request(nest.getHttpServer()).post(`${scanPath}/discard`).set(auth).expect(409);
+  });
+
+  it("confirm reports the siblings it superseded, and a superseded scan can't be confirmed", async () => {
+    const add = { detectionId: DET, action: "add", qid: "QC-7K2M-9XQ4-R", name: "Peak Milk 400g", price: "4500", quantity: 6 };
+    ctx.repo.confirm.mockResolvedValueOnce({
+      created: 1, restocked: 0, restored: 0, skipped: 0, alreadyDecided: 0, invalid: [], scanConfirmed: true, superseded: 2, pendingFeedback: [],
+    } as never);
+    const ok = await request(nest.getHttpServer()).post(`${scanPath}/confirm`).set(auth).send({ decisions: [add] }).expect(200);
+    expect(ok.body.superseded).toBe(2);
+    ctx.repo.confirm.mockRejectedValueOnce(new ConflictException("This stock-take is superseded and can't be confirmed"));
+    await request(nest.getHttpServer()).post(`${scanPath}/confirm`).set(auth).send({ decisions: [add] }).expect(409);
+  });
+
+  it("reopen says whether it can be rerun, and which scan it reruns", async () => {
+    ctx.media.exists.mockResolvedValue(true);
+    const open = await request(nest.getHttpServer()).get(scanPath).set(auth).expect(200);
+    expect(open.body).toMatchObject({ canRerun: true, rerunOf: ROOT, discardedAt: null, supersededAt: null });
+    ctx.repo.groupSettled.mockResolvedValue(true);
+    const settled = await request(nest.getHttpServer()).get(scanPath).set(auth).expect(200);
+    expect(settled.body.canRerun).toBe(false);
+    ctx.media.exists.mockResolvedValue(false);
+    ctx.repo.groupSettled.mockResolvedValue(false);
+    const noPhoto = await request(nest.getHttpServer()).get(scanPath).set(auth).expect(200);
+    expect(noPhoto.body.canRerun).toBe(false);
+  });
+});
+
+describe("VisionController stock-take history (HTTP)", () => {
+  let nest: INestApplication;
+  let ctx: Awaited<ReturnType<typeof app>>;
+  const historyPath = `/api/businesses/${BIZ}/vision/stocktakes`;
+  const at = (min: number) => new Date(Date.UTC(2026, 9, 29, 9, min));
+
+  beforeAll(async () => {
+    ctx = await app("LLM_000_not-a-real-key");
+    nest = ctx.nest;
+  });
+  afterAll(() => nest.close());
+  beforeEach(() => {
+    ctx.repo.history.mockClear();
+    ctx.repo.failStaleRuns.mockClear();
+    ctx.businesses.getForMember.mockClear();
+  });
+
+  it("needs a Supabase JWT", async () => {
+    await request(nest.getHttpServer()).get(historyPath).expect(401);
+  });
+
+  it("checks membership before reading anything", async () => {
+    ctx.businesses.getForMember.mockRejectedValueOnce(new ForbiddenException("Not a member of this business"));
+    await request(nest.getHttpServer()).get(historyPath).set(auth).expect(403);
+    expect(ctx.repo.history).not.toHaveBeenCalled();
+  });
+
+  it("validates limit (1–100, default 30)", async () => {
+    await request(nest.getHttpServer()).get(`${historyPath}?limit=0`).set(auth).expect(400);
+    await request(nest.getHttpServer()).get(`${historyPath}?limit=101`).set(auth).expect(400);
+    await request(nest.getHttpServer()).get(`${historyPath}?limit=abc`).set(auth).expect(400);
+    await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
+    expect(ctx.repo.history).toHaveBeenLastCalledWith(BIZ, 30);
+    await request(nest.getHttpServer()).get(`${historyPath}?limit=5`).set(auth).expect(200);
+    expect(ctx.repo.history).toHaveBeenLastCalledWith(BIZ, 5);
+  });
+
+  // The preview dedupes names ignoring case and skips blank readings.
+  it("merges runs and quick scans newest first, with status, counts and a preview", async () => {
+    ctx.repo.history.mockResolvedValueOnce({
+      runs: [
+        { runId: "run-running", runStatus: "running", error: null, startedAt: at(50), scanId: null, scanStatus: null, confirmedAt: null },
+        { runId: "run-open", runStatus: "fallback", error: null, startedAt: at(30), scanId: "scan-open", scanStatus: "open", confirmedAt: null },
+        { runId: "run-failed", runStatus: "failed", error: "First pass failed: busy", startedAt: at(10), scanId: null, scanStatus: null, confirmedAt: null },
+      ],
+      quick: [{ scanId: "scan-quick", scanStatus: "confirmed", startedAt: at(40), confirmedAt: at(45) }],
+      reruns: [],
+      counts: [
+        { scanId: "scan-open", lines: 5, add: 0, restock: 0, restore: 0, skip: 0, names: ["Peak", "peak", "", "Milo", "Indomie", "Dettol"] },
+        { scanId: "scan-quick", lines: 4, add: 1, restock: 2, restore: 0, skip: 1, names: ["Cooking Oil"] },
+      ],
+    });
+    const res = await request(nest.getHttpServer()).get(`${historyPath}?limit=3`).set(auth).expect(200);
+    // Stale runs are marked failed first, so nothing shows "running" forever.
+    expect(ctx.repo.failStaleRuns).toHaveBeenCalled();
+    expect(res.body).toEqual([
+      { id: "run-running", kind: "stocktake", runId: "run-running", scanId: null, status: "running", rerunOf: null, fallback: false, startedAt: at(50).toISOString(), confirmedAt: null, error: null, lines: null, decided: { add: 0, restock: 0, restore: 0, skip: 0 }, preview: [], reruns: [] },
+      { id: "scan-quick", kind: "quick", runId: null, scanId: "scan-quick", status: "confirmed", rerunOf: null, fallback: false, startedAt: at(40).toISOString(), confirmedAt: at(45).toISOString(), error: null, lines: 4, decided: { add: 1, restock: 2, restore: 0, skip: 1 }, preview: ["Cooking Oil"], reruns: [] },
+      { id: "run-open", kind: "stocktake", runId: "run-open", scanId: "scan-open", status: "review", rerunOf: null, fallback: true, startedAt: at(30).toISOString(), confirmedAt: null, error: null, lines: 5, decided: { add: 0, restock: 0, restore: 0, skip: 0 }, preview: ["Peak", "Milo", "Indomie"], reruns: [] },
+    ]);
+  });
+
+  it("a failed run keeps its reason", async () => {
+    ctx.repo.history.mockResolvedValueOnce({
+      runs: [{ runId: "run-failed", runStatus: "failed", error: "First pass failed: busy", startedAt: at(10), scanId: null, scanStatus: null, confirmedAt: null }],
+      quick: [],
+      reruns: [],
+      counts: [],
+    });
+    const res = await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
+    expect(res.body).toMatchObject([{ status: "failed", error: "First pass failed: busy", lines: null }]);
+  });
+
+  it("groups reruns under the photo's first scan, oldest first; a fresh rerun brings the group to the top", async () => {
+    const run = (runId: string, min: number, scanId: string | null, scanStatus: string | null, rerunOf: string | null = null, runStatus = "done") =>
+      ({ runId, runStatus, error: null, startedAt: at(min), scanId, scanStatus, confirmedAt: scanStatus === "confirmed" ? at(min + 2) : null, rerunOf });
+    ctx.repo.history.mockResolvedValueOnce({
+      runs: [run("run-root", 10, "scan-root", "superseded"), run("run-other", 20, "scan-other", "open")],
+      quick: [],
+      reruns: [run("run-r1", 30, "scan-r1", "confirmed", "scan-root"), run("run-r2", 40, "scan-r2", "superseded", "scan-root"), run("run-r3", 45, null, null, "scan-root", "running")],
+      counts: [],
+    });
+    const res = await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
+    expect(res.body.map((e: { id: string }) => e.id)).toEqual(["run-root", "run-other"]);
+    expect(res.body[0]).toMatchObject({ status: "superseded", rerunOf: null });
+    expect(res.body[0].reruns.map((e: { id: string; status: string; rerunOf: string }) => [e.id, e.status, e.rerunOf])).toEqual([
+      ["run-r1", "confirmed", "scan-root"],
+      ["run-r2", "superseded", "scan-root"],
+      ["run-r3", "running", "scan-root"],
+    ]);
+    expect(res.body[1].reruns).toEqual([]);
+  });
+
+  it("a discarded scan shows as discarded", async () => {
+    ctx.repo.history.mockResolvedValueOnce({
+      runs: [{ runId: "run-d", runStatus: "done", error: null, startedAt: at(5), scanId: "scan-d", scanStatus: "discarded", confirmedAt: null, rerunOf: null }],
+      quick: [],
+      reruns: [],
+      counts: [],
+    });
+    const res = await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
+    expect(res.body[0].status).toBe("discarded");
+  });
+
+  it("empty history is an empty list", async () => {
+    const res = await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
+    expect(res.body).toEqual([]);
   });
 });

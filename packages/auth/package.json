@@ -2,7 +2,7 @@
   "name": "@tally/auth",
   "version": "0.0.1",
   "private": true,
-  "description": "NextAuth (Auth.js v5) over the shared Qorelly Supabase Auth — used by console and mp.",
+  "description": "NextAuth (Auth.js v5) over the shared Qorelly Supabase Auth — used by mp.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {

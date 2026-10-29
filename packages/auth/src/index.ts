@@ -1,9 +1,6 @@
 /**
- * Tally auth = NextAuth (Auth.js v5) in front of the shared Qorelly Supabase
- * Auth. Users sign in with their Qorelly email + password; the Supabase
- * session's access_token rides in the NextAuth JWT so server code can call
- * apps/api with `Authorization: Bearer <access_token>` (verified there by
- * SupabaseJwtGuard). NextAuth owns the cookie; Supabase owns identity.
+ * NextAuth (Auth.js v5) in front of the shared Qorelly Supabase Auth: the Supabase access_token rides in the
+ * NextAuth JWT so server code can call apps/api as a Bearer. NextAuth owns the cookie; Supabase owns identity.
  */
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";

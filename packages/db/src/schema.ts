@@ -1,23 +1,6 @@
 /**
- * Tally drizzle schema — the shared Qorelly Supabase Postgres, isolated in the
- * `tally` schema. Identity is Qorelly's auth.users; tally tables reference
- * auth.users(id) by uuid and never write to public.* or auth.*.
- *
- * Migration workflow:
- *   pnpm db:generate --name=<what_changed>
- *   pnpm db:migrate            (staging only — production is applied by the CTO)
- *
- * Always pass --name; migrations are named semantically after what they do
- * (e.g. tally_setup, add_vision_datasets) — never drizzle's random codenames.
- * Applied migration files are frozen.
- *
- * Invariants (enforced in SQL, see migrations/*_tally_stock_and_payment_functions.sql):
- *   - Money is numeric(12,2) Naira. Drizzle reads numeric as string — never parse to float.
- *   - inventory_items.quantity_on_hand moves only through stock_movements (trigger).
- *   - sales.paid_amount is the sum of sale_payments (trigger). No app code writes it.
- *   - Reporting reads sale_payments / sales.paid_amount, never total or subtotal.
- *   - Child rows carry business_id and use composite FKs (business_id, x_id), so a
- *     row can never point at another business's data.
+ * Tally drizzle schema, isolated in the shared Supabase's `tally` schema; never writes public.* or auth.*.
+ * Money is numeric(12,2) read as string (never float); paid_amount and stock are trigger-maintained in SQL.
  */
 
 import { sql } from "drizzle-orm";
@@ -300,9 +283,7 @@ export const stockMovements = tally.table(
 );
 
 // ─── Vision (camera recognition) ─────────────────────────────────────────
-// A shelf scan and what Muse Spark / SAM 3.1 found in it. Tally keeps its own
-// readings and only Qore IDs + match scores from the catalogue (no names or
-// prices): catalogue data stays in Qore Catalog. See docs/architecture/vision-recognition.md.
+// Tally keeps its own readings and only Qore IDs + match scores from the catalogue, never names or prices.
 
 export const visionScans = tally.table(
   "vision_scans",
@@ -323,12 +304,18 @@ export const visionScans = tally.table(
     matchMs: integer("match_ms").notNull(),
     createdBy: uuid("created_by").notNull(),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    // The merchant dropped it unconfirmed; kept read-only for audit.
+    discardedAt: timestamp("discarded_at", { withTimezone: true }),
+    // Another run of the same photo was confirmed; kept read-only for audit.
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     unique("vision_scans_business_id_key").on(t.businessId, t.id),
-    check("vision_scans_status", sql`status in ('open', 'confirmed')`),
+    check("vision_scans_status", sql`status in ('open', 'confirmed', 'discarded', 'superseded')`),
     check("vision_scans_confirmed_consistent", sql`(status = 'confirmed') = (confirmed_at is not null)`),
+    check("vision_scans_discarded_consistent", sql`(status = 'discarded') = (discarded_at is not null)`),
+    check("vision_scans_superseded_consistent", sql`(status = 'superseded') = (superseded_at is not null)`),
     check("vision_scans_image_sha256_format", sql`image_sha256 ~ '^[0-9a-f]{64}$'`),
     index("vision_scans_business_created_idx").on(t.businessId, t.createdAt.desc()),
   ],
@@ -354,8 +341,8 @@ export const visionDetections = tally.table(
     countSource: text("count_source").notNull(),
     // [{x1,y1,x2,y2}] on the 0–1000 grid of the uploaded image.
     boxes: jsonb("boxes").$type<{ x1: number; y1: number; x2: number; y2: number }[]>().notNull(),
-    // [{qid, score}], best first: catalogue ids and match scores only.
-    candidates: jsonb("candidates").$type<{ qid: string; score: number }[]>().notNull(),
+    // [{qid, score, match}], best first: catalogue ids and match scores only (match is missing on older scans).
+    candidates: jsonb("candidates").$type<{ qid: string; score: number; match?: "strong" | "medium" | "low" }[]>().notNull(),
     // The business's item this looks like at scan time, and how it was found.
     inventoryItemId: uuid("inventory_item_id"),
     inventoryMatch: text("inventory_match"),
@@ -372,6 +359,8 @@ export const visionDetections = tally.table(
     feedbackSentAt: timestamp("feedback_sent_at", { withTimezone: true }),
     // Stock-take agent: how this line was resolved (tool calls behind it); null for a quick scan.
     evidence: jsonb("evidence").$type<{ turn: number; tool: string; summary: string }[]>(),
+    // Stock-take agent: why the merchant should look closely; a reopened scan picks nothing for it.
+    review: text("review"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -396,6 +385,7 @@ export const visionDetections = tally.table(
       sql`(inventory_item_id is null) = (inventory_match is null) and (inventory_match is null or inventory_match in ('reading', 'catalogue', 'name'))`,
     ),
     check("vision_detections_name_length", sql`char_length(name) between 1 and 200`),
+    check("vision_detections_review_length", sql`review is null or char_length(review) between 1 and 500`),
     foreignKey({
       name: "vision_detections_item_fk",
       columns: [t.businessId, t.itemId],
@@ -414,9 +404,8 @@ export const visionDetections = tally.table(
 );
 
 /**
- * A stock-take agent run: Muse Spark working through one shelf photo with
- * tools until every product is resolved or flagged. The result lands as a
- * normal vision_scan (scan_id) so the merchant confirms it the same way.
+ * A stock-take agent run on one shelf photo. Its result lands as a normal vision_scan (scan_id),
+ * so the merchant confirms it the same way.
  */
 export const visionAgentRuns = tally.table(
   "vision_agent_runs",
@@ -427,6 +416,8 @@ export const visionAgentRuns = tally.table(
       .references(() => businesses.id, { onDelete: "cascade" }),
     // Set when the run saves its scan (done, or fallback to the quick scan).
     scanId: uuid("scan_id"),
+    // A rerun of a stored photo: the first scan of that photo (the group's root), never a rerun's own scan.
+    rerunOfScanId: uuid("rerun_of_scan_id"),
     status: text("status").notNull().default("running"),
     model: text("model").notNull(),
     turns: integer("turns").notNull().default(0),
@@ -445,6 +436,12 @@ export const visionAgentRuns = tally.table(
       columns: [t.businessId, t.scanId],
       foreignColumns: [visionScans.businessId, visionScans.id],
     }),
+    foreignKey({
+      name: "vision_agent_runs_rerun_of_fk",
+      columns: [t.businessId, t.rerunOfScanId],
+      foreignColumns: [visionScans.businessId, visionScans.id],
+    }),
+    index("vision_agent_runs_rerun_of_idx").on(t.businessId, t.rerunOfScanId),
     check("vision_agent_runs_status", sql`status in ('running', 'done', 'fallback', 'failed')`),
     check("vision_agent_runs_finished_consistent", sql`(status = 'running') = (finished_at is null)`),
     check("vision_agent_runs_counts_nonneg", sql`turns >= 0 and input_tokens >= 0 and output_tokens >= 0`),
@@ -482,9 +479,8 @@ export const visionAgentSteps = tally.table(
 );
 
 /**
- * What the camera read for an item the merchant confirmed ("Lady B · Custard
- * Powder · 2kg" → their item), so the next scan recognises it even when Qore
- * Catalog doesn't know the product. One reading maps to one item per business.
+ * A branded reading the merchant confirmed as one of their items, so the next scan recognises it even when
+ * Qore Catalog doesn't know the product. One reading maps to one item per business.
  */
 export const inventoryItemReadings = tally.table(
   "inventory_item_readings",

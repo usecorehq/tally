@@ -1,5 +1,6 @@
 %%{init: {"theme": "neutral"} }%%
 sequenceDiagram
+    title Identify one product in stock
     autonumber
     actor M as Merchant
     participant P as mobile
@@ -8,7 +9,7 @@ sequenceDiagram
     participant Q as Qore Catalog
 
     Note over M,Q: BUILT: tiers 0 and 1. PLANNED: tier 2, an on-device model.
-    M->>P: point camera at item
+    M->>P: point camera at one item
     alt barcode read (tier 0)
         P->>P: look up cached inventory → item
     else no barcode after ~600 ms, frame steady (tier 1)
@@ -24,6 +25,6 @@ sequenceDiagram
         A-->>P: match (needsConfirm, archived) or null + candidates
     end
     P-->>M: suggestion
-    M->>P: tap to add to sale (or pick the right item)
+    M->>P: tap to confirm the item (or pick the right one)
     P->>A: POST …/vision/identify/confirm {reading, itemId}
     A->>A: remember the reading → next time it matches at once

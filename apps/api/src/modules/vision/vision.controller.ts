@@ -7,6 +7,7 @@ import {
   Param,
   ParseFilePipeBuilder,
   Post,
+  Query,
   UploadedFile,
   UseFilters,
   UseInterceptors,
@@ -16,7 +17,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { BusinessParams } from "../businesses/businesses.dto";
 import { VisionExceptionFilter } from "./vision-errors";
-import { ConfirmBody, IdentifyConfirmBody, RunParams, ScanParams } from "./vision.dto";
+import { ConfirmBody, HistoryQuery, IdentifyConfirmBody, RunParams, ScanParams } from "./vision.dto";
 import { VisionService } from "./vision.service";
 
 export const MAX_SHELF_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -101,13 +102,79 @@ export class VisionController {
     return this.vision.startStocktake(businessId, user.sub, file.buffer);
   }
 
+  @Get("stocktakes")
+  @ApiOperation({
+    summary:
+      "Stock-take history: the business's stock-take runs and quick scans, newest first. Status running, review (scan open), confirmed or failed; line count and decided lines by action. Open one with …/stocktakes/:runId or …/shelf-scans/:scanId.",
+  })
+  @ApiOkResponse({
+    schema: {
+      example: [
+        {
+          id: "5b0e…",
+          kind: "stocktake",
+          runId: "5b0e…",
+          scanId: "9a41…",
+          status: "confirmed",
+          fallback: false,
+          startedAt: "2026-10-29T09:12:00.000Z",
+          confirmedAt: "2026-10-29T09:20:31.000Z",
+          error: null,
+          lines: 8,
+          decided: { add: 2, restock: 5, restore: 0, skip: 1 },
+          preview: ["Peak", "Milo", "Indomie"],
+        },
+      ],
+    },
+  })
+  history(@CurrentUser() user: AuthenticatedUser, @Param() { businessId }: BusinessParams, @Query() { limit }: HistoryQuery) {
+    return this.vision.history(businessId, user.sub, limit ?? 30);
+  }
+
   @Get("stocktakes/:runId")
   @ApiOperation({
     summary:
-      "A stock-take run: status (running, done, fallback, failed), the agent's step trace so far, and once finished the result in the shelf-scans shape. Confirm it with …/shelf-scans/:scanId/confirm.",
+      "A stock-take run: status (running, done, fallback, failed), the agent's step trace so far, and once finished its stored scan (as GET …/shelf-scans/:scanId). Confirm it with …/shelf-scans/:scanId/confirm.",
   })
   getStocktake(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, runId }: RunParams) {
     return this.vision.getStocktake(businessId, user.sub, runId);
+  }
+
+  @Post("photo-check")
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_IDENTIFY_IMAGE_BYTES + 1, files: 1 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ schema: { type: "object", properties: { image: { type: "string", format: "binary" } }, required: ["image"] } })
+  @ApiOperation({
+    summary:
+      "Before a scan: is this shelf photo worth reading? One photo (JPEG/PNG/WebP, ≤ 1 MB, ~1024 px long edge). Muse Spark returns a verdict (good, usable, retake), issues worst first, one instruction, a rough product count, label legibility and the area with the most readable products. Advice only: nothing is stored.",
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        verdict: "retake",
+        issues: ["too_far", "angled"],
+        instruction: "Step closer so one or two shelves fill the photo.",
+        productsVisible: 30,
+        labelsLegible: "few",
+        region: { x1: 420, y1: 120, x2: 980, y2: 560 },
+        model: "muse-spark-1.3",
+        ms: 2400,
+      },
+    },
+  })
+  checkPhoto(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() { businessId }: BusinessParams,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: MAX_IDENTIFY_IMAGE_BYTES, message: "Image must be 1 MB or smaller" })
+        .build({ errorHttpStatusCode: 413, fileIsRequired: false }),
+    )
+    file: UploadedImage | undefined,
+  ) {
+    if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
+    return this.vision.checkPhoto(businessId, user.sub, file.buffer);
   }
 
   @Post("identify")
@@ -117,7 +184,7 @@ export class VisionController {
   @ApiBody({ schema: { type: "object", properties: { image: { type: "string", format: "binary" } }, required: ["image"] } })
   @ApiOperation({
     summary:
-      "Point-to-sell: which of the merchant's items is this? One product photo (JPEG/PNG/WebP, ≤ 1 MB, ~640 px long edge). Muse Spark reads the label; Tally matches it to the merchant's items, asking Qore Catalog only when nothing in store matches. Nothing is stored. Try the barcode first: this takes ~3 s.",
+      "Identify one product: which of the merchant's items is this? One product photo (JPEG/PNG/WebP, ≤ 1 MB, ~640 px long edge). Muse Spark reads the label; Tally matches it to the merchant's items, asking Qore Catalog only when nothing in store matches. Nothing is stored. Try the barcode first: this takes ~3 s.",
   })
   @ApiOkResponse({
     schema: {
@@ -157,7 +224,7 @@ export class VisionController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      "The merchant confirmed what identify found (or picked the right item): remember the reading for that item, so the next identify recognises it at once. 404 when the item isn't an active item of this business.",
+      "The merchant confirmed what identify found (or picked the right item): remember the reading for that item, so the next identify recognises it at once. A reading without a brand is too vague to remember: readingKey is null. 404 when the item isn't an active item of this business.",
   })
   @ApiOkResponse({ schema: { example: { itemId: "2c9f…", readingKey: "closeup|toothpaste|130g" } } })
   confirmIdentify(@CurrentUser() user: AuthenticatedUser, @Param() { businessId }: BusinessParams, @Body() body: IdentifyConfirmBody) {
@@ -165,9 +232,34 @@ export class VisionController {
   }
 
   @Get("shelf-scans/:scanId")
-  @ApiOperation({ summary: "A stored shelf scan: detections, counts, candidate Qore IDs + scores, inventory match and decisions." })
+  @ApiOperation({
+    summary:
+      "A stored shelf scan, reopened: status, detections in the shelf-scans shape (candidate names and prices fetched again from Qore Catalog, store state as of now), the agent's review reason, a crop URL and each line's decision.",
+  })
   getScan(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
     return this.vision.getScan(businessId, user.sub, scanId);
+  }
+
+  @Post("shelf-scans/:scanId/rerun")
+  @HttpCode(202)
+  @ApiOperation({
+    summary:
+      "Rerun a stock-take on its stored photo: a new agent run, grouped under the photo's first scan (rerunOf). Poll …/stocktakes/:runId. 409 when no photo was kept, or when a run of this photo has already moved stock.",
+  })
+  @ApiOkResponse({ schema: { example: { runId: "7c21…", status: "running", rerunOf: "9a41…" } } })
+  rerun(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
+    return this.vision.rerun(businessId, user.sub, scanId);
+  }
+
+  @Post("shelf-scans/:scanId/discard")
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      "Discard an open stock-take: read-only from now on, everything kept for audit. Idempotent. 409 when it is confirmed or superseded. Lines confirmed earlier stay applied.",
+  })
+  @ApiOkResponse({ schema: { example: { status: "discarded", discardedAt: "2026-10-30T09:12:00.000Z" } } })
+  discard(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
+    return this.vision.discard(businessId, user.sub, scanId);
   }
 
   @Post("shelf-scans/:scanId/confirm")
@@ -186,6 +278,7 @@ export class VisionController {
         alreadyDecided: 0,
         invalid: [],
         scanConfirmed: true,
+        superseded: 0,
         feedback: { sent: 6, recorded: 6, duplicates: 0 },
       },
     },

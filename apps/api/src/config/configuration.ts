@@ -1,9 +1,6 @@
 /**
- * Nested config namespace consumed by providers via `config.get('supabase.url')`.
- *
- * The flat process.env is validated in env.validation.ts, then this factory
- * maps it into the shape services actually read — so a rename in the env
- * doesn't ripple into every consumer.
+ * Nested config read via `config.get('supabase.url')`, mapped from the env validated in env.validation.ts
+ * so an env rename doesn't ripple into every consumer.
  */
 export type TallyConfig = ReturnType<typeof buildConfig>;
 
@@ -17,10 +14,12 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
       url: env.SUPABASE_URL!,
       jwtSecret: env.SUPABASE_JWT_SECRET!,
       dbUrl: env.SUPABASE_DB_URL!,
+      /** Connections this API process may hold; the Supabase pooler is shared (see docs/architecture/database.md). */
+      dbPoolMax: env.DB_POOL_MAX ? parseInt(env.DB_POOL_MAX, 10) : undefined,
     },
 
     catalog: {
-      /** Qore Catalog API — products the Q Vision models are trained against. */
+      /** Qore Catalog API — the product catalogue Tally reads and sends feedback to. */
       baseUrl: env.QORE_CATALOG_BASE_URL ?? "http://localhost:3100",
       apiKey: env.QORE_CATALOG_API_KEY!,
     },

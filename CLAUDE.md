@@ -15,3 +15,4 @@ See README.md for layout. Hard rules for this repo:
 - Docs ship with the code: follow docs/guides/documentation.md. New/changed flows, apps, env vars or commands update the matching doc, the Mermaid source in docs/diagrams/mermaid/, and the rendered SVG (`pnpm docs:diagrams`) in the same PR. Mark unbuilt things as planned.
 - Each app keeps its README.md and .env.example current.
 - Commits: conventional, lowercase — `feat(api): ...`, `fix(mp): ...`, `chore: ...`. No Claude/AI co-author trailers.
+- Comments: at most two lines, a concise summary of why. No usage instructions (READMEs have them) and no sample business or product names.

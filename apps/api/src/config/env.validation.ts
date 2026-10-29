@@ -39,6 +39,13 @@ class EnvVars {
   @IsString()
   SUPABASE_DB_URL!: string;
 
+  /** Connections this process may hold (default 5). Keep it small: the Supabase pooler is shared. */
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  @IsOptional()
+  DB_POOL_MAX?: number;
+
   // ── Qore Catalog ──
   @IsString()
   @IsOptional()

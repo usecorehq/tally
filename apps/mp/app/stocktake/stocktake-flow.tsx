@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Button,
   FieldLabel,
@@ -18,35 +20,52 @@ import {
   cn,
   type SolarIconName,
 } from "@tally/ui";
-import { pollStocktake, quickScan, startStocktake } from "./actions";
-import { resizeForScan } from "./image";
+import { checkPhoto, quickScan, startStocktake } from "./actions";
+import { checkCopy, localCheck, resizeForScan } from "./image";
+import { PhotoCheckPanel, type CheckState } from "./photo-check";
 import { PICK_SUBTITLE, PICK_TITLE } from "./copy";
-import { ReviewTable } from "./review-table";
-import type { AgentStep, ShelfScanResult } from "./types";
+import { runKey, savePhoto, scanKey } from "./photo-store";
+import { historyHref, sessionHref } from "./urls";
+import type { AgentStep } from "./types";
 
 export type Business = { id: string; name: string };
 export type Photo = { blob: Blob; url: string; width: number; height: number };
 
-export type Phase =
-  | { name: "pick" }
-  | { name: "working"; mode: "agent" | "quick"; steps: AgentStep[]; startedAt: number }
-  | { name: "review"; result: ShelfScanResult; fallback: boolean };
+/** Below this long edge, packs on a whole shelf are too small to read reliably. */
+const SMALL_PHOTO_EDGE = 1500;
 
-const POLL_MS = 1500;
-// The agent's budget is 150 s after a ~20–30 s first pass; stop polling well after that.
-const POLL_GIVE_UP_MS = 6 * 60 * 1000;
+export type Phase = { name: "pick" } | { name: "working"; mode: "agent" | "quick"; steps: AgentStep[]; startedAt: number };
 
+/** A new stock-take: business, photo, then the kind of run. Each run continues at its own URL. */
 export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: Business[]; initialBusinessId: string }) {
+  const router = useRouter();
   const [businessId, setBusinessId] = useState(initialBusinessId);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [phase, setPhase] = useState<Phase>({ name: "pick" });
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
+  const [check, setCheck] = useState<CheckState | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  // Bumped to cancel an in-flight poll loop (new scan, unmount).
-  const pollGen = useRef(0);
 
-  useEffect(() => () => void pollGen.current++, []);
+  // Check each new photo: the browser's own checks at once, then Muse Spark's verdict. Advice only.
+  useEffect(() => {
+    if (!photo) return setCheck(null);
+    let alive = true;
+    setCheck({ status: "checking", local: null });
+    (async () => {
+      const local = await localCheck(photo.blob).catch(() => null);
+      if (alive) setCheck({ status: "checking", local });
+      const f = new FormData();
+      const copy = await checkCopy(photo.blob).catch(() => null);
+      if (copy) f.append("image", copy, "check.jpg");
+      const res = copy ? await checkPhoto(businessId, f) : null;
+      if (alive) setCheck({ status: "done", local, result: res?.ok ? res.data : null });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [photo, businessId]);
+
   useEffect(() => () => {
     if (photo) URL.revokeObjectURL(photo.url);
   }, [photo]);
@@ -75,85 +94,37 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
     return f;
   }
 
+  const kept = () => ({ blob: photo!.blob, width: photo!.width, height: photo!.height });
+
   async function runQuick() {
     setError(null);
     setPhase({ name: "working", mode: "quick", steps: [], startedAt: Date.now() });
     const res = await quickScan(businessId, form());
-    if (res.ok) setPhase({ name: "review", result: res.data, fallback: false });
-    else {
+    if (!res.ok) {
       setError(res.error);
       setPhase({ name: "pick" });
+      return;
     }
+    await savePhoto(scanKey(res.data.scanId), kept());
+    router.push(sessionHref(businessId, res.data.scanId));
   }
 
   async function runAgent() {
     setError(null);
-    const gen = ++pollGen.current;
-    const startedAt = Date.now();
-    setPhase({ name: "working", mode: "agent", steps: [], startedAt });
+    setPhase({ name: "working", mode: "agent", steps: [], startedAt: Date.now() });
     const started = await startStocktake(businessId, form());
     if (!started.ok) {
       setError(started.error);
       setPhase({ name: "pick" });
       return;
     }
-
-    while (pollGen.current === gen) {
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      if (pollGen.current !== gen) return;
-      const res = await pollStocktake(businessId, started.data.runId);
-      if (pollGen.current !== gen) return;
-      if (!res.ok) {
-        // A blip while polling isn't fatal; the run keeps going on the server.
-        if (Date.now() - startedAt < POLL_GIVE_UP_MS) continue;
-        setError(res.error);
-        setPhase({ name: "pick" });
-        return;
-      }
-      const { run, steps, result } = res.data;
-      if (run.status === "running") {
-        if (Date.now() - startedAt > POLL_GIVE_UP_MS) {
-          setError("The stock-take is taking much longer than usual. Try again, or use Quick scan.");
-          setPhase({ name: "pick" });
-          return;
-        }
-        setPhase({ name: "working", mode: "agent", steps, startedAt });
-        continue;
-      }
-      if (run.status === "failed" || !result) {
-        setError(`The stock-take failed${run.error ? `: ${run.error}` : ""}. Try again, or use Quick scan.`);
-        setPhase({ name: "pick" });
-        return;
-      }
-      setPhase({ name: "review", result, fallback: run.status === "fallback" });
-      return;
-    }
-  }
-
-  function reset() {
-    pollGen.current++;
-    setPhase({ name: "pick" });
-    setPhoto(null);
-    setError(null);
-    if (fileRef.current) fileRef.current.value = "";
+    // The run continues on the server; its own URL polls it and survives a refresh.
+    await savePhoto(runKey(started.data.runId), kept());
+    router.push(sessionHref(businessId, started.data.runId));
   }
 
   if (phase.name === "working") {
-    return <Working photo={photo!} phase={phase} businessName={business.name} />;
-  }
-
-  if (phase.name === "review") {
-    return (
-      <ReviewTable
-        businessId={businessId}
-        businessName={business.name}
-        result={phase.result}
-        fallback={phase.fallback}
-        photo={photo!.blob}
-        photoUrl={photo!.url}
-        onRestart={reset}
-      />
-    );
+    return <Working photo={photo} phase={phase} businessName={business.name} />;
   }
 
   return (
@@ -164,10 +135,12 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
       error={error}
       preparing={preparing}
       photo={photo}
+      check={check}
       fileRef={fileRef}
       onFile={onFile}
       onAgent={runAgent}
       onQuick={runQuick}
+      historyHref={historyHref(businessId)}
     />
   );
 }
@@ -180,10 +153,12 @@ export function PickView({
   error,
   preparing,
   photo,
+  check = null,
   fileRef,
   onFile,
   onAgent,
   onQuick,
+  historyHref,
 }: {
   businesses: Business[];
   businessId: string;
@@ -191,14 +166,22 @@ export function PickView({
   error: string | null;
   preparing: boolean;
   photo: Photo | null;
+  /** The photo check for the picked photo; null before one is picked. */
+  check?: CheckState | null;
   fileRef: React.RefObject<HTMLInputElement | null>;
   onFile: (file: File | undefined) => void;
   onAgent: () => void;
   onQuick: () => void;
+  historyHref: string;
 }) {
   return (
     <div className="q-rise max-w-[760px]">
-      <PageHeader title={PICK_TITLE} subtitle={PICK_SUBTITLE} className="[&_h1]:whitespace-normal" />
+      <PageHeader
+        title={PICK_TITLE}
+        subtitle={PICK_SUBTITLE}
+        className="[&_h1]:whitespace-normal"
+        actions={<HistoryButton href={historyHref} />}
+      />
 
       <div className="space-y-5">
         {businesses.length > 1 && (
@@ -233,8 +216,10 @@ export function PickView({
             {/* The tray hugs the photo, whatever its shape. */}
             <Tray className="w-fit max-w-full">
               <TraySheet className="p-1">
-                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-                <img src={photo.url} alt="Shelf photo to scan" className="block max-h-[420px] w-auto max-w-full rounded-[10px] object-contain" />
+                <div className="relative w-fit max-w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+                  <img src={photo.url} alt="Shelf photo to scan" className="block max-h-[420px] w-auto max-w-full rounded-[10px] object-contain" />
+                </div>
               </TraySheet>
               <TrayFooter>
                 <span className="tabular-nums">
@@ -247,6 +232,13 @@ export function PickView({
               </TrayFooter>
             </Tray>
 
+            {check && <PhotoCheckPanel check={check} onRetake={() => fileRef.current?.click()} />}
+            {Math.max(photo.width, photo.height) < SMALL_PHOTO_EDGE && (
+              <FormMessage
+                variant="warning"
+                message="This photo is small, so products may be missed. Use the camera's full-size photo, or take a closer one of each shelf."
+              />
+            )}
             <FormMessage message={error} />
             {/* One primary, last: on the right on desktop, on top on phones. */}
             <div className="flex flex-col-reverse gap-3 sm:flex-row">
@@ -298,8 +290,16 @@ export function PickView({
   );
 }
 
-/** The run in progress: the photo under a soft pulse, the headline and the agent's trace. */
-export function Working({ photo, phase, businessName }: { photo: Photo; phase: Extract<Phase, { name: "working" }>; businessName: string }) {
+/** The run in progress: the photo under a soft pulse (when this browser has it), the headline and the agent's trace. */
+export function Working({
+  photo,
+  phase,
+  businessName,
+}: {
+  photo: Pick<Photo, "url" | "width" | "height"> | null;
+  phase: Extract<Phase, { name: "working" }>;
+  businessName: string;
+}) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -317,14 +317,22 @@ export function Working({ photo, phase, businessName }: { photo: Photo; phase: E
   return (
     <div className="q-rise grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-8">
       <Tray className="w-fit max-w-full self-start">
-        <TraySheet className="relative overflow-hidden p-1">
-          {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-          <img src={photo.url} alt="Shelf being scanned" className="block max-h-[480px] w-auto max-w-full rounded-[10px] object-contain" />
-          <span aria-hidden className="pointer-events-none absolute inset-1 animate-pulse rounded-[10px] bg-white/35" />
-        </TraySheet>
+        {photo ? (
+          <TraySheet className="relative overflow-hidden p-1">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+            <img src={photo.url} alt="Shelf being scanned" className="block max-h-[480px] w-auto max-w-full rounded-[10px] object-contain" />
+            <span aria-hidden className="pointer-events-none absolute inset-1 animate-pulse rounded-[10px] bg-white/35" />
+          </TraySheet>
+        ) : (
+          // Opened elsewhere while running: the stored photo arrives with the result.
+          <TraySheet className="flex w-[min(360px,100%)] flex-col items-center px-6 py-12 text-center">
+            <IconTile icon="Gallery-Add" className="h-12 w-12" />
+            <p className="mt-3 text-sm text-gray-500">The shelf photo is saved with the stock-take and shows when it&apos;s ready.</p>
+          </TraySheet>
+        )}
         <TrayFooter>
           <span>{phase.mode === "quick" ? "Quick scan" : "Stock-take agent"}</span>
-          <span className="tabular-nums">{photo.width}×{photo.height}</span>
+          {photo && photo.width > 0 && <span className="tabular-nums">{photo.width}×{photo.height}</span>}
         </TrayFooter>
       </Tray>
 
@@ -365,7 +373,8 @@ export function Working({ photo, phase, businessName }: { photo: Photo; phase: E
                 {phase.steps.length === 0 && (
                   <TraceItem current title="Reading every product, counting units and matching the catalogue" detail="About 20–30 s" />
                 )}
-                {phase.steps.map((s, i) => {
+                {/* Newest step first, so what the agent is doing now is always at the top. */}
+                {phase.steps.map((s, i) => ({ s, i })).reverse().map(({ s, i }) => {
                   const d = describe(s);
                   return (
                     <TraceItem
@@ -414,8 +423,10 @@ function describe(s: AgentStep): { title: string; detail?: string } {
   if (s.kind === "baseline") return { title: s.summary.replace(/^First pass:/, "First pass done:"), detail: "Now checking the unclear lines" };
   if (s.kind === "thought") return { title: s.summary.length > 160 ? `${s.summary.slice(0, 160)}…` : s.summary };
   switch (s.tool) {
-    case "zoom":
-      return { title: "Zooming into a label", detail: s.summary };
+    case "zoom": {
+      const m = /^read the label of "(.*)" up close$/.exec(s.summary);
+      return m ? { title: `Zooming into “${m[1]}”`, detail: "Reading the label up close" } : { title: "Zooming into a label", detail: s.summary };
+    }
     case "search_catalogue": {
       const m = /^search "(.*)" → (\d+)/.exec(s.summary);
       return m ? { title: `Searching catalogue for “${m[1]}”`, detail: `${m[2]} plausible match${m[2] === "1" ? "" : "es"}` } : { title: "Searching catalogue", detail: s.summary };
@@ -433,4 +444,16 @@ function describe(s: AgentStep): { title: string; detail?: string } {
     default:
       return { title: s.tool ?? "Working", detail: s.summary };
   }
+}
+
+/** Opens the business's past stock-takes. */
+export function HistoryButton({ href }: { href: string }) {
+  return (
+    <Button variant="quiet" asChild>
+      <Link href={href}>
+        <SolarIcon name="History" iconStyle="Outline" size={16} />
+        History
+      </Link>
+    </Button>
+  );
 }

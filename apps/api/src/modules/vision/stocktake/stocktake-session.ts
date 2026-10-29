@@ -1,16 +1,11 @@
 /**
- * The stock-take agent's working state and tools. The agent starts from the
- * quick scan (Spark read + SAM + catalogue) and investigates the lines that
- * need it: zooming into labels, retrying the catalogue with better wording,
- * counting with SAM, checking the merchant's store. Every tool wraps code the
- * quick scan already uses; the final "in stock?" call still goes through the
- * same deterministic rules (inventory-match.ts), so the agent can improve the
- * evidence but cannot invent stock.
+ * Stock-take agent state and tools, starting from the quick scan. Tools wrap quick-scan code and "in stock?"
+ * still goes through inventory-match.ts, so the agent can improve evidence but never invent stock.
  */
 import type { MatchCandidate, MatchResult } from "@tally/catalog-client";
 import { matchInventory, type InventoryIndex, type Reading } from "../inventory-match";
 import type { Box, ShelfProduct } from "../shelf-reader";
-import { buildDetections, candidateRefs, MATCH_CANDIDATES, toCandidate, type Detection } from "../shelf-scan";
+import { buildDetections, candidateRefs, MATCH_CANDIDATES, MIN_SAM_SHARE, toCandidate, type Detection } from "../shelf-scan";
 
 export type Evidence = { turn: number; tool: string; summary: string };
 
@@ -33,6 +28,8 @@ type Line = {
   product: ShelfProduct;
   candidates: MatchCandidate[];
   samBoxes?: Box[];
+  /** The agent chose SAM's count with use_counted, so it stands even when it is low. */
+  trustSam?: boolean;
   /** count_units' latest boxes; only used when record_line asks for them. */
   pendingSam?: Box[];
   /** The Qore ID the agent recorded: kept even if the plausibility filter would drop it. */
@@ -97,7 +94,7 @@ export const STOCKTAKE_TOOLS = [
     type: "function",
     name: "record_line",
     description:
-      "Record your conclusion for a line. brand, name and pack are the label exactly as printed on the pack (never copy the catalogue's product name); pack is the printed size or quantity such as '400g', '50cl', 'x12', never the container type ('' if not printed). qid is the catalogue product you matched: only one returned by search_catalogue or listed for the line. If you cannot resolve it, give unresolved_reason instead of a qid. use_counted: true to take count_units' count instead of the first-pass count.",
+      "Record your conclusion for a line. brand, name and pack are the label exactly as printed on the pack (never copy the catalogue's product name); pack is the printed size or quantity such as '400g', '50cl', 'x12', never the container type ('' if not printed). qid is the catalogue product you matched: only one returned by search_catalogue or listed for the line, and only when its brand, size and flavour match the label. If you cannot resolve it, give unresolved_reason instead of a qid. use_counted: true to take count_units' count instead of the first-pass count.",
     parameters: obj(
       { line: int, brand: str, name: str, pack: str, qid: str, unresolved_reason: str, use_counted: { type: "boolean" } },
       ["line", "brand", "name", "pack"],
@@ -142,7 +139,7 @@ export class StocktakeSession {
       candidates: byRef.get(String(i)) ?? [],
       samBoxes: samBoxes.get(i),
       chosenQid: null,
-      check: first[i]!.confidence !== "high" || !first[i]!.candidates[0] || first[i]!.inventoryNeedsConfirm,
+      check: first[i]!.confidence !== "high" || !first[i]!.candidates[0] || first[i]!.inventoryNeedsConfirm || first[i]!.review !== null,
       firstReading: readingOf(product),
       zoomed: false,
       refusals: 0,
@@ -193,18 +190,20 @@ export class StocktakeSession {
     switch (name) {
       case "zoom": {
         if (this.zooms >= STOCKTAKE_LIMITS.maxZooms) return { output: "Error: zoom budget used up; work with what you have.", summary: "zoom refused: budget" };
-        const box = toBox(args) ?? largest(line.samBoxes?.length ? line.samBoxes : line.product.boxes);
+        // Spark's boxes are where the label was read; SAM's may sit on a look-alike product.
+        const box = toBox(args) ?? largest(line.product.boxes.length ? line.product.boxes : (line.samBoxes ?? []));
         if (!box) return { output: "Error: no box for this line; give one.", summary: "zoom: no box" };
         const image = await this.deps.zoom(box);
         this.zooms++;
         if (image) line.zoomed = true;
-        if (!image) return { output: "That area is too small to read; try a larger box.", summary: "zoom: too small" };
+        const what = [line.product.brand, line.product.name].filter(Boolean).join(" ") || `line ${index}`;
+        if (!image) return { output: "That area is too small to read; try a larger box.", summary: `"${what}": label too small to read` };
         return {
           output: [
             { type: "input_text", text: `Close-up of line ${index}:` },
             { type: "input_image", image_url: image },
           ],
-          summary: `zoomed ${box.x1},${box.y1},${box.x2},${box.y2}`,
+          summary: `read the label of "${what}" up close`,
         };
       }
       case "search_catalogue": {
@@ -236,7 +235,8 @@ export class StocktakeSession {
         if (!look) return { output: "Error: look is required.", summary: "count: no look" };
         const boxes = await this.deps.countUnits(look, index);
         line.pendingSam = boxes.length > 0 ? boxes : undefined;
-        const current = line.samBoxes?.length ?? line.product.count;
+        const sam = line.samBoxes?.length ?? 0;
+        const current = sam && (line.trustSam || sam >= line.product.count * MIN_SAM_SHARE) ? sam : line.product.count;
         return {
           output: boxes.length
             ? `Counted ${boxes.length} units of "${look}" for line ${index} (current count ${current}). Use it with record_line use_counted: true if it looks right.`
@@ -251,7 +251,10 @@ export class StocktakeSession {
         const problem = this.verifyRecord(line, reading, qid, args.use_counted === true);
         if (problem) return this.refuse(line, index, problem);
         line.product = { ...line.product, brand: reading.brand, name: reading.name || reading.brand, pack: reading.pack };
-        if (args.use_counted === true) line.samBoxes = line.pendingSam;
+        if (args.use_counted === true) {
+          line.samBoxes = line.pendingSam;
+          line.trustSam = true;
+        }
         // The chosen product goes first, so it becomes the line's top candidate.
         if (qid) line.candidates = [line.candidates.find((c) => c.qid === qid)!, ...line.candidates.filter((c) => c.qid !== qid)];
         line.chosenQid = qid || null;
@@ -288,6 +291,11 @@ export class StocktakeSession {
     if (chosen && read && chosen.size && !sameSize(read, chosen.size)) {
       return `${qid} is ${chosen.size.value}${chosen.size.unit} but the pack says ${reading.pack}. Pick the matching size or leave qid empty.`;
     }
+    const label = variants(`${reading.name} ${reading.pack}`);
+    const product = chosen ? variants(`${chosen.name} ${chosen.variantLabel ?? ""}`) : [];
+    if (label.length && product.length && !product.some((v) => label.includes(v))) {
+      return `${qid} is ${product.join("/")} but the label says ${label.join("/")}. Pick the matching flavour or leave qid empty.`;
+    }
     return null;
   }
 
@@ -321,11 +329,13 @@ export class StocktakeSession {
     const products = this.lines.map((l) => l.product);
     const matches: MatchResult[] = this.lines.map((l, i) => ({ ref: String(i), query: { brand: null, name: "", pack: null }, parsedPack: null, candidates: l.candidates }));
     const sam = new Map(this.lines.flatMap((l, i) => (l.samBoxes ? [[i, l.samBoxes] as [number, Box[]]] : [])));
-    return buildDetections(products, matches, this.inventory, sam).map((d, i) => {
+    const trusted = new Set(this.lines.flatMap((l, i) => (l.trustSam ? [i] : [])));
+    return buildDetections(products, matches, this.inventory, sam, undefined, trusted).map((d, i) => {
       const line = this.lines[i]!;
       // The plausibility filter judges candidates against the (possibly rewritten) brand; a product the
       // agent explicitly recorded stays on top, and the merchant still confirms it.
-      const review = line.review ?? (line.recorded ? null : "Not reviewed by the agent: first-pass result.");
+      const agent = line.review ?? (!line.recorded ? "Not reviewed by the agent: first-pass result." : line.unresolved ? `Agent couldn't confirm: ${line.unresolved}` : null);
+      const review = [agent, d.review].filter(Boolean).join(" ") || null;
       if (line.chosenQid && d.candidates[0]?.qid !== line.chosenQid) {
         const chosen = line.candidates.find((c) => c.qid === line.chosenQid)!;
         const rest = d.candidates.filter((c) => c.qid !== line.chosenQid);
@@ -360,11 +370,25 @@ function readingOf(p: Pick<ShelfProduct, "brand" | "name" | "pack">): string {
   return [p.brand, p.name, p.pack].map(norm).join("|");
 }
 
-/** "Close-Up" = "closeup"; "Peak" vs "Peak Milk" counts as the same brand. */
+/** Ignores case, spaces and punctuation; a brand containing the other (e.g. plus a product word) is the same brand. */
 function sameBrand(read: string, catalogue: string): boolean {
   const a = norm(read);
   const b = norm(catalogue);
   return a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+}
+
+// Flavour and variant words that make two same-brand products different (orange jam is not peach jam).
+const VARIANT_WORDS = new Set(
+  (
+    "orange peach strawberry raspberry blackcurrant apricot mango pineapple apple banana lemon lime cherry grape guava " +
+    "coconut vanilla chocolate caramel honey ginger cinnamon mint coffee chicken beef shrimp crayfish onion pepper " +
+    "tomato curry original classic plain unsweetened sweetened salted unsalted spicy hot mild menthol herbal"
+  ).split(" "),
+);
+
+/** The flavour/variant words in a name, in order; "chocolate" from "Dark Chocolate Spread". */
+function variants(text: string): string[] {
+  return [...new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => VARIANT_WORDS.has(w)))];
 }
 
 const UNITS: Record<string, { base: "g" | "ml"; factor: number }> = {

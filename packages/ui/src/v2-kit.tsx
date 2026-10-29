@@ -3,10 +3,8 @@ import { cn } from "./lib/cn";
 import { SolarIcon, type SolarIconName } from "./solar-icon";
 
 /*
- * Design V2 building blocks, lifted from Qorelly packages/ui (v2-kit.tsx,
- * list-kit.tsx, notice.tsx, page-header.tsx, close-button.tsx). Class strings
- * are Qorelly's, so Tally draws the same material. No hooks here: every piece
- * renders on the server; handlers make a client parent.
+ * Design V2 building blocks with Qorelly's class strings, so Tally draws the same material.
+ * No hooks: every piece renders on the server; handlers need a client parent.
  */
 
 // ── Buttons ────────────────────────────────────────────────────────────────
@@ -106,7 +104,8 @@ export function SegmentedControl<K extends string>({
   label,
 }: {
   options: ReadonlyArray<{ key: K; label: React.ReactNode; disabled?: boolean }>;
-  value: K;
+  /** null: nothing chosen yet. */
+  value: K | null;
   onChange: (key: K) => void;
   block?: boolean;
   label?: string;

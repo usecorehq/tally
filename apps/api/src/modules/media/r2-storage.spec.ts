@@ -35,6 +35,14 @@ describe("R2Storage", () => {
     expect(await storage().get("tally/crops/s1/1.webp")).toBeNull();
   });
 
+  it("exists sends a HEAD: true when found, false when missing", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 200 }));
+    expect(await storage().exists("tally/scans/s1.jpg")).toBe(true);
+    expect((fetchSpy.mock.calls.at(-1)![0] as Request).method).toBe("HEAD");
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect(await storage().exists("tally/scans/s2.jpg")).toBe(false);
+  });
+
   it("throws on other failures", async () => {
     fetchSpy.mockResolvedValueOnce(new Response(null, { status: 403 }));
     await expect(storage().put("tally/x", new Uint8Array([1]), "image/webp")).rejects.toThrow("R2 PUT failed: 403");

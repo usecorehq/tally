@@ -1,11 +1,6 @@
 /**
- * Shelf photo → the distinct products in it, read by Muse Spark in one call.
- * Pure: builds the Responses request and validates the reply, no IO.
- *
- * Spark reports one box per visible unit (Meta's grounding guide: pointing at
- * every instance before counting beats asking for a number), so count is the
- * number of boxes. Boxes are on Spark's 0–1000 grid of the uploaded image.
- * See docs/architecture/vision-recognition.md.
+ * Shelf photo → its distinct products, read by Muse Spark in one call. Pure, no IO.
+ * Spark boxes every visible unit (pointing beats asking for a number), so count = boxes, on a 0–1000 grid.
  */
 
 export const SHELF_MODEL = "muse-spark-1.3";
@@ -88,7 +83,7 @@ const PROMPT = [
   "List every distinct packaged product you can see. Units with the same brand, name and pack size are one product; different sizes or flavours are different products.",
   "For each product, read the brand, product name and pack size exactly as printed on the packaging. Do not guess text you cannot read: leave brand or pack as an empty string instead.",
   "Give one bounding box per visible unit of that product, as [x_min, y_min, x_max, y_max] on a normalized 0-1000 grid with (0,0) at the top-left of the image. Do not miss any units.",
-  "Ignore shelving, price tags, people and anything that is not a product for sale.",
+  "Ignore shelving, price tags, people and anything that is not a stocked product.",
   "confidence: high when the label is clearly legible, medium when partly legible, low when you are inferring from shape or colour.",
   "look: the unit's main colour and container for a segmentation model, as exactly two words: one colour + one container (e.g. 'red box', 'yellow bucket', 'white bottle'). Never two colours, never a brand.",
 ].join("\n");
@@ -114,9 +109,8 @@ export function shelfRequest(image: Buffer, type: ImageType): Record<string, unk
 }
 
 /**
- * Validate Spark's JSON. Decoding is schema-constrained, but the values are
- * still model output: trim text, clamp boxes to the grid, drop unnamed or
- * box-less products, merge duplicates, cap the list.
+ * Validates Spark's JSON: still model output, so trim text, clamp boxes, drop unnamed or box-less products,
+ * merge duplicates and cap the list.
  */
 export function parseShelfProducts(text: string): ShelfProduct[] {
   let raw: unknown;

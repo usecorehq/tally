@@ -8,7 +8,7 @@ loadEnv({ path: resolve(__dirname, "../../.env"), quiet: true });
 
 const config: NextConfig = {
   transpilePackages: ["@tally/ui", "@tally/auth"],
-  // Stock-take photos go through server actions: ~400 KB after resizing, up to the API's 4 MB.
+  // Stock-take photos go through server actions: ~1-2 MB after resizing (2560 px long edge), up to the API's 4 MB.
   experimental: { serverActions: { bodySizeLimit: "5mb" } },
 };
 

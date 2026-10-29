@@ -2,7 +2,7 @@ import { describe, expect, it } from "@jest/globals";
 import type { MatchCandidate, MatchResult } from "@tally/catalog-client";
 import type { ShelfProduct } from "./shelf-reader";
 import { indexInventory } from "./inventory-match";
-import { buildDetections, matchItems, plausible } from "./shelf-scan";
+import { buildDetections, matchItems, matchStrength, plausible } from "./shelf-scan";
 
 const none = indexInventory([], []);
 const stockedA = indexInventory(
@@ -77,6 +77,9 @@ describe("buildDetections", () => {
       // candidate() sets signals.size = 1
       inventoryNeedsConfirm: false,
     });
+    // The review names the item it will restock.
+    expect(first!.inventoryItemName).toBe("Peak 400g");
+    expect(second!.inventoryItemName).toBeNull();
     expect(first!.candidates.map((c) => [c.qid, c.inventoryItemId])).toEqual([
       ["QC-A", "item-a"],
       ["QC-B", null],
@@ -112,6 +115,18 @@ describe("buildDetections", () => {
     expect(counted).toMatchObject({ count: 3, countSource: "sam", sparkCount: 2, samCount: 3, boxes: sam });
     expect(missed).toMatchObject({ count: 2, countSource: "spark", sparkCount: 2, samCount: 0, boxes: peak.boxes });
     expect(notRun).toMatchObject({ count: 2, countSource: "spark", samCount: null });
+    expect([counted!.review, missed!.review, notRun!.review]).toEqual([null, null, null]);
+  });
+
+  it("keeps Spark's count and boxes, flagged, when SAM found under half of them", () => {
+    const one = [{ x1: 5, y1: 5, x2: 9, y2: 9 }];
+    const many: ShelfProduct = { ...peak, count: 24 };
+    const half: ShelfProduct = { ...peak, count: 2 };
+    const [low, even, trusted] = buildDetections([many, half, many], [], none, new Map([[0, one], [1, one], [2, one]]), id, new Set([2]));
+    expect(low).toMatchObject({ count: 24, countSource: "spark", sparkCount: 24, samCount: 1, boxes: peak.boxes });
+    expect(low!.review).toBe("Counts disagree: read 24, SAM found 1. Check the count.");
+    expect(even).toMatchObject({ count: 1, countSource: "sam", review: null });
+    expect(trusted).toMatchObject({ count: 1, countSource: "sam", review: null });
   });
 
   it("passes a null price through", () => {
@@ -145,5 +160,29 @@ describe("unbranded reads never count as sure in stock", () => {
       inventoryMatch: "catalogue",
       inventoryNeedsConfirm: true,
     });
+  });
+});
+
+describe("matchStrength", () => {
+  it.each([
+    ["brand and size agree", { text: 0.9, brand: 1, size: 1 }, "strong"],
+    ["brand agrees, other size (Peak 900g read, 400g offered)", { text: 0.9, brand: 1, size: 0 }, "medium"],
+    ["brand agrees, no size read", { text: 0.8, brand: 1, size: 0.5 }, "medium"],
+    ["no brand read, strong name match", { text: 0.81, brand: 0.5, size: 0.5 }, "medium"],
+    ["no brand read, size agrees but weak name", { text: 0.6, brand: 0.5, size: 1 }, "low"],
+    // Live: an unbranded "Blue box" pre-filled a hair dye at ₦11,499.
+    ["no brand read, weak name (\"Blue box\" → a hair dye)", { text: 0.55, brand: 0.5, size: 0.5 }, "low"],
+    ["a different brand", { text: 0.95, brand: 0, size: 1 }, "low"],
+  ] as const)("%s → %s", (_label, signals, expected) => {
+    expect(matchStrength(signals)).toBe(expected);
+  });
+
+  it("every detection candidate carries its strength and the catalogue image (null until approved)", () => {
+    const c = { ...candidate("QC-A", 0.88), image: { url: "https://api.qorecatalogue.com/v1/images/ab.webp", width: 400, height: 600 } } as MatchCandidate;
+    const [d] = buildDetections([peak], [result("0", [c, candidate("QC-B", 0.7, 1, 0.9)])], none, new Map(), () => "d");
+    expect(d!.candidates.map((x) => [x.qid, x.match, x.image?.url ?? null])).toEqual([
+      ["QC-A", "strong", "https://api.qorecatalogue.com/v1/images/ab.webp"],
+      ["QC-B", "strong", null],
+    ]);
   });
 });

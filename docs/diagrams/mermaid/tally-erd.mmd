@@ -4,15 +4,11 @@ erDiagram
     AUTH_USERS ||--o{ BUSINESS_MEMBERS : "is (user_id)"
     BUSINESSES ||--o{ BUSINESS_MEMBERS : has
     BUSINESSES ||--o{ INVENTORY_ITEMS : stocks
-    BUSINESSES ||--o{ SALES : records
     INVENTORY_ITEMS ||--o{ STOCK_MOVEMENTS : "moves (append-only)"
-    SALES ||--|{ SALE_ITEMS : contains
-    INVENTORY_ITEMS ||--o{ SALE_ITEMS : "sold as"
-    SALES ||--o{ SALE_PAYMENTS : "paid by"
-    SALES |o--o{ STOCK_MOVEMENTS : "sale / void"
     BUSINESSES ||--o{ VISION_SCANS : "scans shelves"
     VISION_SCANS ||--o{ VISION_DETECTIONS : finds
     INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "looks like"
+    INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "decided as"
     INVENTORY_ITEMS ||--o{ INVENTORY_ITEM_READINGS : "recognised by"
     BUSINESSES ||--o{ VISION_AGENT_RUNS : "stock-takes"
     VISION_AGENT_RUNS ||--o{ VISION_AGENT_STEPS : "trace"
@@ -28,7 +24,6 @@ erDiagram
         text vertical_code "Qore Catalog taxonomy"
         text subtype_code "Qore Catalog taxonomy"
         text currency "NGN"
-        int sale_counter "next_sale_number()"
     }
     BUSINESS_MEMBERS {
         uuid business_id FK
@@ -48,42 +43,15 @@ erDiagram
     STOCK_MOVEMENTS {
         uuid id PK
         uuid item_id FK
-        text type "opening | restock | sale | adjustment | void"
+        text type "opening | restock | adjustment"
         numeric quantity_delta
         numeric quantity_after "set by trigger"
-        uuid sale_id FK "sale / void only"
         text client_movement_id "idempotency"
-    }
-    SALES {
-        uuid id PK
-        uuid business_id FK
-        int sale_number "per business"
-        text status "completed | voided"
-        numeric subtotal
-        numeric discount
-        numeric total "= subtotal - discount"
-        numeric paid_amount "SUM(sale_payments), trigger"
-        timestamptz stock_deducted_at "idempotency stamp"
-        text client_sale_id "idempotency"
-    }
-    SALE_ITEMS {
-        uuid sale_id FK
-        uuid item_id FK
-        text item_name "as sold"
-        numeric unit_price "as sold"
-        numeric quantity
-        numeric line_total
-    }
-    SALE_PAYMENTS {
-        uuid sale_id FK
-        numeric amount "> 0"
-        text method "cash | transfer | card | other"
-        text client_payment_id "idempotency"
     }
     VISION_SCANS {
         uuid id PK
         uuid business_id FK
-        text status "open | confirmed"
+        text status "open | confirmed | discarded | superseded"
         text image_sha256 "photo not stored here"
         text read_model "muse-spark-1.3"
         text count_model "sam-3.1"
@@ -96,9 +64,11 @@ erDiagram
         text name "as read"
         text pack "as read"
         int count "SAM, else Spark"
-        jsonb candidates "Qore IDs + scores only"
+        jsonb candidates "Qore IDs, scores, match only"
         uuid inventory_item_id FK "nullable"
         text inventory_match "reading | catalogue | name"
+        text action "restock | restore | add | skip"
+        uuid item_id FK "decided as, nullable"
     }
     INVENTORY_ITEM_READINGS {
         uuid item_id FK

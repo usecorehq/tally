@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   Injectable,
   Logger,
@@ -14,10 +15,11 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
-import { bestBox, cropKey, makeCrops } from "./crops";
-import { indexInventory, matchInventory, readingKey, type InventoryMatch, type Reading } from "./inventory-match";
+import { bestBox, cropKey, cropSize, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, shelfPhotoKey, storablePhoto } from "./crops";
+import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
+import { parsePhotoCheck, PHOTO_CHECK_MODEL, photoCheckRequest, type PhotoCheck } from "./photo-check";
 import { assignInstances, distinctLooks, parseSamInstances, SAM_MODEL, samRequest, type SamInstance } from "./sam-counter";
 import {
   parseShelfProducts,
@@ -49,8 +51,28 @@ import { VisionRepository, type ConfirmResult } from "./vision.repository";
 const SHELF_TIMEOUT_MS = 45_000;
 const SAM_TIMEOUT_MS = 20_000;
 const LABEL_TIMEOUT_MS = 10_000;
-/** A run still "running" after this was lost to a restart (budget 150 s + first pass ≈ 3 min). */
-const STALE_RUN_MS = 10 * 60 * 1000;
+/** The merchant waits on a photo check before scanning; past this, skip it rather than hold them up. */
+const PHOTO_CHECK_TIMEOUT_MS = 12_000;
+/**
+ * Per-phase deadlines so every background stock-take ends done, fallback or failed, even when a model call
+ * hangs or a full Supabase pooler never hands out a connection.
+ */
+export const STOCKTAKE_DEADLINES = {
+  /** Quick-scan analysis: Spark read (45 s) + SAM / catalogue in parallel, plus DB reads. */
+  firstPassMs: 120_000,
+  /** The whole run; the agent gets whatever the first pass left. */
+  runMs: 240_000,
+  /** Each status / result write. */
+  writeMs: 20_000,
+  /** The store reads before the first paid model call (a saturated pool fails here, in seconds). */
+  dbReadMs: 20_000,
+};
+/** A run still "running" after this is lost (restart, or a write that never landed): marked failed on read. */
+const STALE_RUN_MS = STOCKTAKE_DEADLINES.runMs + 60_000;
+/** Catalogue lookups when a stored scan is reopened: at a time, and how long a product's details are kept. */
+const DETAIL_CONCURRENCY = 8;
+const DETAIL_TTL_MS = 10 * 60 * 1000;
+const CROP_URL_SECONDS = 60 * 60;
 
 export type IdentifyResult = {
   model: string;
@@ -65,7 +87,7 @@ export type IdentifyResult = {
     inventoryMatch: InventoryMatch;
     /** An item the merchant removed: offer to restore it. */
     archived: boolean;
-    /** Ask "Is this your X?" before selling it. */
+    /** Ask "Is this your X?" before counting it as that item. */
     needsConfirm: boolean;
   } | null;
   /** Catalogue suggestions when it isn't in store (asked only then). */
@@ -78,12 +100,13 @@ export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
   /** Best-effort: a catalogue outage never undoes the stock changes; feedback is retried on the next confirm. */
   feedback: { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string };
   /**
-   * Crops sent to Qore Catalog (POST /v1/images) for lines confirmed with a
-   * Qore ID, after their feedback. Best-effort; skipped = no crop stored
-   * (R2 off, box too small) or no Qore ID.
+   * Crops sent to Qore Catalog for lines confirmed with a Qore ID. Best-effort; skippedBy says why lines sent
+   * nothing: no Qore ID (new item, skip), no stored crop (R2 off, box too small to store), or under 160 px.
    */
-  images: { uploaded: number; skipped: number; failed: number };
+  images: { uploaded: number; skipped: number; failed: number; skippedBy: { noProduct: number; noCrop: number; tooSmall: number } };
 };
+
+const NO_IMAGES = (): ConfirmResponse["images"] => ({ uploaded: 0, skipped: 0, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
 
 export type ShelfScanResult = {
   /** The stored scan; confirm it to stock the detections. */
@@ -97,9 +120,86 @@ export type ShelfScanResult = {
   catalogueAvailable: boolean;
   /** Product crops stored in R2 for this scan (0 when R2 isn't configured). */
   cropsStored: number;
+  /** The shelf photo was stored in R2 with the scan (false when R2 is off or the upload failed). */
+  photoStored: boolean;
   /** samMs and matchMs run in parallel after readMs. */
   timings: { readMs: number; samMs: number; matchMs: number; totalMs: number };
 };
+
+type CandidateDetails = Pick<DetectionCandidate, "name" | "brand" | "variantLabel" | "size" | "packQty" | "price" | "image">;
+
+/** A stored candidate with its catalogue details filled back in; only qid and score when the lookup failed. */
+export type ScanCandidate = Pick<DetectionCandidate, "qid" | "score"> & Partial<Omit<DetectionCandidate, "qid" | "score">>;
+
+/** A stored scan, reopened: the quick-scan detection shape plus each line's decision. */
+export type ScanView = {
+  scanId: string;
+  /** discarded: dropped unconfirmed; superseded: another run of the same photo was confirmed. Both read-only. */
+  status: "open" | "confirmed" | "discarded" | "superseded";
+  createdAt: Date;
+  confirmedAt: Date | null;
+  discardedAt: Date | null;
+  supersededAt: Date | null;
+  /** The first scan of this photo when this one is a rerun; null for the original. */
+  rerunOf: string | null;
+  /** The photo is stored and no run of it has moved stock yet. */
+  canRerun: boolean;
+  model: string;
+  countModel: string;
+  catalogueAvailable: boolean;
+  /** False when some candidate names and prices couldn't be fetched from Qore Catalog (the lines still work). */
+  candidateDetails: boolean;
+  /** The stored shelf photo (presigned, an hour); null when R2 is off or no photo was kept for this scan. */
+  photoUrl: string | null;
+  detections: (Omit<Detection, "candidates"> & {
+    position: number;
+    candidates: ScanCandidate[];
+    review: string | null;
+    evidence: { turn: number; tool: string; summary: string }[] | null;
+    /** The stored crop (presigned, an hour); null when R2 is off. May 404 when no crop was stored. */
+    cropUrl: string | null;
+    decision: {
+      action: "restock" | "restore" | "add" | "skip";
+      itemId: string | null;
+      itemName: string | null;
+      quantity: number | null;
+      confirmedQid: string | null;
+      decidedAt: Date;
+    } | null;
+  })[];
+};
+
+export type HistoryEntry = {
+  /** The run id for a stock-take, the scan id for a quick scan. */
+  id: string;
+  kind: "stocktake" | "quick";
+  runId: string | null;
+  scanId: string | null;
+  status: "running" | "review" | "confirmed" | "failed" | "discarded" | "superseded";
+  /** The group's root scan when this is a rerun. */
+  rerunOf: string | null;
+  /** On a root only: its reruns, oldest first. */
+  reruns?: HistoryEntry[];
+  /** The agent stopped and the result is the first pass. */
+  fallback: boolean;
+  startedAt: Date;
+  confirmedAt: Date | null;
+  error: string | null;
+  /** Lines in the scan; null while running or when it failed. */
+  lines: number | null;
+  /** Decided lines by action. An add can land as a restock when the item already exists. */
+  decided: { add: number; restock: number; restore: number; skip: number };
+  /** Up to 3 distinct products read (brand, else name), in scan order: a title for the entry. */
+  preview: string[];
+};
+
+const PREVIEW_NAMES = 3;
+
+/** Distinct names, ignoring case, keeping the first spelling. */
+function previewNames(names: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  return (names ?? []).filter((n) => n.trim() && !seen.has(n.trim().toLowerCase()) && seen.add(n.trim().toLowerCase())).slice(0, PREVIEW_NAMES);
+}
 
 @Injectable()
 export class VisionService implements OnApplicationBootstrap {
@@ -119,11 +219,8 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Shelf photo → products (Muse Spark) → unit counts (SAM 3.1) and catalogue
-   * candidates with prices (Qore Catalog /v1/match), in parallel → flagged where
-   * the business already stocks them.
-   * The scan and its detections are stored for confirm; the image itself is not
-   * (only its sha256), and is dropped after the call.
+   * Shelf photo → products (Spark) → unit counts (SAM) and catalogue candidates in parallel → in-stock flags.
+   * The scan and detections are stored for confirm; the image is not (only its sha256).
    */
   async recogniseShelf(businessId: string, userId: string, image: Buffer): Promise<ShelfScanResult> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
@@ -134,7 +231,7 @@ export class VisionService implements OnApplicationBootstrap {
     const a = await this.analyse(businessId, userId, image, type);
     const detections = buildDetections(a.products, a.matches, a.index, a.samBoxes);
     const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections);
-    const cropsStored = await this.storeCrops(scanId, image, detections);
+    const [cropsStored, photoStored] = await Promise.all([this.storeCrops(scanId, image, detections), this.storePhoto(scanId, image)]);
     return {
       scanId,
       model: SHELF_MODEL,
@@ -142,22 +239,27 @@ export class VisionService implements OnApplicationBootstrap {
       detections,
       catalogueAvailable: a.catalogueAvailable,
       cropsStored,
+      photoStored,
       timings: { ...a.timings, totalMs: Date.now() - started },
     };
   }
 
   /**
-   * The quick scan's analysis, shared with the stock-take agent's first pass:
-   * membership check (before any paid call), Muse Spark read, then SAM counts
-   * and catalogue candidates in parallel. Stores nothing.
+   * The quick scan's analysis, shared with the agent's first pass: membership check before any paid call,
+   * Spark read, then SAM counts and catalogue candidates in parallel. Stores nothing.
    */
   private async analyse(businessId: string, userId: string, image: Buffer, type: ImageType) {
     // listInventory checks membership; the other two only read this business's rows.
-    const [items, readings, archived] = await Promise.all([
-      this.businesses.listInventory(businessId, userId),
-      this.repo.readings(businessId),
-      this.repo.archivedLinkedItems(businessId),
-    ]);
+    // Bounded: on a saturated database pool this fails in seconds, before any paid model call.
+    const [items, readings, archived] = await withDeadline(
+      Promise.all([this.businesses.listInventory(businessId, userId), this.repo.readings(businessId), this.repo.archivedLinkedItems(businessId)]),
+      STOCKTAKE_DEADLINES.dbReadMs,
+      "Database busy: could not read the store's inventory in time",
+    ).catch((err: unknown) => {
+      if (err instanceof HttpException) throw err;
+      this.logger.warn(`Inventory read failed: ${(err as Error).message}`);
+      throw new ServiceUnavailableException("Database busy, retry shortly");
+    });
     const started = Date.now();
 
     let products: ShelfProduct[];
@@ -213,21 +315,48 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Start a stock-take: returns at once with a run id; the work runs in the
-   * background (about 1–2 minutes) and is polled with getStocktake. The quick
-   * scan runs first as the agent's starting checklist and as the fallback.
+   * Starts a stock-take and returns a run id at once; the work runs in the background, polled via getStocktake.
+   * The quick scan runs first as the agent's starting checklist and as the fallback.
    */
   async startStocktake(businessId: string, userId: string, image: Buffer): Promise<{ runId: string; status: "running" }> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
     const type = sniffImageType(image);
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
     await this.businesses.getForMember(businessId, userId);
+    return this.launch(businessId, userId, image, type, null);
+  }
 
-    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL);
-    void this.runStocktake(runId, businessId, userId, image, type).catch((err: unknown) =>
-      this.logger.error(`Stock-take ${runId} crashed: ${(err as Error).message}`),
-    );
+  /**
+   * Rerun a stored stock-take: a new agent run on the photo kept in R2, grouped under the photo's first scan.
+   * 409 when no photo was kept, or when a run of this photo has already moved stock.
+   */
+  async rerun(businessId: string, userId: string, scanId: string): Promise<{ runId: string; status: "running"; rerunOf: string }> {
+    if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
+    await this.businesses.getForMember(businessId, userId);
+    const { root, scanIds } = await this.repo.group(businessId, scanId);
+    if (await this.repo.groupSettled(scanIds)) {
+      throw new ConflictException("A run of this photo is already confirmed. Take new stock to count again.");
+    }
+    const image = this.media.enabled ? await this.media.get(shelfPhotoKey(scanId)).catch(() => null) : null;
+    const type = image ? sniffImageType(Buffer.from(image)) : null;
+    if (!image || !type) throw new ConflictException("This stock-take's photo wasn't kept, so it can't be rerun. Take new stock instead.");
+    const { runId } = await this.launch(businessId, userId, Buffer.from(image), type, root);
+    return { runId, status: "running", rerunOf: root };
+  }
+
+  private async launch(businessId: string, userId: string, image: Buffer, type: ImageType, rerunOf: string | null): Promise<{ runId: string; status: "running" }> {
+    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL, rerunOf);
+    void this.runStocktake(runId, businessId, userId, image, type, rerunOf).catch(async (err: unknown) => {
+      this.logger.error(`Stock-take ${runId} crashed: ${(err as Error).message}`);
+      await this.finish(runId, { status: "failed", error: `Stock-take crashed: ${(err as Error).message}` });
+    });
     return { runId, status: "running" };
+  }
+
+  /** Drop an open stock-take: read-only, kept for audit. 409 when confirmed or superseded. */
+  async discard(businessId: string, userId: string, scanId: string) {
+    await this.businesses.getForMember(businessId, userId);
+    return this.repo.discard(businessId, scanId);
   }
 
   /** The run, its step trace and, once finished, its scan (same shape as a quick scan while it is fresh). */
@@ -239,10 +368,17 @@ export class VisionService implements OnApplicationBootstrap {
       await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS));
       ({ steps, ...run } = await this.repo.getRun(businessId, runId));
     }
+    // The fresh result saves the catalogue lookups; status and decisions always come from the stored scan.
     const fresh = this.stocktakeResults.get(runId);
-    const result = fresh ?? (run.scanId ? await this.repo.getScan(businessId, run.scanId) : null);
+    const result = run.scanId ? await this.scanView(businessId, run.scanId, fresh?.detections) : null;
+    // A running rerun already has its photo: the one stored with the scan it reruns.
+    const photoUrl =
+      !result && run.rerunOfScanId && this.media.enabled
+        ? await this.media.presignedGetUrl(shelfPhotoKey(run.rerunOfScanId), CROP_URL_SECONDS).catch(() => null)
+        : (result?.photoUrl ?? null);
     return {
       run,
+      photoUrl,
       steps: steps.map(({ turn, kind, tool, summary, ms, createdAt }) => ({ turn, kind, tool, summary, ms, at: createdAt })),
       result,
     };
@@ -251,16 +387,18 @@ export class VisionService implements OnApplicationBootstrap {
   /** Finished results in the quick-scan shape (with candidate names and prices), kept an hour for polling. */
   private readonly stocktakeResults = new TtlCache<ShelfScanResult>(60 * 60 * 1000);
 
-  private async runStocktake(runId: string, businessId: string, userId: string, image: Buffer, type: ImageType): Promise<void> {
+  private async runStocktake(runId: string, businessId: string, userId: string, image: Buffer, type: ImageType, rerunOf: string | null = null): Promise<void> {
     const step = (s: AgentStep | { turn: number; kind: "baseline"; summary: string; ms?: number }) =>
       this.repo.addStep(businessId, runId, s).catch(() => undefined);
     const started = Date.now();
 
+    const limits = STOCKTAKE_DEADLINES;
+
     let a: Awaited<ReturnType<VisionService["analyse"]>>;
     try {
-      a = await this.analyse(businessId, userId, image, type);
+      a = await withDeadline(this.analyse(businessId, userId, image, type), limits.firstPassMs, `First pass took longer than ${limits.firstPassMs / 1000} s`);
     } catch (err) {
-      await this.repo.finishRun(runId, { status: "failed", error: `First pass failed: ${(err as Error).message}`.slice(0, 300) });
+      await this.finish(runId, { status: "failed", error: `First pass failed: ${(err as Error).message}` });
       return;
     }
     await step({ turn: 0, kind: "baseline", summary: `First pass: ${a.products.length} products`, ms: Date.now() - started });
@@ -285,12 +423,12 @@ export class VisionService implements OnApplicationBootstrap {
     let detections: (Detection & { evidence?: { turn: number; tool: string; summary: string }[] })[] = baseline;
     let end: { status: "done" | "fallback"; turns: number; input: number; output: number; error: string | null };
     try {
-      const outcome = await runStocktakeAgent({
-        client: this.meta!,
-        session,
-        photo: `data:${type};base64,${image.toString("base64")}`,
-        onStep: step,
-      });
+      const left = Math.max(0, limits.runMs - (Date.now() - started));
+      const outcome = await withDeadline(
+        runStocktakeAgent({ client: this.meta!, session, photo: `data:${type};base64,${image.toString("base64")}`, onStep: step }),
+        left,
+        "Run deadline reached",
+      );
       detections = session.detections();
       end = { status: "done", turns: outcome.turns, input: outcome.usage.input, output: outcome.usage.output, error: outcome.end === "budget" ? "Turn or time budget reached" : null };
     } catch (err) {
@@ -298,8 +436,19 @@ export class VisionService implements OnApplicationBootstrap {
       end = { status: "fallback", turns: 0, input: 0, output: 0, error: `Agent stopped: ${(err as Error).message}`.slice(0, 300) };
     }
 
-    const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections);
-    const cropsStored = await this.storeCrops(scanId, image, detections);
+    let scanId: string;
+    try {
+      scanId = await withDeadline(this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections), limits.writeMs, "Saving the scan timed out");
+    } catch (err) {
+      await this.finish(runId, { status: "failed", error: `Could not save the result: ${(err as Error).message}` });
+      return;
+    }
+    const [cropsStored, photoStored] = await Promise.all([
+      withDeadline(this.storeCrops(scanId, image, detections), limits.writeMs, "crops").catch(() => 0),
+      withDeadline(this.storePhoto(scanId, image), limits.writeMs, "photo").catch(() => false),
+      // A sibling confirmed while this rerun ran: its result can no longer be confirmed.
+      rerunOf ? withDeadline(this.repo.supersedeIfSettled(businessId, scanId), limits.writeMs, "supersede").catch(() => false) : false,
+    ]);
     this.stocktakeResults.set(runId, {
       scanId,
       model: STOCKTAKE_MODEL,
@@ -307,25 +456,64 @@ export class VisionService implements OnApplicationBootstrap {
       detections,
       catalogueAvailable: a.catalogueAvailable,
       cropsStored,
+      photoStored,
       timings: { ...a.timings, totalMs: Date.now() - started },
     });
-    await this.repo.finishRun(runId, { status: end.status, scanId, turns: end.turns, inputTokens: end.input, outputTokens: end.output, error: end.error });
+    await this.finish(runId, { status: end.status, scanId, turns: end.turns, inputTokens: end.input, outputTokens: end.output, error: end.error });
   }
 
   /**
-   * One crop per detection (its largest box) to R2 at tally/crops/<scanId>/<position>.webp,
-   * read back on confirm. Best-effort: a crop failure never fails the scan.
+   * Mark a run finished: a few tries, each with a deadline. If every try fails
+   * (the database is unreachable), getStocktake marks it failed once it is stale.
    */
+  private async finish(runId: string, end: Parameters<VisionRepository["finishRun"]>[1]): Promise<void> {
+    const row = { ...end, error: end.error ? end.error.slice(0, 300) : end.error };
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await withDeadline(this.repo.finishRun(runId, row), STOCKTAKE_DEADLINES.writeMs, "finishing the run timed out");
+        return;
+      } catch (err) {
+        this.logger.warn(`Stock-take ${runId}: could not record its end (try ${attempt}): ${(err as Error).message}`);
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
+  }
+
+  /**
+   * Stores one crop per detection in R2 (tally/crops/<scanId>/<position>.webp), read back on confirm.
+   * Best-effort: a crop failure never fails the scan.
+   */
+  /** The shelf photo, kept for good as the scan's audit record. Best-effort: a failure never fails the scan. */
+  private async storePhoto(scanId: string, image: Buffer): Promise<boolean> {
+    if (!this.media.enabled) return false;
+    try {
+      await this.media.put(shelfPhotoKey(scanId), await storablePhoto(image), "image/jpeg");
+      return true;
+    } catch (err) {
+      this.logger.warn(`Shelf photo not stored for scan ${scanId}: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
   private async storeCrops(scanId: string, image: Buffer, detections: Detection[]): Promise<number> {
     if (!this.media.enabled || detections.length === 0) return 0;
     try {
-      const crops = await makeCrops(image, detections.map((d) => bestBox(d.boxes)));
+      const boxes = detections.map((d) => bestBox(d.boxes));
+      const crops = await makeCrops(image, boxes, { minSide: MIN_STORED_CROP_SIDE });
       const results = await Promise.allSettled(
         crops.map((crop, position) => (crop ? this.media.put(cropKey(scanId, position), crop, "image/webp").then(() => 1) : 0)),
       );
       const failed = results.filter((r) => r.status === "rejected").length;
+      const stored = results.reduce((n, r) => n + (r.status === "fulfilled" ? r.value : 0), 0);
+      // A product under 48 px in the photo gets no crop, so it can never become a catalogue picture.
+      const tooSmall = crops.filter((c, i) => !c && boxes[i]).length;
+      this.logger.log(
+        `Scan ${scanId}: ${stored} of ${detections.length} crops stored` +
+          (tooSmall ? `, ${tooSmall} too small to store (< ${MIN_STORED_CROP_SIDE} px)` : "") +
+          (crops.length - tooSmall - stored - failed > 0 ? `, ${crops.length - tooSmall - stored - failed} without a box` : ""),
+      );
       if (failed) this.logger.warn(`${failed} crop(s) not stored for scan ${scanId}`);
-      return results.reduce((n, r) => n + (r.status === "fulfilled" ? r.value : 0), 0);
+      return stored;
     } catch (err) {
       this.logger.warn(`Crops not made for scan ${scanId}: ${(err as Error).message}`);
       return 0;
@@ -333,10 +521,26 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Point-to-sell: one product photo → its label (Muse Spark, minimal
-   * reasoning) → the merchant's own item, matched in Tally (a remembered
-   * reading, then brand + name). Qore Catalog is asked only when nothing in
-   * store matches, so a known item costs one model call. Nothing is stored.
+   * Before a scan: is this photo worth reading? One quick Muse Spark verdict with one instruction. Advice only;
+   * the photo isn't stored and nothing changes.
+   */
+  async checkPhoto(businessId: string, userId: string, image: Buffer): Promise<PhotoCheck & { model: string; ms: number }> {
+    if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
+    await this.businesses.getForMember(businessId, userId);
+    const type = sniffImageType(image);
+    if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
+    const started = Date.now();
+    try {
+      const check = parsePhotoCheck((await this.meta.respond(photoCheckRequest(image, type), PHOTO_CHECK_TIMEOUT_MS)).text);
+      return { ...check, model: PHOTO_CHECK_MODEL, ms: Date.now() - started };
+    } catch (err) {
+      throw err instanceof HttpException ? err : toVisionHttpException(err);
+    }
+  }
+
+  /**
+   * Identify one product: product photo → label (Spark) → the merchant's own item, matched in Tally. The catalogue
+   * is asked only when nothing in store matches, so a known item costs one model call. Stores nothing.
    */
   async identify(businessId: string, userId: string, image: Buffer): Promise<IdentifyResult> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
@@ -382,9 +586,16 @@ export class VisionService implements OnApplicationBootstrap {
     );
   }
 
-  /** The merchant confirmed an identify result: remember the reading for that item. */
-  async confirmIdentify(businessId: string, userId: string, reading: Reading, itemId: string): Promise<{ itemId: string; readingKey: string }> {
+  /**
+   * The merchant confirmed an identify result: remember the reading for that item.
+   * A reading without a brand is too vague to remember: readingKey is null.
+   */
+  async confirmIdentify(businessId: string, userId: string, reading: Reading, itemId: string): Promise<{ itemId: string; readingKey: string | null }> {
     await this.businesses.getForMember(businessId, userId);
+    if (!rememberable(reading)) {
+      if (!(await this.repo.isActiveItem(businessId, itemId))) throw new NotFoundException(`No item ${itemId}`);
+      return { itemId, readingKey: null };
+    }
     const key = readingKey(reading);
     if (!(await this.repo.rememberReading(businessId, itemId, key))) throw new NotFoundException(`No item ${itemId}`);
     return { itemId, readingKey: key };
@@ -408,24 +619,213 @@ export class VisionService implements OnApplicationBootstrap {
     };
   }
 
-  /** A stored scan with its detections and decisions (candidates as Qore IDs + scores). */
-  async getScan(businessId: string, userId: string, scanId: string) {
+  /** A stored scan, reopened: candidates with names and prices again, store state as of now, and decisions. */
+  async getScan(businessId: string, userId: string, scanId: string): Promise<ScanView> {
     await this.businesses.getForMember(businessId, userId);
-    return this.repo.getScan(businessId, scanId);
+    return this.scanView(businessId, scanId);
+  }
+
+  /** The business's stock-takes and quick scans, newest first, with status and line counts. */
+  async history(businessId: string, userId: string, limit: number): Promise<HistoryEntry[]> {
+    await this.businesses.getForMember(businessId, userId);
+    await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS)).catch(() => 0);
+    const { runs, quick, reruns, counts } = await this.repo.history(businessId, limit);
+    const byScan = new Map(counts.map((c) => [c.scanId, c]));
+    const tally = (scanId: string | null) => {
+      const c = scanId ? byScan.get(scanId) : undefined;
+      return {
+        lines: scanId ? (c?.lines ?? 0) : null,
+        decided: { add: c?.add ?? 0, restock: c?.restock ?? 0, restore: c?.restore ?? 0, skip: c?.skip ?? 0 },
+        preview: previewNames(c?.names),
+      };
+    };
+    const scanStatus = (s: string | null): HistoryEntry["status"] =>
+      s === "confirmed" || s === "discarded" || s === "superseded" ? s : "review";
+    const fromRun = (r: (typeof runs)[number]): HistoryEntry => ({
+      id: r.runId,
+      kind: "stocktake",
+      runId: r.runId,
+      scanId: r.scanId,
+      status: r.runStatus === "running" ? "running" : r.runStatus === "failed" || !r.scanId ? "failed" : scanStatus(r.scanStatus),
+      rerunOf: r.rerunOf ?? null,
+      fallback: r.runStatus === "fallback",
+      startedAt: r.startedAt,
+      confirmedAt: r.confirmedAt,
+      error: r.runStatus === "failed" ? r.error : null,
+      ...tally(r.scanId),
+    });
+    const byRoot = new Map<string, HistoryEntry[]>();
+    for (const r of reruns) byRoot.set(r.rerunOf!, [...(byRoot.get(r.rerunOf!) ?? []), fromRun(r)]);
+    const withReruns = (e: HistoryEntry): HistoryEntry => ({ ...e, reruns: (e.scanId && byRoot.get(e.scanId)) || [] });
+    const entries: HistoryEntry[] = [
+      ...runs.map((r) => withReruns(fromRun(r))),
+      ...quick.map((q) =>
+        withReruns({
+          id: q.scanId,
+          kind: "quick",
+          runId: null,
+          scanId: q.scanId,
+          status: scanStatus(q.scanStatus),
+          rerunOf: null,
+          fallback: false,
+          startedAt: q.startedAt,
+          confirmedAt: q.confirmedAt,
+          error: null,
+          ...tally(q.scanId),
+        }),
+      ),
+    ];
+    // Threads: a group sorts by its newest run, so a fresh rerun brings it to the top.
+    const activity = (e: HistoryEntry) => Math.max(e.startedAt.getTime(), ...(e.reruns ?? []).map((x) => x.startedAt.getTime()));
+    return entries.sort((a, b) => activity(b) - activity(a)).slice(0, limit);
+  }
+
+  /** Product details by Qore ID for reopened scans; catalogue data only, so shared across businesses. */
+  private readonly productDetails = new TtlCache<CandidateDetails | null>(DETAIL_TTL_MS);
+
+  private async scanView(businessId: string, scanId: string, fresh?: Detection[]): Promise<ScanView> {
+    const [scan, group] = await Promise.all([this.repo.getScan(businessId, scanId), this.repo.group(businessId, scanId)]);
+    // On a failed check, hide Rerun rather than offer one that will be refused.
+    const settled = this.repo.groupSettled(group.scanIds).catch(() => true);
+    const qids = [...new Set(scan.detections.flatMap((d) => d.candidates.map((c) => c.qid)))];
+    const itemIds = [...new Set(scan.detections.flatMap((d) => [d.inventoryItemId, d.itemId].filter((id): id is string => Boolean(id))))];
+    const [items, details] = await Promise.all([this.repo.scanItems(businessId, itemIds, qids), this.candidateDetails(qids, fresh)]);
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const activeByQid = new Map(items.filter((i) => i.coreQid && !i.archived).map((i) => [i.coreQid!, i.id]));
+    const [cropUrls, photoUrl] = this.media.enabled
+      ? await Promise.all([
+          Promise.all(scan.detections.map((d) => this.media.presignedGetUrl(cropKey(scanId, d.position), CROP_URL_SECONDS).catch(() => null))),
+          // Scans from before photos were kept have none.
+          this.media
+            .exists(shelfPhotoKey(scanId))
+            .then((found) => (found ? this.media.presignedGetUrl(shelfPhotoKey(scanId), CROP_URL_SECONDS) : null))
+            .catch(() => null),
+        ])
+      : [scan.detections.map(() => null), null];
+
+    return {
+      scanId: scan.id,
+      status: scan.status as ScanView["status"],
+      createdAt: scan.createdAt,
+      confirmedAt: scan.confirmedAt,
+      discardedAt: scan.discardedAt,
+      supersededAt: scan.supersededAt,
+      rerunOf: group.root === scan.id ? null : group.root,
+      canRerun: photoUrl !== null && !(await settled),
+      model: scan.readModel,
+      countModel: scan.countModel,
+      catalogueAvailable: scan.catalogueAvailable,
+      candidateDetails: qids.every((q) => details.has(q)),
+      photoUrl,
+      detections: scan.detections.map((d, i) => {
+        const candidates: ScanCandidate[] = d.candidates.map((c) => {
+          const p = details.get(c.qid);
+          return {
+            qid: c.qid,
+            score: c.score,
+            ...(c.match && { match: c.match }),
+            ...p,
+            inventoryItemId: activeByQid.get(c.qid) ?? null,
+          };
+        });
+        const item = d.inventoryItemId ? byId.get(d.inventoryItemId) : undefined;
+        const matched = d.inventoryItemId ? candidates.find((c) => c.inventoryItemId === d.inventoryItemId) : undefined;
+        return {
+          id: d.id,
+          position: d.position,
+          brand: d.brand,
+          name: d.name,
+          pack: d.pack,
+          look: d.look,
+          count: d.count,
+          countSource: d.countSource as Detection["countSource"],
+          sparkCount: d.sparkCount,
+          samCount: d.samCount,
+          boxes: d.boxes,
+          confidence: d.confidence as Detection["confidence"],
+          candidates,
+          inventoryItemId: d.inventoryItemId,
+          inventoryMatch: d.inventoryMatch as InventoryMatch | null,
+          inventoryItemArchived: item?.archived ?? false,
+          inventoryItemName: item?.name ?? null,
+          // As at scan time: a remembered reading is sure, a name match asks, a catalogue match is sure only when strong.
+          inventoryNeedsConfirm: d.inventoryMatch === "name" || (d.inventoryMatch === "catalogue" && matched?.match !== "strong"),
+          review: d.review,
+          evidence: d.evidence,
+          cropUrl: cropUrls[i] ?? null,
+          decision: d.action
+            ? {
+                action: d.action as NonNullable<ScanView["detections"][number]["decision"]>["action"],
+                itemId: d.itemId,
+                itemName: d.itemId ? (byId.get(d.itemId)?.name ?? null) : null,
+                quantity: d.quantity,
+                confirmedQid: d.confirmedQid,
+                decidedAt: d.decidedAt!,
+              }
+            : null,
+        };
+      }),
+    };
   }
 
   /**
-   * Apply the merchant's decisions (restock / restore / add / skip), then send
-   * every decided line to Qore Catalog as photo feedback. Stock changes commit
-   * first; feedback is best-effort and anything unsent goes out on the next
-   * confirm of this scan.
+   * Catalogue details for stored Qore IDs: the fresh agent result first, then Qore Catalog (cached, a few at a
+   * time, a merged product followed once). Best-effort: a failed lookup is left out.
+   */
+  private async candidateDetails(qids: string[], fresh?: Detection[]): Promise<Map<string, CandidateDetails>> {
+    const out = new Map<string, CandidateDetails>();
+    for (const { name, brand, variantLabel, size, packQty, price, image, qid } of fresh?.flatMap((d) => d.candidates) ?? []) {
+      out.set(qid, { name, brand, variantLabel, size, packQty, price, image });
+    }
+    const missing = qids.filter((q) => !out.has(q));
+    for (let i = 0; i < missing.length; i += DETAIL_CONCURRENCY) {
+      await Promise.all(
+        missing.slice(i, i + DETAIL_CONCURRENCY).map(async (qid) => {
+          const p = await this.product(qid);
+          if (p) out.set(qid, p);
+        }),
+      );
+    }
+    return out;
+  }
+
+  private async product(qid: string): Promise<CandidateDetails | null> {
+    const cached = this.productDetails.get(qid);
+    if (cached !== undefined) return cached;
+    try {
+      let p = await this.catalog.client.getProduct(qid);
+      if ("mergedInto" in p) p = await this.catalog.client.getProduct(p.mergedInto);
+      const details: CandidateDetails | null =
+        "mergedInto" in p
+          ? null
+          : {
+              name: p.name,
+              brand: p.brand?.name ?? null,
+              variantLabel: p.variantLabel,
+              size: p.size,
+              packQty: p.packQty,
+              price: p.price ? { median: p.price.median, min: p.price.min, max: p.price.max } : null,
+              image: p.image ?? null,
+            };
+      this.productDetails.set(qid, details);
+      return details;
+    } catch (err) {
+      // Not cached: the next reopen tries again.
+      this.logger.warn(`Catalogue product lookup failed (${(err as { status?: number }).status ?? (err as Error).name})`);
+      return null;
+    }
+  }
+
+  /**
+   * Applies the merchant's decisions, then sends decided lines to Qore Catalog as feedback. Stock commits first;
+   * feedback is best-effort and anything unsent goes out on the next confirm of this scan.
    */
   async confirm(businessId: string, userId: string, scanId: string, decisions: ConfirmDecision[]): Promise<ConfirmResponse> {
     const business = await this.businesses.getForMember(businessId, userId);
     const { pendingFeedback, ...result } = await this.repo.confirm(businessId, scanId, userId, decisions);
 
     let feedback: ConfirmResponse["feedback"] = { sent: 0, recorded: 0, duplicates: 0 };
-    let images: ConfirmResponse["images"] = { uploaded: 0, skipped: 0, failed: 0 };
+    let images: ConfirmResponse["images"] = NO_IMAGES();
     if (pendingFeedback.length > 0) {
       feedback = await this.businesses.sendFeedback(pendingFeedback.map((d) => feedbackFor(d, businessId, business.subtypeCode)));
       if (!("error" in feedback)) {
@@ -438,20 +838,29 @@ export class VisionService implements OnApplicationBootstrap {
   }
 
   /**
-   * Send each confirmed line's crop to Qore Catalog as an on_shelf picture of
-   * its Qore ID, linked to the line's feedback (same clientRef). Lines without
-   * a Qore ID (new_item, skip) send nothing. Stored by sha256 there, so a
-   * resend is harmless.
+   * Sends each confirmed line's crop to Qore Catalog as an on_shelf picture, linked by clientRef. Lines without a
+   * Qore ID or under the 160 px minimum send nothing; stored by sha256, so resends are harmless.
    */
   private async uploadCrops(lines: ConfirmResult["pendingFeedback"]): Promise<ConfirmResponse["images"]> {
-    const images = { uploaded: 0, skipped: 0, failed: 0 };
+    const images = NO_IMAGES();
+    const skip = (line: (typeof lines)[number], why: keyof ConfirmResponse["images"]["skippedBy"], detail: string) => {
+      images.skipped++;
+      images.skippedBy[why]++;
+      this.logger.log(`Crop ${feedbackRef(line.scanId, line.position)} not sent: ${detail}`);
+    };
     await Promise.all(
       lines.map(async (line) => {
         const qid = line.outcome === "accepted" || line.outcome === "corrected" ? line.confirmedQid : null;
-        const crop = qid && this.media.enabled ? await this.media.get(cropKey(line.scanId, line.position)).catch(() => null) : null;
-        if (!qid || !crop) {
-          images.skipped++;
-          return;
+        if (!qid) return skip(line, "noProduct", `no catalogue product (${line.outcome})`);
+        if (!this.media.enabled) return skip(line, "noCrop", "R2 is not configured");
+        const crop = await this.media.get(cropKey(line.scanId, line.position)).catch((err: unknown) => {
+          this.logger.warn(`Crop ${feedbackRef(line.scanId, line.position)} could not be read from R2: ${(err as Error).message}`);
+          return null;
+        });
+        if (!crop) return skip(line, "noCrop", "no stored crop (box too small to store, or the scan predates R2)");
+        const size = await cropSize(crop);
+        if (Math.min(size.width, size.height) < MIN_CROP_SIDE) {
+          return skip(line, "tooSmall", `crop ${size.width}×${size.height} is under Qore Catalog's ${MIN_CROP_SIDE} px minimum`);
         }
         try {
           await this.catalog.client.uploadImage({
@@ -464,9 +873,14 @@ export class VisionService implements OnApplicationBootstrap {
           images.uploaded++;
         } catch (err) {
           images.failed++;
-          this.logger.warn(`Crop not sent to Qore Catalog (${(err as { status?: number }).status ?? (err as Error).name})`);
+          // CatalogError's message carries the status and Qore Catalog's reason, with the key redacted.
+          this.logger.warn(`Crop ${feedbackRef(line.scanId, line.position)} rejected by Qore Catalog: ${(err as Error).message}`);
         }
       }),
+    );
+    this.logger.log(
+      `Crops to Qore Catalog: ${images.uploaded} uploaded, ${images.failed} failed, ${images.skipped} skipped ` +
+        `(${images.skippedBy.noProduct} no product, ${images.skippedBy.noCrop} no crop, ${images.skippedBy.tooSmall} too small)`,
     );
     return images;
   }
@@ -508,4 +922,14 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ value: T; ms: number }>
   const t0 = Date.now();
   const value = await fn();
   return { value, ms: Date.now() - t0 };
+}
+
+/** Resolve or reject with the promise, or reject with `message` after `ms`. The timer never keeps the process alive. */
+export function withDeadline<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }

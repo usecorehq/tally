@@ -1,14 +1,14 @@
 /**
- * One tight product crop per detection, cut from the shelf photo while it is
- * still in memory: the product only, never the whole shelf or the people in
- * it. Crops train recognition and, once a curator approves one, can become the
- * product's picture in Qore Catalog (POST /v1/images).
+ * One tight crop per detection, cut while the photo is in memory: the product only, never the shelf or people.
+ * Crops train recognition and can become the product's Qore Catalog picture once a curator approves one.
  */
 import sharp from "sharp";
 import type { Box } from "./shelf-reader";
 
-/** Qore Catalog rejects pictures whose short side is under 160 px. */
+/** Qore Catalog rejects pictures whose short side is under 160 px: smaller crops stay in R2 only. */
 export const MIN_CROP_SIDE = 160;
+/** Smallest crop worth keeping in R2 for Tally's own dataset; below this it is noise. */
+export const MIN_STORED_CROP_SIDE = 48;
 const MAX_CROP_SIDE = 640;
 /** Margin around the box, as a share of its size, so the label edge isn't cut off. */
 const PAD = 0.06;
@@ -36,11 +36,7 @@ export function pixelRegion(box: Box, width: number, height: number): { left: nu
   return { left: x1, top: y1, width: Math.max(0, x2 - x1), height: Math.max(0, y2 - y1) };
 }
 
-/**
- * WebP crops for each box (null where none is worth keeping: no box, or a
- * short side under MIN_CROP_SIDE). Decodes the photo once; honours EXIF
- * orientation; output carries no metadata.
- */
+/** WebP crops per box (null when there's no box or its short side is under minSide); EXIF-oriented, no metadata. */
 export async function makeCrops(
   image: Buffer,
   boxes: (Box | null)[],
@@ -62,4 +58,32 @@ export async function makeCrops(
         .toBuffer();
     }),
   );
+}
+
+/** A stored crop's size; 0×0 when it can't be read. */
+export async function cropSize(crop: Uint8Array): Promise<{ width: number; height: number }> {
+  const { width, height } = await sharp(crop)
+    .metadata()
+    .catch(() => ({ width: 0, height: 0 }));
+  return { width: width ?? 0, height: height ?? 0 };
+}
+
+/** True when a stored crop is big enough for Qore Catalog (short side >= MIN_CROP_SIDE). */
+export async function catalogueSized(crop: Uint8Array): Promise<boolean> {
+  const { width, height } = await cropSize(crop);
+  return Math.min(width, height) >= MIN_CROP_SIDE;
+}
+
+/** R2 key for a scan's shelf photo, kept for good as the stock-take's audit record. */
+export const shelfPhotoKey = (scanId: string) => `tally/scans/${scanId}.jpg`;
+
+const MAX_PHOTO_SIDE = 2560;
+
+/** The stored copy of a shelf photo: upright, at most 2560 px, JPEG, with no metadata (EXIF and GPS dropped). */
+export async function storablePhoto(image: Buffer): Promise<Buffer> {
+  return sharp(image)
+    .rotate()
+    .resize({ width: MAX_PHOTO_SIDE, height: MAX_PHOTO_SIDE, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 85 })
+    .toBuffer();
 }

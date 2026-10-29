@@ -1,7 +1,6 @@
 %%{init: {"theme": "neutral"} }%%
 flowchart TB
     merchant["<b>Merchant</b><br/><i>[Person]</i>"]
-    operator["<b>Q Vision operator</b><br/><i>[Person]</i>"]
 
     supabase["<b>Qorelly Supabase Auth</b><br/><i>[External System]</i><br/>auth.users shared with Qorelly"]
     catalog["<b>Qore Catalog API</b><br/><i>[External System]</i><br/>/v1/*, x-api-key"]
@@ -10,24 +9,19 @@ flowchart TB
 
     subgraph tally[" Tally "]
         direction TB
-        mp["<b>Merchant portal</b><br/><i>[Container: Next.js 16, apps/mp]</i><br/>Signup, onboarding, POS, inventory.<br/>NextAuth v5 session."]
-        console["<b>Console</b><br/><i>[Container: Next.js 16, apps/console]</i><br/>Q Vision image uploads + training runs.<br/>NextAuth v5 session."]
-        mobile["<b>Mobile app</b><br/><i>[Container: Flutter, apps/mobile]</i><br/>qore_tally — inventory + sales.<br/>supabase_flutter session."]
+        mp["<b>Merchant portal</b><br/><i>[Container: Next.js 16, apps/mp]</i><br/>Signup, onboarding, stock-take, inventory.<br/>NextAuth v5 session."]
+        mobile["<b>Mobile app</b><br/><i>[Container: Flutter, apps/mobile]</i><br/>qore_tally: stock-taking + inventory.<br/>supabase_flutter session."]
         api["<b>API</b><br/><i>[Container: NestJS 11, apps/api]</i><br/>REST JSON under /api. Global<br/>SupabaseJwtGuard; Swagger at /docs."]
-        train["<b>Train service</b><br/><i>[Container: FastAPI, services/train]</i><br/>Distillation / training jobs."]
         db[("<b>Postgres</b><br/><i>[Container: tally schema]</i><br/>Shared Supabase DB, Drizzle ORM.<br/>Ledger: tally.__drizzle_migrations")]
     end
 
     merchant -- "Uses [HTTPS]" --> mp
     merchant -- "Uses [HTTPS]" --> mobile
-    operator -- "Uses [HTTPS]" --> console
 
     mp -- "Email + password sign-in<br/>(NextAuth Credentials)" --> supabase
-    console -- "Email + password sign-in<br/>(NextAuth Credentials)" --> supabase
     mobile -- "Email + password sign-in" --> supabase
 
     mp -- "REST [Bearer Supabase JWT]" --> api
-    console -- "REST [Bearer Supabase JWT]" --> api
     mobile -- "REST [Bearer Supabase JWT, Dio]" --> api
 
     api -- "Verifies JWT<br/>[HS256 secret or JWKS]" --> supabase
@@ -35,14 +29,13 @@ flowchart TB
     api -- "Product lookups, feedback, crops<br/>[HTTPS, x-api-key]" --> catalog
     api -- "Read labels, count units<br/>[HTTPS, Bearer, /v1/responses]" --> meta
     api -- "Store / read crops under tally/<br/>[S3 API, SigV4]" --> r2
-    train -- "Product data [HTTPS, x-api-key]" --> catalog
 
     classDef person fill:#08427b,stroke:#052e56,color:#fff
     classDef container fill:#1168bd,stroke:#0b4884,color:#fff
     classDef external fill:#999999,stroke:#6b6b6b,color:#fff
     classDef planned fill:#ffffff,stroke:#1168bd,color:#1168bd,stroke-dasharray: 5 3
     classDef boundary fill:#ffffff,stroke:#999999,color:#333,stroke-dasharray: 4 3
-    class merchant,operator person
-    class mp,console,mobile,api,train,db container
+    class merchant person
+    class mp,mobile,api,db container
     class supabase,catalog,meta,r2 external
     class tally boundary

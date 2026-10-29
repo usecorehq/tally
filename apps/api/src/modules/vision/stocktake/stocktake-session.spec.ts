@@ -67,6 +67,8 @@ describe("StocktakeSession", () => {
       { type: "input_image", image_url: "data:image/webp;base64,AAAA" },
     ]);
     expect(deps.zoom).toHaveBeenCalledWith(box(100));
+    // The trace names the product, never box coordinates.
+    expect(r.summary).toBe('read the label of "Garri" up close');
     for (let i = 1; i < STOCKTAKE_LIMITS.maxZooms; i++) await s.execute("zoom", '{"line":1}', 1);
     expect((await s.execute("zoom", '{"line":1}', 2)).summary).toBe("zoom refused: budget");
   });
@@ -109,6 +111,20 @@ describe("StocktakeSession", () => {
     expect(s.detections()[0]).toMatchObject({ count: 4, countSource: "sam" });
   });
 
+  it("a low SAM count from the first pass is flagged and the zoom goes to Spark's boxes", async () => {
+    const products = [product({ brand: "Golden", name: "Syrup", count: 3, boxes: [box(10), box(20), box(30)] })];
+    const deps: StocktakeDeps = {
+      searchCatalogue: jest.fn(async () => []),
+      countUnits: jest.fn(async () => []),
+      zoom: jest.fn(async () => "data:image/webp;base64,AAAA"),
+    };
+    const s = new StocktakeSession(products, [match("0", [])], new Map([[0, [box(500)]]]), indexInventory([], []), deps);
+    expect(s.checklist()).toContain("[CHECK]");
+    expect(s.detections()[0]).toMatchObject({ count: 3, countSource: "spark", review: expect.stringContaining("Counts disagree: read 3, SAM found 1") });
+    await s.execute("zoom", '{"line":0}', 1);
+    expect(deps.zoom).toHaveBeenCalledWith(box(10));
+  });
+
   it("use_counted without a count is refused", async () => {
     const { s } = session();
     expect((await s.execute("record_line", '{"line":0,"brand":"Closeup","name":"Toothpaste","pack":"","use_counted":true}', 1)).summary).toBe(
@@ -138,6 +154,8 @@ describe("StocktakeSession", () => {
     await s.execute("zoom", '{"line":1}', 1);
     const r = await s.execute("record_line", '{"line":1,"brand":"","name":"Garri","pack":"","unresolved_reason":"label hidden"}', 1);
     expect(r.summary).toBe("recorded unresolved: label hidden");
+    // The merchant sees why, and the line sorts to the top for review.
+    expect(s.detections()[1]!.review).toBe("Agent couldn't confirm: label hidden");
   });
 
   it("rejects bad input without throwing", async () => {
@@ -200,6 +218,17 @@ describe("StocktakeSession", () => {
       await s2.execute("zoom", '{"line":1}', 1);
       await s2.execute("search_catalogue", '{"line":1,"name":"toothpaste"}', 1);
       expect((await s2.execute("record_line", '{"line":1,"brand":"closeup","name":"Toothpaste","pack":"","qid":"QC-UUUU-UUUU-U"}', 2)).output).toBe("Recorded.");
+    });
+
+    it("a matched product must be the flavour that was read (orange is not peach)", async () => {
+      const peach = candidate("QC-JJJJ-JJJJ-J", { name: "Stute No Sugar Added Peach Jam 430g", brand: { slug: "stute", name: "Stute" } });
+      const { s } = session({ searchCatalogue: jest.fn(async () => [peach]) });
+      await s.execute("zoom", '{"line":1}', 1);
+      await s.execute("search_catalogue", '{"line":1,"name":"jam"}', 1);
+      const r = await s.execute("record_line", '{"line":1,"brand":"Stute","name":"No Sugar Added Thick Cut Orange","pack":"","qid":"QC-JJJJ-JJJJ-J"}', 2);
+      expect(r.output).toBe("Refused: QC-JJJJ-JJJJ-J is peach but the label says orange. Pick the matching flavour or leave qid empty.");
+      // No flavour on the label, or the same one: no objection.
+      expect((await s.execute("record_line", '{"line":1,"brand":"Stute","name":"Peach Jam","pack":"","qid":"QC-JJJJ-JJJJ-J"}', 3)).output).toBe("Recorded.");
     });
 
     it("a matched product must be the size that was read (Peak 900g is not Peak 400g)", async () => {

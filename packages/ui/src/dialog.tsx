@@ -7,10 +7,8 @@ import { cn } from "./lib/cn";
 import { CloseButton } from "./v2-kit";
 
 /*
- * V2 dialog (design.qorelly.com Modals): a tray — title and buttons on the
- * grey, content on one white sheet — 24px corners, a 40% overlay with a slight
- * blur, the close a bare × on a grey disc. Only floating things cast a real
- * shadow.
+ * V2 dialog: a tray (title and buttons on grey, content on one white sheet), 24px corners,
+ * a 40% blurred overlay and a bare × on a grey disc.
  */
 
 export const Dialog = DialogPrimitive.Root;

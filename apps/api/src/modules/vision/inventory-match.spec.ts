@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { indexInventory, matchInventory, readingKey } from "./inventory-match";
+import { indexInventory, matchInventory, readingKey, rememberable } from "./inventory-match";
 
 const items = [
   { id: "peak-400", name: "Peak Full Cream Milk Powder 400 g", variantLabel: null, coreQid: "QC-AAAA-AAAA-A" },
@@ -25,11 +25,23 @@ describe("readingKey", () => {
   });
 });
 
+describe("rememberable", () => {
+  it("needs a legible brand", () => {
+    expect(rememberable(reading("Lady B", "Custard Powder", "2kg"))).toBe(true);
+    expect(rememberable(reading(" - ", "Cooking Oil", ""))).toBe(false);
+  });
+});
+
 describe("matchInventory", () => {
   const index = indexInventory(items, [{ itemId: "ladyb", readingKey: "lady b|custard powder|2kg" }], archived);
 
   it("a remembered reading wins, even for a product the catalogue doesn't know", () => {
     expect(matchInventory(reading("Lady B", "Custard Powder", "2kg"), [], index)).toEqual({ itemId: "ladyb", match: "reading", archived: false, sure: true });
+  });
+
+  it("ignores a remembered reading without a brand: 'cooking oil' could be any oil", () => {
+    const vague = indexInventory(items, [{ itemId: "ladyb", readingKey: "|cooking oil|" }], archived);
+    expect(matchInventory(reading("", "Cooking Oil", ""), [], vague)).toBeNull();
   });
 
   it("then any plausible candidate's Qore ID on an active item, best candidate first", () => {

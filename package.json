@@ -8,7 +8,6 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "dev:console": "turbo run dev --filter=@tally/console",
     "dev:mp": "turbo run dev --filter=@tally/mp",
     "db:migrate": "pnpm --filter @tally/db db:migrate",
     "db:generate": "pnpm --filter @tally/db db:generate",

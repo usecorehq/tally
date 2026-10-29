@@ -23,19 +23,19 @@ Photo-to-inventory builds on these; it does not replace them.
 | Area | Built | Doc |
 | --- | --- | --- |
 | Businesses | `tally.businesses` + `business_members` (owner/staff). A merchant is a business; the caller's membership scopes every route. | [onboarding.md](architecture/onboarding.md) |
-| Inventory | `tally.inventory_items` — `core_qid` (Qore ID, nullable), `price` (selling price, required), `quantity_on_hand` (trigger-maintained, never written directly), `reorder_point`, `source in ('template','photo','manual')` | [database.md](architecture/database.md) |
-| Stock | `tally.stock_movements` — append-only, `type in ('opening','restock','sale','adjustment','void')`, idempotent by `client_movement_id` | [database.md](architecture/database.md) |
+| Inventory | `tally.inventory_items` — `core_qid` (Qore ID, nullable), `price` (required), `quantity_on_hand` (trigger-maintained, never written directly), `reorder_point`, `source in ('template','photo','manual')` | [database.md](architecture/database.md) |
+| Stock | `tally.stock_movements` — append-only, `type in ('opening','restock','adjustment')` (`sale`/`void` exist in the schema, unused), idempotent by `client_movement_id` | [database.md](architecture/database.md) |
 | Onboarding API | Starter inventory from Qore Catalog templates, with catalogue feedback per decision (best-effort, retry-safe by `clientRef`) | [onboarding.md](architecture/onboarding.md) |
 | Catalog API | `GET /api/catalog/verticals`, `…/subtypes/:code/templates`, `…/products`, `…/products/:qid` — the key stays in `apps/api` | [catalog.md](architecture/catalog.md) |
 | Barcode scan | API lookup/link + mobile scanner with on-device inventory cache | [barcode-scan.md](architecture/barcode-scan.md) |
 | Mobile | Flavors `dev`/`staging`/`prod`, auth, business picker, barcode scanner; Design 1.5 kit, three-tab shell, Inventory tab (this branch) | [mobile.md](architecture/mobile.md) |
-| Vision design | Shelf scan + point to sell on Muse Spark 1.3 and SAM 3.1 — *planned* | [vision-recognition.md](architecture/vision-recognition.md) |
+| Vision design | Shelf scan + identify one product on Muse Spark 1.3 and SAM 3.1 — *planned* | [vision-recognition.md](architecture/vision-recognition.md) |
 
 ## 1. Problem
 
 Nigerian SME merchants (provision stores, supermarkets, pharmacies, mini-marts) count stock by hand.
 A stock take of a single shelf means reading every label, tallying on paper, then typing it into a
-spreadsheet or POS. It is slow, so it happens rarely, so stock-on-hand drifts from reality, so
+spreadsheet. It is slow, so it happens rarely, so stock-on-hand drifts from reality, so
 merchants run out of fast movers and over-order slow ones.
 
 Barcode scanning helps but still means touching every unit, and a large share of local stock
@@ -55,7 +55,8 @@ Barcode scanning helps but still means touching every unit, and a large share of
 
 Two more ways the models earn their place:
 
-- **Point to sell** — at the till, point the camera at one item. Barcode first; if there is none,
+- **Identify one product** — point the camera at one item to find it in the merchant's stock, e.g.
+  to check or count it. Barcode first; if there is none,
   Muse Spark picks the item from the merchant's own inventory. Always a suggestion the merchant taps.
 - **Ask your stock** — plain-language questions (*"which drinks are below 10?"*) answered by Muse
   from the merchant's inventory (§6.3, an addition to the vision design).
@@ -77,7 +78,7 @@ them as much as possible (§6).
 - G5. A simple landing page explaining the product with a call to action.
 
 ### Non-goals (MVP)
-- Sales / POS, orders, invoices, payments, revenue reporting. (Nothing in this PRD reads or writes money.)
+- Orders, invoices, payments, revenue reporting. (Nothing in this PRD reads or writes money.)
 - Purchase orders, suppliers, multi-location transfers.
 - Offline scanning (photos need the network to reach Muse).
 - On-device inference. (Q Vision distillation is a later phase — §6.)
@@ -114,7 +115,7 @@ Summary only — the design, prompts order and API are in
 | Read the shelf | Muse Spark `muse-spark-1.3` | One call per photo; structured JSON `{brand, name, pack, count, box}`, box on a 0–1000 grid |
 | Count + outline | SAM 3.1 `sam-3.1` | One concept prompt per product, in parallel; boxes drive the confirm overlay |
 | Match | Qore Catalog `POST /v1/match` | All products in one call; top 3 candidates each; same Qore ID already stocked → restock |
-| Point to sell | Muse Spark, minimal reasoning | Closed set: the merchant's inventory leads the prompt (prompt cache); after barcode, before an on-device model |
+| Identify one product | Muse Spark, minimal reasoning | Closed set: the merchant's inventory leads the prompt (prompt cache); after barcode, before an on-device model |
 | Ask your stock | Muse Spark, tool calling | §6.3 — not yet in the vision design |
 | Later: on-device | Q Vision student | Distilled from Muse labels + merchant confirmations ([qvision-distillation.md](architecture/qvision-distillation.md)) |
 
@@ -127,10 +128,10 @@ Standard mode, so merchants' photos are not used to train Meta's models.
 - `GET /v1/feedback/stats` gives our match rate — a live demo metric (§10).
 - Feedback from access-code keys does not create catalogue search aliases; fine for the hackathon.
 
-### 6.2 Point to sell (latency tiers)
+### 6.2 Identify one product (latency tiers)
 Barcode from the cached inventory (< 100 ms, built) → `identify` with one 640 px frame once the frame
 is steady and no barcode has been read for ~600 ms → on-device model (planned). A recognised item is
-never added to a sale without the merchant's tap. Selling itself (POS) is out of scope here.
+never acted on without the merchant's tap.
 
 ### 6.3 Ask your stock (addition — to be added to the vision design before it is built)
 - Muse gets read-only tools over the merchant's own inventory: `list_inventory(filter)`,
@@ -158,11 +159,11 @@ e.g. `QC-XXXX-XXXX-X`). Tally stores the `qid`, not a copy of the product record
 - Auth: `x-api-key` header, **server-only** (already the pattern in `packages/catalog-client`).
 - Hackathon key: `POST /v1/keys` with an access code (`{code, name, email}`) → key shown once,
   scopes + expiry from the code; `GET /v1/keys/me` checks it.
-- "Standard records for products sold in Nigeria … Prices are indicative shelf prices."
+- The catalogue holds standard records for products on Nigerian shelves; its prices are indicative shelf prices.
 
 | Endpoint | Use in Tally |
 | --- | --- |
-| `GET /v1/health` | Health check (already in `catalog-client` + `services/train`) |
+| `GET /v1/health` | Health check (already in `catalog-client`) |
 | `POST /v1/match` | Batch match Muse's detected items to ranked candidates (§6, Match) |
 | `GET /v1/products?q=&brand=&category=&offset=&limit=` | Match picker (S5) via the built `GET /api/catalog/products`. Typo-tolerant. |
 | `GET /v1/products/{qid}` | Item detail: product record, indicative price, **sibling pack sizes** (lets the review screen offer "70g → 120g" swaps) |
@@ -213,13 +214,13 @@ opens from the Inventory header (scan-to-find), separate from **Scan shelf** (ph
 | S1 | **Inventory (default)** | Page header "Inventory". Capture card: last scan thumbnail + "Scan shelf" primary button (or empty-state prompt on first run). Muse search field. Summary wells: items tracked, units on hand, low stock (counts only). Inventory list in tray/sheet rows: name, catalog image, count right-aligned tabular, low-stock pill. |
 | S2 | **Capture** | Camera view with framing hint, shutter, gallery pick, flash. Tips line ("step back so the whole shelf fits"). |
 | S3 | **Processing** | Photo with shimmer/skeleton list; staged copy: "Finding products… Counting… Matching to Qore Catalog…". Cancel. |
-| S4 | **Review** (confirm) | Photo with tappable SAM outlines. Rows: match image + name, count stepper, confidence pill (green/amber/red), "Not in catalog" state, "Restock · 18 in stock" for products the business already has. New items need a selling price (`inventory_items.price` is required): prefilled from the catalogue's indicative price, which the merchant confirms or edits. Footer: "Add 6 items · 142 units" primary. Retake action. |
+| S4 | **Review** (confirm) | Photo with tappable SAM outlines. Rows: match image + name, count stepper, confidence pill (green/amber/red), "Not in catalog" state, "Restock · 18 in stock" for products the business already has. New items need a price (`inventory_items.price` is required): prefilled from the catalogue's indicative price, which the merchant confirms or edits. Footer: "Add 6 items · 142 units" primary. Retake action. |
 | S5 | **Match picker** (sheet) | Catalog search field prefilled with the detected label, candidate rows, "Add as local item". |
 | S6 | **Ask your stock** | Muse one-line answer notice + matching item rows. Suggested prompts when empty. |
 | S7 | **Item detail** | Count figure, catalog info, last scans (thumbnails), movement history. Manual adjust. |
 | S8 | **Scans** | History of scans with status (draft / confirmed), date, item and unit totals. Open a draft to resume review. |
 | S9 | **Settings** | Account, business, sign out. |
-| S10 | **Point to sell** | Camera with barcode + identify; the suggested item as a sheet the merchant taps to confirm. Opens from the Inventory header (today: barcode only). |
+| S10 | **Identify one product** | Camera with barcode + identify; the suggested item as a sheet the merchant taps to confirm. Opens from the Inventory header (today: barcode only). |
 
 Every list/figure has skeleton, error+retry and empty states.
 
@@ -244,7 +245,7 @@ What this PRD adds on top:
 | Model + thresholds in DB | Org rule: feature config in DB columns, not env | e.g. a `vision_settings` row (model ids, reasoning effort, confidence thresholds); vision doc currently fixes model ids in code |
 
 Reused unchanged: `inventory_items` (`source = 'photo'`), `stock_movements` (`opening` for new,
-`restock` for stocked; idempotent by `client_movement_id`). New items need a selling price
+`restock` for stocked; idempotent by `client_movement_id`). New items need a price
 (`inventory_items.price` is required) — prefilled from the indicative catalogue price, which the
 merchant confirms. Nothing here feeds revenue reporting.
 
@@ -273,11 +274,11 @@ Config and secrets: `META_MODEL_API_KEY` (server-only, new); `QORE_CATALOG_API_K
 | Rows the user edits before confirming | ≤ 25% |
 | NL search: correct item set on test prompts | ≥ 90% |
 | Model time per scan stage | from `vision_scans` |
-| Point to sell (identify) p50 | measured; target set after Slice 1 |
+| Identify one product p50 | measured; target set after Slice 1 |
 | Catalog match rate | from `GET /v1/feedback/stats` for our key |
 
 Test set: 20–30 real shelf photos from Nigerian stores with hand-counted ground truth, committed
-under `services/train` or `docs/` fixtures (decide in Slice 0).
+under `docs/` fixtures (decide in Slice 0).
 
 ## 11. Delivery plan (one verifiable slice at a time)
 
@@ -292,7 +293,7 @@ Each slice starts with a read-only audit and stops on contradictions. Testing is
 | 4 | **Shelf-scan + confirm endpoints**, incl. feedback on confirm. | Scan → confirm → stock updated, via curl on staging |
 | 5 | **Mobile: design kit + tab shell + Inventory tab** — done on `feat/photo-to-inventory`. | Widget tests; device screenshots on staging |
 | 6 | **Mobile: capture → processing → confirm (S2–S5)** — built on `feat/photo-to-inventory`: agent and quick scan both offered (default still open); S5 lists the scan's plausible matches, whole-catalogue search not yet. | Screen recording of a real scan on staging |
-| 7 | **Point to sell**: `identify` endpoint + S10. | Latency measured on staging, screenshots |
+| 7 | **Identify one product**: `identify` endpoint + S10. | Latency measured on staging, screenshots |
 | 8 | **Ask your stock** (§6.3) + S6. | Test prompts pass, screenshots |
 | 9 | **Landing page** `apps/landing` (Vite). | Deployed preview + mobile/desktop screenshots |
 | 10 | **Demo polish**: scan history (S8), item detail (S7), demo script. | Dry run under 2 minutes |

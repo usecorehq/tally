@@ -1,17 +1,6 @@
 /**
- * Scoring for scripts/vision-benchmark.mjs: a scan's detections against a
- * hand-counted ground truth. Pure, no IO; not used by any route.
- *
- * Matching: each detection pairs with at most one truth product, best pairs
- * first (greedy), by token overlap (Dice) of normalised "brand name". A pair
- * needs similarity >= MIN_PAIR_SIMILARITY, and when both sides read a brand,
- * the brands must share a word ("Peak Full Cream" never pairs with "Three
- * Crowns Full Cream"). An extra detection of an already-paired product (the
- * reader split one product into two lines) counts against precision.
- *
- * Per pair: brand read right (normalised, spaces ignored), name read right
- * (same words in any order), Qore ID right / wrong / missing (only when the
- * truth has one), absolute count error, count within ±20%.
+ * Scores a scan's detections against hand-counted truth for scripts/vision-benchmark.mjs. Pure, no IO.
+ * Greedy one-to-one pairing by token overlap; when both sides read a brand, the brands must share a word.
  */
 
 export type TruthProduct = { brand: string; name: string; pack?: string; count: number; qid?: string | null };

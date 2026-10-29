@@ -1,0 +1,118 @@
+%%{init: {"theme": "neutral"} }%%
+erDiagram
+    %% Solid line = foreign key in Postgres. Dashed line = soft link (a value, no FK).
+    BUSINESSES ||--o{ VISION_SCANS : "scans shelves"
+    BUSINESSES ||--o{ VISION_AGENT_RUNS : "stock-takes"
+    BUSINESSES ||--o{ INVENTORY_ITEMS : stocks
+    VISION_SCANS ||--o{ VISION_DETECTIONS : "finds (cascade)"
+    VISION_AGENT_RUNS |o--o| VISION_SCANS : "result (scan_id, set when saved)"
+    VISION_AGENT_RUNS }o--o| VISION_SCANS : "rerun of (rerun_of_scan_id, the photo's first scan)"
+    VISION_AGENT_RUNS ||--o{ VISION_AGENT_STEPS : "trace (cascade)"
+    INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "looks like (inventory_item_id)"
+    INVENTORY_ITEMS |o--o{ VISION_DETECTIONS : "decided as (item_id)"
+    INVENTORY_ITEMS ||--o{ INVENTORY_ITEM_READINGS : "recognised by (cascade)"
+    INVENTORY_ITEMS ||--o{ STOCK_MOVEMENTS : "opening / restock on confirm"
+    VISION_DETECTIONS |o..o| STOCK_MOVEMENTS : "moved stock (by key)"
+    VISION_DETECTIONS }o..o| QORE_CATALOG_PRODUCT : "by Qore ID"
+    VISION_DETECTIONS |o..o| R2_CROP : "crop (by key)"
+
+    BUSINESSES {
+        uuid id PK
+    }
+    INVENTORY_ITEMS {
+        uuid id PK
+        uuid business_id FK
+        text core_qid "Qore ID, nullable"
+        text source "photo when added from a scan"
+        timestamptz archived_at "restore clears it"
+    }
+    VISION_SCANS {
+        uuid id PK
+        uuid business_id FK
+        text status "open | confirmed | discarded | superseded"
+        text image_sha256 "photo itself never stored"
+        int image_bytes
+        text read_model "muse-spark-1.3"
+        text count_model "sam-3.1"
+        bool catalogue_available
+        int read_ms
+        int sam_ms
+        int match_ms
+        uuid created_by
+        timestamptz confirmed_at "set when every line is decided"
+        timestamptz discarded_at "set when discarded"
+        timestamptz superseded_at "set when a sibling run moved stock"
+    }
+    VISION_DETECTIONS {
+        uuid id PK
+        uuid business_id FK
+        uuid scan_id FK
+        int position "unique per scan"
+        text brand "as read"
+        text name "as read"
+        text pack "as read"
+        text look
+        text confidence "high | medium | low"
+        int spark_count
+        int sam_count "nullable"
+        int count
+        text count_source "sam | spark"
+        jsonb boxes "0-1000 grid"
+        jsonb candidates "qid + score + match only"
+        uuid inventory_item_id FK "match at scan time"
+        text inventory_match "reading | catalogue | name"
+        text action "restock | restore | add | skip"
+        text outcome "accepted | corrected | new_item | removed"
+        text confirmed_qid
+        uuid item_id FK "item the decision touched"
+        int quantity
+        uuid decided_by
+        timestamptz decided_at
+        timestamptz feedback_sent_at
+        jsonb evidence "agent tool calls, null for quick scan"
+        text review "why to look closely, agent scans only"
+    }
+    INVENTORY_ITEM_READINGS {
+        uuid id PK
+        uuid business_id FK
+        uuid item_id FK
+        text reading_key "brand|name|pack, unique per business"
+    }
+    VISION_AGENT_RUNS {
+        uuid id PK
+        uuid business_id FK
+        uuid scan_id FK "nullable"
+        uuid rerun_of_scan_id FK "nullable, a rerun's group root"
+        text status "running | done | fallback | failed"
+        text model
+        int turns
+        int input_tokens
+        int output_tokens
+        text error "never a key or upstream body"
+        uuid started_by
+        timestamptz started_at
+        timestamptz finished_at "null only while running"
+    }
+    VISION_AGENT_STEPS {
+        uuid id PK
+        uuid business_id FK
+        uuid run_id FK
+        int turn
+        text kind "baseline | thought | tool"
+        text tool "set only for kind = tool"
+        jsonb args
+        text summary "never image data"
+        int ms
+    }
+    STOCK_MOVEMENTS {
+        uuid id PK
+        uuid item_id FK
+        text type "opening | restock"
+        text client_movement_id "vision:detection_id"
+    }
+    QORE_CATALOG_PRODUCT {
+        text qid "external: Qore Catalog API"
+    }
+    R2_CROP {
+        text key "external: Cloudflare R2"
+    }

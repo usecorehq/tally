@@ -8,25 +8,33 @@ export const MATCH_CANDIDATES = 3;
 export const MATCH_LIMIT = 10;
 
 /**
- * Without a legible brand, the name must match on meaning: /v1/match's text
- * signal (trigram + embedding similarity since semantic search). On 92
- * unbranded reads (Oct 2026), text >= 0.50 kept 58 of 61 right-type matches
- * and 1 of 31 wrong ones ("RED" → a red wine, 0.51); 0.52 kept 52 right, 0.48
- * let "Palm oil" → a body oil through. Text, not score: an agreeing size
- * inflates the score of an unbranded match. Unbranded matches are only ever
- * suggestions the merchant confirms (see inventory-match.ts).
+ * Unbranded reads must match on meaning via /v1/match's text signal (not score, which an agreeing size inflates).
+ * 0.50 was the measured cut-off between right- and wrong-type matches; these stay suggestions the merchant confirms.
  */
 export const MIN_UNBRANDED_TEXT = 0.5;
 
 /**
- * Drop catalogue candidates the merchant shouldn't be offered. /v1/match always
- * returns its nearest products, so a brand the catalogue lacks comes back as
- * another brand's lookalike (live: "Lady B Custard Powder" → a laundry detergent).
- *   brand read     → keep only candidates whose brand matched (signals.brand = 1)
- *   brand not read → keep only candidates with signals.text ≥ MIN_UNBRANDED_TEXT
+ * Drops the lookalikes /v1/match returns when the catalogue lacks a brand: a read brand must match
+ * (signals.brand = 1), otherwise signals.text must reach MIN_UNBRANDED_TEXT.
  */
 export function plausible(product: Pick<ShelfProduct, "brand">, candidate: MatchCandidate): boolean {
   return product.brand ? candidate.signals.brand === 1 : candidate.signals.text >= MIN_UNBRANDED_TEXT;
+}
+
+/**
+ * Candidate fit: strong = brand and size agree; medium = brand agrees, or no brand read but the name matches well;
+ * low = barely plausible. Clients pre-fill strong and medium only; a low top candidate defaults to "new item".
+ */
+export type MatchStrength = "strong" | "medium" | "low";
+
+/** No brand read: the name must match at least this well (signals.text) to count as medium. */
+export const MEDIUM_UNBRANDED_TEXT = 0.7;
+
+export function matchStrength(signals: MatchCandidate["signals"]): MatchStrength {
+  if (signals.brand === 1 && signals.size === 1) return "strong";
+  if (signals.brand === 1) return "medium";
+  // brand 0.5 = the label gave no brand; 0 = a different brand (never plausible, but be safe).
+  return signals.brand === 0.5 && signals.text >= MEDIUM_UNBRANDED_TEXT ? "medium" : "low";
 }
 
 export type DetectionCandidate = {
@@ -41,6 +49,9 @@ export type DetectionCandidate = {
   price: { median: number; min: number; max: number } | null;
   /** This business's active item for this product, when it already stocks it. */
   inventoryItemId: string | null;
+  match: MatchStrength;
+  /** The catalogue's approved picture; null until a curator approves one (show the crop or a placeholder). */
+  image: { url: string; width: number | null; height: number | null } | null;
 };
 
 export type Detection = {
@@ -50,7 +61,7 @@ export type Detection = {
   pack: string;
   /** The visual phrase SAM counted with, e.g. "red toothpaste box". */
   look: string;
-  /** samCount when SAM found this product's units, else sparkCount. */
+  /** samCount when SAM found at least half of Spark's units, else sparkCount. */
   count: number;
   countSource: "sam" | "spark";
   sparkCount: number;
@@ -58,6 +69,8 @@ export type Detection = {
   samCount: number | null;
   /** 0–1000 grid of the uploaded image, one per counted unit (SAM's when it counted). */
   boxes: Box[];
+  /** Why the merchant should check this line (e.g. the two counts disagree); null when nothing stands out. */
+  review: string | null;
   confidence: Confidence;
   candidates: DetectionCandidate[];
   /** The business's item this looks like: confirming the detection restocks it. */
@@ -67,11 +80,12 @@ export type Detection = {
   /** The match is an item the merchant removed: offer to restore it rather than add a duplicate. */
   inventoryItemArchived: boolean;
   /**
-   * Ask "Is this your X?" before treating it as in stock: a name match, or a
-   * catalogue match whose size doesn't agree with the label (or the label
-   * showed no size). false only for a remembered reading or a size-agreeing match.
+   * Ask "Is this your X?" before treating it as in stock. false only for a remembered reading
+   * or a catalogue match whose size agrees with the label.
    */
   inventoryNeedsConfirm: boolean;
+  /** That item's name, so the review can say which item will be restocked; null with no match. */
+  inventoryItemName: string | null;
 };
 
 /** One /v1/match item per product, ref = its index, so results map back without relying on order. */
@@ -85,10 +99,8 @@ export function matchItems(products: ShelfProduct[]): MatchItem[] {
 }
 
 /**
- * Join Spark's products with their plausible catalogue candidates and the
- * business's own inventory (see inventory-match.ts). No candidate = the
- * catalogue doesn't have it; the merchant adds it as their own item, which
- * feeds back as new_item.
+ * Joins Spark's products with plausible catalogue candidates and the business's inventory. No candidate
+ * means the catalogue lacks it: the merchant adds their own item, which feeds back as new_item.
  */
 export function buildDetections(
   products: ShelfProduct[],
@@ -96,6 +108,8 @@ export function buildDetections(
   inventory: InventoryIndex,
   samBoxes: Map<number, Box[]> = new Map(),
   newId: () => string = randomUUID,
+  /** Lines whose SAM count was chosen deliberately (the agent's use_counted): SAM wins regardless. */
+  trustSam: ReadonlySet<number> = new Set(),
 ): Detection[] {
   const byRef = new Map(matches.map((m) => [m.ref, m]));
   return products.map((p, i) => {
@@ -107,29 +121,45 @@ export function buildDetections(
       name: p.name,
       pack: p.pack,
       look: p.look,
-      ...counted(p, samBoxes.get(i)),
+      ...counted(p, samBoxes.get(i), trustSam.has(i)),
       confidence: p.confidence,
       candidates,
       // All plausible candidates, not just the 3 shown: the merchant's size may rank lower.
-      ...stocked(matchInventory(p, candidateRefs(plausibleCandidates), inventory)),
+      ...stocked(matchInventory(p, candidateRefs(plausibleCandidates), inventory), inventory),
     };
   });
 }
 
-/** SAM's count wins when it found at least one unit; zero means SAM missed it, not that it isn't there. */
-function counted(p: ShelfProduct, sam: Box[] | undefined): Pick<Detection, "count" | "countSource" | "sparkCount" | "samCount" | "boxes"> {
+/** SAM's share of Spark's count below which SAM is taken to have missed units (it matches a look, not a label). */
+export const MIN_SAM_SHARE = 0.5;
+
+/** SAM's count wins unless it found under half of Spark's units; then Spark's count and boxes stay, flagged. */
+function counted(
+  p: ShelfProduct,
+  sam: Box[] | undefined,
+  trust = false,
+): Pick<Detection, "count" | "countSource" | "sparkCount" | "samCount" | "boxes" | "review"> {
   const samCount = sam ? sam.length : null;
-  return samCount
-    ? { count: samCount, countSource: "sam", sparkCount: p.count, samCount, boxes: sam! }
-    : { count: p.count, countSource: "spark", sparkCount: p.count, samCount, boxes: p.boxes };
+  if (samCount && (trust || samCount >= p.count * MIN_SAM_SHARE)) {
+    return { count: samCount, countSource: "sam", sparkCount: p.count, samCount, boxes: sam!, review: null };
+  }
+  const review = samCount ? `Counts disagree: read ${p.count}, SAM found ${samCount}. Check the count.` : null;
+  return { count: p.count, countSource: "spark", sparkCount: p.count, samCount, boxes: p.boxes, review };
 }
 
 function stocked(
   m: StockedMatch | null,
-): Pick<Detection, "inventoryItemId" | "inventoryMatch" | "inventoryItemArchived" | "inventoryNeedsConfirm"> {
+  inventory: InventoryIndex,
+): Pick<Detection, "inventoryItemId" | "inventoryMatch" | "inventoryItemArchived" | "inventoryNeedsConfirm" | "inventoryItemName"> {
   return m
-    ? { inventoryItemId: m.itemId, inventoryMatch: m.match, inventoryItemArchived: m.archived, inventoryNeedsConfirm: !m.sure }
-    : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false, inventoryNeedsConfirm: false };
+    ? {
+        inventoryItemId: m.itemId,
+        inventoryMatch: m.match,
+        inventoryItemArchived: m.archived,
+        inventoryNeedsConfirm: !m.sure,
+        inventoryItemName: inventory.names.get(m.itemId) ?? null,
+      }
+    : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false, inventoryNeedsConfirm: false, inventoryItemName: null };
 }
 
 export function toCandidate(c: MatchCandidate, inventory: InventoryIndex): DetectionCandidate {
@@ -143,6 +173,8 @@ export function toCandidate(c: MatchCandidate, inventory: InventoryIndex): Detec
     score: c.score,
     price: c.price ? { median: c.price.median, min: c.price.min, max: c.price.max } : null,
     inventoryItemId: inventory.byQid.get(c.qid) ?? null,
+    match: matchStrength(c.signals),
+    image: c.image ?? null,
   };
 }
 

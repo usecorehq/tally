@@ -9,9 +9,8 @@ import { InventoryTiles, ScanCard } from "./inventory-parts";
 import { isLowStock, type BusinessOption, type InventoryItem } from "./types";
 
 /**
- * The web Inventory page, as the mobile Inventory tab: shelf capture, the
- * Items / Units / Low stock tiles, then search and the stock list (a table
- * from 768px, stacked rows on a phone). `items` is null when the read failed.
+ * The web Inventory page, mirroring the mobile tab: shelf capture, stat tiles, search and the stock list.
+ * `items` is null when the read failed.
  */
 export function InventoryView({
   businesses,
@@ -112,7 +111,7 @@ export function InventoryView({
           <EmptyState
             icon="Box"
             title="No items yet"
-            body="Scan a shelf to add what you stock, or start from the items shops like yours usually sell."
+            body="Scan a shelf to add what you stock, or start from the items shops like yours usually stock."
             action={
               businessId ? (
                 <Button asChild variant="quiet">

@@ -2,19 +2,8 @@ import * as React from "react";
 import { cn } from "./lib/cn";
 
 /*
- * Tray — Design V2's "white sheet on a grey well" material (Qorelly
- * packages/ui/src/tray.tsx, list-kit SheetTable). A Tray is a grey-100 well, a
- * TraySheet the white surface in it, a TrayFooter the caption row on the well
- * below. Radii are concentric (outer = inner + inset) so the pair reads as one
- * object. Size `lg` is the hero tray (sign-in, empty states); pass the same
- * size to the Tray and its TraySheet.
- *
- *   ┌ Tray ──────────────────────────────┐
- *   │ ┌ TraySheet ─────────────────────┐ │
- *   │ │ …                              │ │
- *   │ └────────────────────────────────┘ │
- *   │  Caption                  Action → │  ← TrayFooter
- *   └────────────────────────────────────┘
+ * Tray: Design V2's grey-100 well holding a white TraySheet, with a TrayFooter caption row below.
+ * Radii are concentric (outer = inner + inset); pass the same size (`lg` for hero trays) to Tray and TraySheet.
  */
 
 type TraySize = "default" | "lg";

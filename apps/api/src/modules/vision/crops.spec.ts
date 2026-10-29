@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
 import sharp from "sharp";
-import { bestBox, cropKey, makeCrops, MIN_CROP_SIDE, pixelRegion } from "./crops";
+import { bestBox, catalogueSized, cropKey, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, pixelRegion, shelfPhotoKey, storablePhoto } from "./crops";
 
 const photo = (width: number, height: number) =>
   sharp({ create: { width, height, channels: 3, background: { r: 200, g: 30, b: 30 } } })
@@ -46,5 +46,28 @@ describe("makeCrops", () => {
     const [crop] = await makeCrops(await photo(400, 400), [{ x1: 0, y1: 0, x2: 1000, y2: 1000 }]);
     const meta = await sharp(crop!).metadata();
     expect([meta.width, meta.height]).toEqual([400, 400]);
+  });
+
+  it("with a lower minSide keeps small crops for R2", async () => {
+    // 100 x 100 px box on a 1000 px photo: under 160, over 48.
+    const [kept] = await makeCrops(await photo(1000, 1000), [{ x1: 100, y1: 100, x2: 200, y2: 200 }], { minSide: MIN_STORED_CROP_SIDE });
+    expect(kept).not.toBeNull();
+  });
+});
+
+describe("catalogueSized", () => {
+  it("is true only when the short side reaches Qore Catalog's 160 px", async () => {
+    const webp = (w: number, h: number) => sharp({ create: { width: w, height: h, channels: 3, background: "#fff" } }).webp().toBuffer();
+    expect(await catalogueSized(await webp(160, 400))).toBe(true);
+    expect(await catalogueSized(await webp(640, 120))).toBe(false);
+  });
+});
+
+describe("storablePhoto", () => {
+  it("caps the long side at 2560 px and keeps the key under tally/scans/", async () => {
+    const big = await sharp({ create: { width: 4000, height: 3000, channels: 3, background: "#fff" } }).jpeg().toBuffer();
+    const meta = await sharp(await storablePhoto(big)).metadata();
+    expect([meta.format, meta.width, meta.height]).toEqual(["jpeg", 2560, 1920]);
+    expect(shelfPhotoKey("scan-1")).toBe("tally/scans/scan-1.jpg");
   });
 });

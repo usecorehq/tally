@@ -6,17 +6,10 @@ dist
 !.env.example
 *.tsbuildinfo
 .DS_Store
-# python
-__pycache__
-.venv
-uv-cache
-*.egg-info
 # flutter
 apps/mobile/.dart_tool
 apps/mobile/build
 apps/mobile/.flutter-plugins*
-.pytest_cache
-.ruff_cache
 next-env.d.ts
 
 # schema drift check scratch (scripts/check-db-drift.sh)

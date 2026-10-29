@@ -1,13 +1,6 @@
-// Benchmark of the quick scan vs the stock-take agent on shelf photos with hand-counted ground truth.
-// For each photo: the quick scan (Muse Spark read, SAM 3.1 counts, Qore Catalog match), then the agent
-// starting from that same first pass, as VisionService.runStocktake does. Uses the built api code, no
-// database (empty inventory). Not part of the build or CI; it spends Meta Model API credit.
-//   pnpm --filter @tally/api build
-//   node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs <folder or photos>… [--out results.json]
-//   node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs --template shelf1.jpg [--force]
-// Truth per photo: shelf1.truth.json (or shelf1.jpg.truth.json) next to it:
-//   { "products": [{ "brand": "Peak", "name": "Full Cream Milk Powder", "pack": "400g", "count": 12, "qid": "QC-…" | null }] }
-// Needs META_MODEL_API_KEY, QORE_CATALOG_BASE_URL, QORE_CATALOG_API_KEY. Never prints a key.
+// Benchmarks the quick scan against the stock-take agent (or, with --sweep, the shelf sweep) on shelf photos
+// with hand-counted ground truth.
+// No database; spends Meta Model API credit. Usage: apps/api/README.md#vision-benchmark.
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
@@ -22,10 +15,12 @@ const { matchItems, buildDetections, plausible, MATCH_LIMIT } = require("../dist
 const { samRequest, parseSamInstances, distinctLooks, assignInstances } = require("../dist/modules/vision/sam-counter.js");
 const { indexInventory } = require("../dist/modules/vision/inventory-match.js");
 const { makeCrops } = require("../dist/modules/vision/crops.js");
+const { sweepShelf } = require("../dist/modules/vision/shelf-sweep.js");
 const { runStocktakeAgent } = require("../dist/modules/vision/stocktake/stocktake-agent.js");
 const { StocktakeSession } = require("../dist/modules/vision/stocktake/stocktake-session.js");
 const { scorePhoto, totals, cost, COUNT_TOLERANCE } = require("../dist/modules/vision/benchmark-score.js");
 const { CatalogClient } = require("@tally/catalog-client");
+const sharp = require("sharp");
 
 // The service's SAM timeout; the shelf read gets the smoke script's 90 s so a slow read is timed, not lost.
 const SHELF_TIMEOUT_MS = 90_000;
@@ -34,11 +29,17 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
-  options: { out: { type: "string" }, template: { type: "string" }, force: { type: "boolean", default: false } },
+  options: {
+    out: { type: "string" },
+    template: { type: "string" },
+    force: { type: "boolean", default: false },
+    sweep: { type: "boolean", default: false },
+    grid: { type: "boolean", default: false },
+  },
 });
 const { META_MODEL_API_KEY, META_MODEL_BASE_URL = "https://api.meta.ai/v1", QORE_CATALOG_BASE_URL, QORE_CATALOG_API_KEY } = process.env;
 if (!META_MODEL_API_KEY || !QORE_CATALOG_BASE_URL || !QORE_CATALOG_API_KEY || (!opts.template && positionals.length === 0)) {
-  console.error("Usage: node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs <folder or photos>… [--out results.json]");
+  console.error("Usage: node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs <folder or photos>… [--sweep [--grid]] [--out results.json]");
   console.error("       node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs --template <photo> [--force]");
   console.error("Needs META_MODEL_API_KEY, QORE_CATALOG_BASE_URL and QORE_CATALOG_API_KEY.");
   process.exit(1);
@@ -59,8 +60,25 @@ async function firstPass(image, type) {
   const t0 = Date.now();
   const res = await meta.respond(shelfRequest(image, type), SHELF_TIMEOUT_MS);
   const products = parseShelfProducts(res.text);
-  const readMs = Date.now() - t0;
+  const rest = await countAndMatch(image, type, products);
+  return { ...rest, usage: { input: res.usage?.input_tokens ?? 0, output: res.usage?.output_tokens ?? 0, sparkCalls: 1, samImages: rest.samImages }, ms: Date.now() - t0 };
+}
 
+/** The same first pass with the shelf sweep in place of the single read. */
+async function sweepPass(image, type) {
+  const t0 = Date.now();
+  const s = await sweepShelf(meta, image, { layout: opts.grid ? "grid" : "model" });
+  const rest = await countAndMatch(image, type, s.products);
+  return {
+    ...rest,
+    usage: { input: s.usage.input, output: s.usage.output, sparkCalls: s.usage.calls, samImages: rest.samImages },
+    ms: Date.now() - t0,
+    sweep: { layout: s.layout, sweepMs: s.ms, cells: s.cells.map(({ cell, ...c }) => ({ index: cell.index, label: cell.label, core: cell.core, crop: cell.crop, ...c })), sources: s.sources },
+  };
+}
+
+/** SAM counts and catalogue match for a read, in parallel, as in the service. */
+async function countAndMatch(image, type, products) {
   const byLook = new Map();
   const looks = distinctLooks(products);
   const [, match] = await Promise.all([
@@ -86,8 +104,7 @@ async function firstPass(image, type) {
     catalogueAvailable: match.available,
     samBoxes: assignInstances(products, byLook),
     // Every look is one SAM request on the whole photo, failed or not.
-    usage: { input: res.usage?.input_tokens ?? 0, output: res.usage?.output_tokens ?? 0, samImages: looks.length },
-    ms: Date.now() - t0,
+    samImages: looks.length,
   };
 }
 
@@ -120,11 +137,11 @@ async function agent(image, type, a) {
       photo: `data:${type};base64,${image.toString("base64")}`,
       onStep: async (s) => void steps.push(s),
     });
-    return { detections: session.detections(), end: outcome.end, turns: outcome.turns, usage: { ...outcome.usage, samImages }, ms: Date.now() - t0, steps, error: null };
+    return { detections: session.detections(), end: outcome.end, turns: outcome.turns, usage: { ...outcome.usage, sparkCalls: outcome.turns, samImages }, ms: Date.now() - t0, steps, error: null };
   } catch (err) {
     // The service falls back to the quick scan; score that, and say so.
     const detections = buildDetections(a.products, a.matches, noInventory, a.samBoxes);
-    return { detections, end: "fallback", turns: 0, usage: { input: 0, output: 0, samImages }, ms: Date.now() - t0, steps, error: `${err.name} ${err.status ?? ""} ${err.message}` };
+    return { detections, end: "fallback", turns: 0, usage: { input: 0, output: 0, sparkCalls: 0, samImages }, ms: Date.now() - t0, steps, error: `${err.name} ${err.status ?? ""} ${err.message}` };
   }
 }
 
@@ -190,7 +207,8 @@ function loadTruth(photo) {
   });
 }
 
-console.error(`model api: ${META_MODEL_BASE_URL}   catalog: ${QORE_CATALOG_BASE_URL}`);
+const METHODS = ["quick", opts.sweep ? "sweep" : "agent"];
+console.error(`model api: ${META_MODEL_BASE_URL}   catalog: ${QORE_CATALOG_BASE_URL}   methods: ${METHODS.join(", ")}`);
 const results = [];
 for (const photo of photos) {
   const name = basename(photo);
@@ -207,29 +225,44 @@ for (const photo of photos) {
   }
   try {
     const { image, type } = readImage(photo);
-    console.error(`${name}: quick scan…`);
+    const { width, height } = await sharp(image).rotate().metadata().then((m) => (m.orientation >= 5 ? { width: m.height, height: m.width } : m));
+    console.error(`${name}: ${width}×${height}, quick scan…`);
     const a = await firstPass(image, type);
     const quickDetections = buildDetections(a.products, a.matches, noInventory, a.samBoxes);
-    console.error(`${name}: ${a.products.length} products in ${a.ms} ms; agent…`);
-    const g = await agent(image, type, a);
-    console.error(`${name}: agent ${g.end} after ${g.turns} turns, ${g.ms} ms${g.error ? ` (${g.error})` : ""}`);
-
     const quick = { detections: scored(quickDetections), usage: a.usage, ms: a.ms };
-    // The agent's time and cost include the first pass it starts from.
-    const agentRun = {
-      detections: scored(g.detections),
-      usage: { input: a.usage.input + g.usage.input, output: a.usage.output + g.usage.output, samImages: a.usage.samImages + g.usage.samImages },
-      ms: a.ms + g.ms,
-      end: g.end,
-      turns: g.turns,
-      error: g.error,
-      steps: g.steps,
-    };
-    for (const run of [quick, agentRun]) {
-      run.score = scorePhoto(truth, run.detections);
-      run.cost = cost(run.usage);
+    const result = { photo: name, size: `${width}×${height}`, truth, catalogueAvailable: a.catalogueAvailable, quick };
+
+    if (opts.sweep) {
+      console.error(`${name}: ${a.products.length} products in ${a.ms} ms; sweep…`);
+      const w = await sweepPass(image, type);
+      const coverage = w.sweep.cells.map((c) => c.status);
+      console.error(`${name}: sweep ${w.products.length} products in ${w.ms} ms, ${w.sweep.layout.rows}×${w.sweep.layout.bays} ${w.sweep.layout.source}, cells ${coverage.join(" ")}`);
+      result.sweep = { detections: scored(buildDetections(w.products, w.matches, noInventory, w.samBoxes)), usage: w.usage, ms: w.ms, ...w.sweep };
+    } else {
+      console.error(`${name}: ${a.products.length} products in ${a.ms} ms; agent…`);
+      const g = await agent(image, type, a);
+      console.error(`${name}: agent ${g.end} after ${g.turns} turns, ${g.ms} ms${g.error ? ` (${g.error})` : ""}`);
+      // The agent's time and cost include the first pass it starts from.
+      result.agent = {
+        detections: scored(g.detections),
+        usage: {
+          input: a.usage.input + g.usage.input,
+          output: a.usage.output + g.usage.output,
+          sparkCalls: a.usage.sparkCalls + g.usage.sparkCalls,
+          samImages: a.usage.samImages + g.usage.samImages,
+        },
+        ms: a.ms + g.ms,
+        end: g.end,
+        turns: g.turns,
+        error: g.error,
+        steps: g.steps,
+      };
     }
-    results.push({ photo: name, truth, catalogueAvailable: a.catalogueAvailable, quick, agent: agentRun });
+    for (const method of METHODS) {
+      result[method].score = scorePhoto(truth, result[method].detections);
+      result[method].cost = cost(result[method].usage);
+    }
+    results.push(result);
   } catch (err) {
     console.error(`${name}: FAILED ${err.name} ${err.status ?? ""} ${err.code ?? ""} ${err.message}`);
     results.push({ photo: name, error: `${err.name} ${err.message}` });
@@ -244,7 +277,7 @@ const ratio = (x) => (x === null ? "–" : `${Math.round(100 * x)}%`);
 const sec = (ms) => `${(ms / 1000).toFixed(1)} s`;
 const usd = (x) => `$${x.toFixed(4)}`;
 const row = (cells) => `| ${cells.join(" | ")} |`;
-const HEAD = ["Recall", "Precision", "Brand ok", "Name ok", "Qore ID right / wrong / missing", "Count MAE", `Count ±${COUNT_TOLERANCE * 100}%`, "Time", "Tokens in / out", "SAM images", "Est. $"];
+const HEAD = ["Recall", "Precision", "Brand ok", "Name ok", "Qore ID right / wrong / missing", "Count MAE", `Count ±${COUNT_TOLERANCE * 100}%`, "Time", "Spark calls", "Tokens in / out", "SAM images", "Est. $"];
 
 function cells(t, run) {
   return [
@@ -256,6 +289,7 @@ function cells(t, run) {
     t.countMae === null ? "–" : t.countMae.toFixed(1),
     pct(t.countWithin, t.matched),
     sec(run.ms),
+    String(run.usage.sparkCalls),
     `${run.usage.input.toLocaleString("en")} / ${run.usage.output.toLocaleString("en")}`,
     String(run.usage.samImages),
     usd(run.cost),
@@ -264,28 +298,36 @@ function cells(t, run) {
 
 const out = [];
 out.push(`# Vision benchmark — ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`, "");
-out.push(`${done.length} photo(s) scored${results.length > done.length ? `, ${results.length - done.length} failed` : ""}. Agent time, tokens and $ include the first pass it starts from.`, "");
+const about = opts.sweep
+  ? `Sweep time, tokens and $ include its layout read and the same SAM + catalogue steps as quick (layout: ${opts.grid ? "fixed grid" : "model, fixed grid on failure"}).`
+  : "Agent time, tokens and $ include the first pass it starts from.";
+out.push(`${done.length} photo(s) scored${results.length > done.length ? `, ${results.length - done.length} failed` : ""}. ${about}`, "");
 
+const note = (r, method) => {
+  if (method === "agent") return `${r.agent.end}, ${r.agent.turns} turns`;
+  if (method !== "sweep") return "";
+  const by = (s) => r.sweep.cells.filter((c) => c.status === s).length;
+  return `${r.sweep.layout.rows}×${r.sweep.layout.bays} ${r.sweep.layout.source}; read ${by("read")}, empty ${by("empty")}, unreadable ${by("unreadable")}`;
+};
 out.push("## Per photo", "");
-out.push(row(["Photo", "Method", ...HEAD, "Agent end"]), row(Array(HEAD.length + 3).fill("---")));
+out.push(row(["Photo", "Method", ...HEAD, opts.sweep ? "Sweep cells" : "Agent end"]), row(Array(HEAD.length + 3).fill("---")));
 for (const r of results) {
   if (r.error) {
     out.push(row([r.photo, "FAILED", r.error, ...Array(HEAD.length).fill("")]));
     continue;
   }
-  out.push(row([r.photo, "quick", ...cells(totals([r.quick.score]), r.quick), ""]));
-  out.push(row(["", "agent", ...cells(totals([r.agent.score]), r.agent), `${r.agent.end}, ${r.agent.turns} turns`]));
+  METHODS.forEach((method, i) => out.push(row([i ? "" : `${r.photo} (${r.size})`, method, ...cells(totals([r[method].score]), r[method]), note(r, method)])));
 }
 
 out.push("", "## Totals", "");
 const sum = (runs) => ({
   ms: runs.reduce((n, x) => n + x.ms, 0),
-  usage: { input: runs.reduce((n, x) => n + x.usage.input, 0), output: runs.reduce((n, x) => n + x.usage.output, 0), samImages: runs.reduce((n, x) => n + x.usage.samImages, 0) },
+  usage: Object.fromEntries(["input", "output", "sparkCalls", "samImages"].map((k) => [k, runs.reduce((n, x) => n + x.usage[k], 0)])),
   cost: runs.reduce((n, x) => n + x.cost, 0),
 });
 const totalsByMethod = {};
 out.push(row(["Method", ...HEAD, "Mean time / photo"]), row(Array(HEAD.length + 2).fill("---")));
-for (const method of ["quick", "agent"]) {
+for (const method of METHODS) {
   const runs = done.map((r) => r[method]);
   const t = totals(runs.map((x) => x.score));
   const s = sum(runs);
@@ -302,9 +344,10 @@ const cell = (run, ti) => {
   return `${p.brandOk && p.nameOk ? "✓" : "✗"} ${[d.brand, d.name, d.pack].filter(Boolean).join(" · ")} — ${d.count} — ${p.qid ?? "–"}`;
 };
 for (const r of done) {
-  out.push(`### ${r.photo}`, "", row(["Truth", "Count", "Quick", "Agent"]), row(["---", "---", "---", "---"]));
-  r.truth.forEach((t, i) => out.push(row([[t.brand, t.name, t.pack].filter(Boolean).join(" · "), String(t.count), cell(r.quick, i), cell(r.agent, i)])));
-  for (const method of ["quick", "agent"]) {
+  out.push(`### ${r.photo}`, "", row(["Truth", "Count", ...METHODS.map((m) => m[0].toUpperCase() + m.slice(1))]), row(Array(METHODS.length + 2).fill("---")));
+  r.truth.forEach((t, i) => out.push(row([[t.brand, t.name, t.pack].filter(Boolean).join(" · "), String(t.count), ...METHODS.map((m) => cell(r[m], i))])));
+  if (r.sweep) out.push("", `Sweep: ${r.sweep.cells.map((c) => c.summary).join("; ")}`);
+  for (const method of METHODS) {
     const extra = r[method].score.extra.map((i) => r[method].detections[i]);
     if (extra.length) out.push("", `${method} also reported (not in truth): ${extra.map((d) => `${[d.brand, d.name].filter(Boolean).join(" ")} ×${d.count}`).join("; ")}`);
   }

@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { InsetPanel, SolarIcon, cn } from "@tally/ui";
+import { StocktakeRecents } from "../stocktake/recents";
 import { auth, signOut } from "@/auth";
 import { MobileNav, SidebarNav } from "./nav-links";
 import { FOCUS } from "./segment";
@@ -13,9 +15,8 @@ async function signOutAction() {
 }
 
 /**
- * The signed-in frame (Qorelly V2 DashboardLayout): a grey-100 frame, the nav
- * on the grey, each page on a white panel inset into it. Pages put their own
- * PageHeader inside; `width` caps the content column.
+ * The signed-in frame: nav on a grey-100 frame, each page on an inset white panel.
+ * Pages render their own PageHeader; `width` caps the content column.
  */
 export async function AppShell({ children, width = "default" }: { children: React.ReactNode; width?: "default" | "wide" | "narrow" }) {
   const session = await auth();
@@ -28,6 +29,10 @@ export async function AppShell({ children, width = "default" }: { children: Reac
           <span className="text-[17px] font-semibold tracking-tight text-gray-900">Tally</span>
         </div>
         <SidebarNav />
+        {/* Stock-take pages only; it reads ?business=, hence the boundary. */}
+        <Suspense fallback={null}>
+          <StocktakeRecents />
+        </Suspense>
         <div className="mt-auto flex flex-col gap-3 border-t border-gray-200 pt-4">
           <ThemeToggle />
           <div className="flex flex-col gap-1">

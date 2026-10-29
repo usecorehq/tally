@@ -34,12 +34,8 @@ export class VisionExceptionFilter implements ExceptionFilter {
 const logger = new Logger("Vision");
 
 /**
- * Map a Meta Model API failure to what the client may see. Never echoes the
- * key or the upstream body; only Meta's content-policy and image errors are
- * the caller's fault.
- *
- *   timeout → 504            400 image / content policy → 400
- *   401/403 → 502, logged    429 → 503 + Retry-After      anything else → 502
+ * Maps a Meta Model API failure to a client-safe HttpException; never echoes the key or upstream body.
+ * Only image/content-policy 400s are the caller's fault; timeout → 504, 429 → 503, the rest → 502.
  */
 export function toVisionHttpException(err: unknown): HttpException {
   if (!(err instanceof MetaModelError)) {

@@ -14,12 +14,8 @@ export type StarterPlan = {
 };
 
 /**
- * Turn the merchant's template choices into inventory rows and Qore Catalog
- * feedback. Pure: no IO, so the catalogue's feedback rules live in one tested place.
- *   accepted  → stock the suggested product   (feedback: suggestedQid)
- *   corrected → stock the product they picked (feedback: confirmedQid)
- *   new_item  → stock under their own name, no catalogue link (feedback: confirmedName)
- *   removed   → stock nothing                 (feedback only)
+ * Turns template choices (accepted / corrected / new_item / removed) into inventory rows and catalogue feedback.
+ * Pure, so the catalogue's feedback rules live in one tested place.
  */
 export function planStarterInventory(
   businessId: string,

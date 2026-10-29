@@ -60,7 +60,7 @@ export class ConfirmDecision {
   @Length(1, 200)
   name?: string;
 
-  @ApiPropertyOptional({ description: "add: selling price in ₦ (prefill from the candidate's indicative median)", example: "4500" })
+  @ApiPropertyOptional({ description: "add: price in ₦ (prefill from the candidate's indicative median)", example: "4500" })
   @ValidateIf((d: ConfirmDecision) => d.action === "add")
   @Matches(NAIRA_PATTERN, { message: "price must be Naira with up to 2 decimals, e.g. 4500 or 4500.50" })
   price?: string;
@@ -115,4 +115,14 @@ export class RunParams extends BusinessParams {
   @ApiProperty()
   @IsUUID()
   runId!: string;
+}
+
+export class HistoryQuery {
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 30 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }

@@ -1,4 +1,4 @@
-import type { AgentStep, ConfirmResult, Detection, ShelfScanResult } from "../../stocktake/types";
+import type { AgentStep, ConfirmResult, Detection, HistoryEntry, ScanView, ShelfScanResult } from "../../stocktake/types";
 
 // Fixture data for /design/stocktake. Boxes are on the 0–1000 grid; the placeholder photo is drawn from them.
 
@@ -29,7 +29,7 @@ export const DETECTIONS: Detection[] = [
     samCount: 6,
     boxes: units(40, 60, 6, 70, 230),
     confidence: "high",
-    candidates: [{ qid: "Q-PEAK-160", name: "Peak Evaporated Milk 160g", score: 0.94, price: { median: 650, min: 550, max: 750 }, inventoryItemId: "inv-peak" }],
+    candidates: [{ qid: "Q-PEAK-160", name: "Peak Evaporated Milk 160g", score: 0.94, match: "strong", price: { median: 650, min: 550, max: 750 }, inventoryItemId: "inv-peak" }],
     inventoryItemId: "inv-peak",
     inventoryMatch: "catalogue",
   },
@@ -45,7 +45,7 @@ export const DETECTIONS: Detection[] = [
     sparkCount: 3,
     boxes: units(520, 60, 3, 120, 230, 10),
     confidence: "medium",
-    candidates: [{ qid: "Q-MILO-400", name: "Milo Refill 400g", score: 0.88, price: { median: 3200, min: 2900, max: 3600 }, inventoryItemId: "inv-milo" }],
+    candidates: [{ qid: "Q-MILO-400", name: "Milo Refill 400g", score: 0.88, match: "strong", price: { median: 3200, min: 2900, max: 3600 }, inventoryItemId: "inv-milo" }],
     inventoryItemId: "inv-milo",
     inventoryMatch: "catalogue",
     inventoryItemArchived: true,
@@ -64,8 +64,8 @@ export const DETECTIONS: Detection[] = [
     boxes: units(40, 380, 9, 60, 170, 8),
     confidence: "medium",
     candidates: [
-      { qid: "Q-INDO-70", name: "Indomie Instant Noodles Chicken 70g", score: 0.81, price: { median: 250, min: 200, max: 300 } },
-      { qid: "Q-INDO-120", name: "Indomie Instant Noodles Chicken 120g", score: 0.64, price: { median: 400, min: 350, max: 450 } },
+      { qid: "Q-INDO-70", name: "Indomie Instant Noodles Chicken 70g", score: 0.81, match: "medium", price: { median: 250, min: 200, max: 300 } },
+      { qid: "Q-INDO-120", name: "Indomie Instant Noodles Chicken 120g", score: 0.64, match: "medium", price: { median: 400, min: 350, max: 450 } },
     ],
   },
   {
@@ -94,8 +94,8 @@ export const DETECTIONS: Detection[] = [
     boxes: units(40, 680, 5, 110, 250, 10),
     confidence: "low",
     candidates: [
-      { qid: "Q-GP-500", name: "Golden Penny Spaghetti 500g", score: 0.72, price: { median: 1100, min: 950, max: 1250 }, inventoryItemId: "inv-gp" },
-      { qid: "Q-GP-1KG", name: "Golden Penny Spaghetti 1kg", score: 0.55, price: { median: 2100, min: 1900, max: 2300 } },
+      { qid: "Q-GP-500", name: "Golden Penny Spaghetti 500g", score: 0.72, match: "medium", price: { median: 1100, min: 950, max: 1250 }, inventoryItemId: "inv-gp" },
+      { qid: "Q-GP-1KG", name: "Golden Penny Spaghetti 1kg", score: 0.55, match: "medium", price: { median: 2100, min: 1900, max: 2300 } },
     ],
     inventoryItemId: "inv-gp",
     inventoryMatch: "name",
@@ -114,9 +114,24 @@ export const DETECTIONS: Detection[] = [
     sparkCount: 3,
     boxes: units(660, 680, 3, 90, 250, 14),
     confidence: "high",
-    candidates: [{ qid: "Q-DET-250", name: "Dettol Antiseptic Liquid 250ml", score: 0.91, price: { median: 1800, min: 1600, max: 2000 }, inventoryItemId: "inv-det" }],
+    candidates: [{ qid: "Q-DET-250", name: "Dettol Antiseptic Liquid 250ml", score: 0.91, match: "strong", price: { median: 1800, min: 1600, max: 2000 }, inventoryItemId: "inv-det" }],
     inventoryItemId: "inv-det",
     inventoryMatch: "reading",
+  },
+  {
+    // A low top match pre-fills nothing (live: an unbranded "Blue box" pre-filled a hair dye).
+    ...base,
+    id: "d7",
+    brand: "",
+    name: "Blue box",
+    pack: "",
+    look: "blue box",
+    count: 2,
+    countSource: "spark",
+    sparkCount: 2,
+    boxes: units(915, 70, 2, 38, 130, 6),
+    confidence: "low",
+    candidates: [{ qid: "Q-DYE-118", name: "Manic Panic Electric Blue Hair Dye 118ml", score: 0.52, match: "low", price: { median: 11499, min: 9800, max: 12500 } }],
   },
 ];
 
@@ -126,7 +141,7 @@ export const STEPS: AgentStep[] = [
   { turn: 0, kind: "baseline", tool: null, summary: "First pass: 6 products, 30 units", ms: 24100 },
   { turn: 1, kind: "thought", tool: null, summary: "The noodle sachets overlap; the first pass read 7 but the row looks longer. The pasta label is half hidden.", ms: null },
   { turn: 1, kind: "tool", tool: "count_units", summary: 'count "indomie chicken 70g" → 9', ms: 3200 },
-  { turn: 2, kind: "tool", tool: "zoom", summary: "zoomed the blue and yellow pack, bottom left", ms: 1800 },
+  { turn: 2, kind: "tool", tool: "zoom", summary: 'read the label of "Golden Penny Spaghetti" up close', ms: 1800 },
   { turn: 3, kind: "tool", tool: "search_catalogue", summary: 'search "golden penny spaghetti 500g" → 2', ms: 900 },
   { turn: 4, kind: "tool", tool: "find_in_store", summary: "Golden Penny Spaghetti matched your item by name", ms: 300 },
 ];
@@ -187,6 +202,7 @@ const COLORS: Record<string, [string, string]> = {
   d4: ["#b91c1c", "#fde68a"],
   d5: ["#1e40af", "#facc15"],
   d6: ["#f8fafc", "#15803d"],
+  d7: ["#2563eb", "#e0f2fe"],
 };
 
 /** Draw a shelf of labelled packs from the fixture boxes, so outlines and thumbnails line up. */
@@ -219,4 +235,114 @@ export async function drawShelf(width = 1600, height = 1000): Promise<Blob> {
     }
   }
   return new Promise((resolve) => canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.85));
+}
+
+// ── History and reopened sessions ──
+// Times are relative to `now`, which the preview sets after mount so server and client render the same.
+
+const agoFrom = (now: number) => (min: number) => new Date(now - min * 60_000).toISOString();
+const none = { add: 0, restock: 0, restore: 0, skip: 0 };
+
+export function history(now: number): HistoryEntry[] {
+  const ago = agoFrom(now);
+  const base = { rerunOf: null, fallback: false, confirmedAt: null, error: null, decided: none, preview: [] as string[], reruns: [] as HistoryEntry[] };
+  return [
+    { ...base, id: "r1", kind: "stocktake", runId: "r1", scanId: null, status: "running", startedAt: ago(1), lines: null },
+    // A photo run three times: the first and one rerun superseded by the confirmed rerun.
+    {
+      ...base,
+      id: "r2",
+      kind: "stocktake",
+      runId: "r2",
+      scanId: "s2",
+      status: "superseded",
+      startedAt: ago(42),
+      lines: 7,
+      preview: ["Peak", "Milo", "Indomie"],
+      reruns: [
+        { ...base, id: "r2a", kind: "stocktake", runId: "r2a", scanId: "s2a", rerunOf: "s2", status: "confirmed", startedAt: ago(30), confirmedAt: ago(25), lines: 8, decided: { add: 1, restock: 6, restore: 0, skip: 1 }, preview: ["Peak", "Milo", "Indomie"] },
+        { ...base, id: "r2b", kind: "stocktake", runId: "r2b", scanId: "s2b", rerunOf: "s2", status: "superseded", startedAt: ago(28), lines: 8, preview: ["Peak", "Milo", "Indomie"] },
+      ],
+    },
+    { ...base, id: "r3", kind: "stocktake", runId: "r3", scanId: "s3r", status: "review", startedAt: ago(60), lines: 5, decided: { ...none, restock: 1 }, preview: ["Golden Penny", "Dettol"] },
+    { ...base, id: "s3", kind: "quick", runId: null, scanId: "s3", status: "discarded", startedAt: ago(95), lines: 4, preview: ["Zobo", "Tasty Tom"] },
+    { ...base, id: "r4", kind: "stocktake", runId: "r4", scanId: "s4", status: "confirmed", fallback: true, startedAt: ago(26 * 60), confirmedAt: ago(26 * 60 - 9), lines: 8, decided: { add: 2, restock: 5, restore: 0, skip: 1 }, preview: ["Golden Penny", "Dettol", "Zobo"] },
+    { ...base, id: "r5", kind: "stocktake", runId: "r5", scanId: null, status: "failed", startedAt: ago(27 * 60), error: "First pass failed: Database busy, retry shortly", lines: null },
+    { ...base, id: "s6", kind: "quick", runId: null, scanId: "s6", status: "review", startedAt: ago(5 * 24 * 60), lines: 0 },
+    { ...base, id: "s7", kind: "quick", runId: null, scanId: "s7", status: "confirmed", startedAt: ago(400 * 24 * 60), confirmedAt: ago(400 * 24 * 60 - 6), lines: 2, decided: { ...none, restock: 2 }, preview: ["Peak", "Milo"] },
+  ];
+}
+
+/** A reopened open scan: crops instead of the photo, two lines confirmed earlier, one catalogue lookup missing. */
+export function reopened(crops: Record<string, string>, now: number): ScanView {
+  const ago = agoFrom(now);
+  return {
+    scanId: "scan-fixture",
+    status: "open",
+    createdAt: ago(42),
+    confirmedAt: null,
+    discardedAt: null,
+    supersededAt: null,
+    rerunOf: null,
+    canRerun: true,
+    catalogueAvailable: true,
+    candidateDetails: false,
+    detections: DETECTIONS.map((d, position) => ({
+      ...d,
+      position,
+      cropUrl: crops[d.id] ?? null,
+      decision:
+        position < 2 ? { action: "restock", itemId: d.inventoryItemId, itemName: "Peak Evaporated Milk 160g", quantity: d.count, confirmedQid: null, decidedAt: ago(40) } : null,
+    })),
+  };
+}
+
+const ACTIONS = ["restock", "restore", "add", "add", "skip", "restock", "add"] as const;
+
+/** A confirmed scan, read-only. */
+export function confirmed(crops: Record<string, string>, now: number): ScanView {
+  const ago = agoFrom(now);
+  return {
+    scanId: "scan-fixture",
+    status: "confirmed",
+    createdAt: ago(26 * 60),
+    confirmedAt: ago(26 * 60 - 9),
+    discardedAt: null,
+    supersededAt: null,
+    rerunOf: null,
+    canRerun: false,
+    catalogueAvailable: true,
+    detections: DETECTIONS.map((d, position) => {
+      const action = ACTIONS[position % ACTIONS.length]!;
+      const name = d.candidates[0]?.name ?? [d.brand, d.name, d.pack].filter(Boolean).join(" ");
+      return {
+        ...d,
+        position,
+        cropUrl: crops[d.id] ?? null,
+        decision: {
+          action,
+          itemId: action === "skip" ? null : `item-${position}`,
+          itemName: action === "skip" ? null : name,
+          quantity: action === "skip" ? null : position === 2 ? d.count - 1 : d.count,
+          confirmedQid: null,
+          decidedAt: ago(26 * 60 - 9),
+        },
+      };
+    }),
+  };
+}
+
+/** Read-only ends: discarded by the merchant (still rerunnable), or superseded by a confirmed rerun. */
+export function ended(status: "discarded" | "superseded", crops: Record<string, string>, now: number): ScanView {
+  const ago = agoFrom(now);
+  const scan = reopened(crops, now);
+  return {
+    ...scan,
+    status,
+    discardedAt: status === "discarded" ? ago(10) : null,
+    supersededAt: status === "superseded" ? ago(25) : null,
+    canRerun: status === "discarded",
+    candidateDetails: true,
+    detections: scan.detections.map((d) => ({ ...d, decision: null })),
+  };
 }

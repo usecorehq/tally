@@ -2,7 +2,7 @@
 
 > Diagram: [clean architecture layers](../diagrams/images/mobile-clean-architecture.svg)
 
-`apps/mobile` is the Flutter inventory + sales app. Package name `qore_tally`. Feature-first clean architecture.
+`apps/mobile` is the Flutter stock-taking app. Package name `qore_tally`. Feature-first clean architecture.
 
 ```
 lib/
@@ -64,4 +64,4 @@ Qorelly's mobile port of web Design V2, so Tally reads as a Qorelly product. Sou
 
 ## Not yet
 
-Muse search (Ask your stock), scan history (Scans tab), searching the whole catalogue from the product picker — see the PRD. Item detail. Release signing (Android keystore, iOS team/profiles). Routing (go_router) now that there are several screens. Persisting the inventory cache between sessions (offline sync). Selling from a scan (POS).
+Muse search (Ask your stock), scan history (Scans tab), searching the whole catalogue from the product picker — see the PRD. Item detail. Release signing (Android keystore, iOS team/profiles). Routing (go_router) now that there are several screens. Persisting the inventory cache between sessions (offline sync).

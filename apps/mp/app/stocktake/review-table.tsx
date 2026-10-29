@@ -7,7 +7,6 @@ import {
   EmptyState,
   FormMessage,
   Input,
-  NativeSelect,
   Notice,
   PageHeader,
   Pill,
@@ -22,13 +21,17 @@ import {
   cn,
 } from "@tally/ui";
 import { confirmScan } from "./actions";
-import { cropThumbs } from "./image";
+import { STOCKTAKE_CHANGED } from "./recents";
+import { describeCells, MIN_UNREAD_CELLS, unreadCells } from "./coverage";
+import { cropThumbs, largestBox, remoteThumb } from "./image";
+import { ThumbImage, type Thumb } from "./thumb";
+import { pickFromCandidate, ProductPicker, type Pick } from "./product-picker";
 import type { ActionResult, Candidate, ConfirmResult, Decision, Detection, ShelfScanResult } from "./types";
 
 type Action = "restock" | "restore" | "add" | "skip";
-type RowState = { action: Action; quantity: string; choice: string; name: string; price: string };
+/** pick: null until the merchant chooses (a flagged or low-match line pre-fills nothing). */
+type RowState = { action: Action | null; quantity: string; pick: Pick | null; name: string; price: string };
 
-const NEW = "new";
 const NAIRA = /^\d{1,10}(\.\d{1,2})?$/;
 const naira = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 
@@ -48,30 +51,59 @@ function actionsFor(d: Detection): Action[] {
   return ["add", "skip"];
 }
 
-function initialState(d: Detection): RowState {
+/**
+ * The line's starting pick (docs/architecture/vision-recognition.md, "Showing a line"):
+ *   a review reason (the agent couldn't confirm it) → nothing picked, whatever the match;
+ *   a low top match → nothing picked: the merchant chooses a product or "New item";
+ *   medium → picked, with "Is this your item?"; strong → picked;
+ *   no suggestions → a new item named from the label.
+ * Live: an unreadable "Cooking Oil" pre-picked a hair pomade and was confirmed as is.
+ */
+export function initialPick(d: Detection): Pick | null {
   const top = d.candidates[0];
+  if (!top) return { kind: "new" };
+  if (d.review) return null;
+  // A stored scan has no match strength: treat it as medium (picked, but asked).
+  if ((top.match ?? "medium") === "low") return null;
+  return pickFromCandidate(top);
+}
+
+function initialState(d: Detection): RowState {
+  const pick = initialPick(d);
+  const first = actionsFor(d)[0]!;
+  // Never pre-choose changing stock on a line that asks "Is this your item?", or is flagged and wasn't
+  // matched by a branded reading the merchant already confirmed.
+  const unsure =
+    (first === "restock" || first === "restore") && (d.inventoryNeedsConfirm || (Boolean(d.review) && d.inventoryMatch !== "reading"));
   return {
-    action: actionsFor(d)[0]!,
+    action: unsure ? null : first,
     quantity: String(d.count),
-    choice: top ? top.qid : NEW,
-    name: top ? candidateName(top) : reading(d),
-    price: top?.price ? String(top.price.median) : "",
+    pick,
+    name: pick?.kind === "product" ? pick.name : reading(d),
+    price: pick?.kind === "product" && pick.price ? String(pick.price.median) : "",
   };
 }
 
-function rowProblems(s: RowState) {
-  if (s.action === "skip") return { quantity: false, name: false, price: false };
+/** Adding needs a product or "New item"; a restock or restore uses the store's own item. */
+const needsPick = (s: RowState) => s.action === "add";
+
+function rowProblems(d: Detection, s: RowState) {
+  if (s.action === null) return { action: true, quantity: false, name: false, price: false, product: false };
+  if (s.action === "skip") return { action: false, quantity: false, name: false, price: false, product: false };
   return {
+    action: false,
     quantity: !/^\d{1,6}$/.test(s.quantity.trim()),
     name: s.action === "add" && s.name.trim().length === 0,
     price: s.action === "add" && !NAIRA.test(s.price.trim()),
+    product: needsPick(s) && s.pick === null,
   };
 }
 
-function toDecision(d: Detection, s: RowState): Decision {
+/** Only called once every row passed rowProblems, so each has an action. */
+function toDecision(d: Detection, s: RowState & { action: Action }): Decision {
   if (s.action === "skip") return { detectionId: d.id, action: "skip" };
   const quantity = Number(s.quantity);
-  const qid = s.choice === NEW ? undefined : s.choice;
+  const qid = s.pick?.kind === "product" ? s.pick.qid : undefined;
   if (s.action === "add") return { detectionId: d.id, action: "add", name: s.name.trim(), price: s.price.trim(), quantity, ...(qid && { qid }) };
   return {
     detectionId: d.id,
@@ -94,7 +126,7 @@ function storeStatus(d: Detection): { label: string; tone: "green" | "amber" | "
 }
 
 
-const NO_PROBLEMS = { quantity: false, name: false, price: false };
+const NO_PROBLEMS = { action: false, quantity: false, name: false, price: false, product: false };
 
 export function ReviewTable({
   businessId,
@@ -106,26 +138,31 @@ export function ReviewTable({
   onRestart,
   confirm,
   initial,
+  actions,
 }: {
   businessId: string;
   businessName: string;
   result: ShelfScanResult;
   fallback: boolean;
-  photo: Blob;
-  photoUrl: string;
+  /** The shelf photo, when this browser has it; a reopened scan without it shows the stored crops. */
+  photo: Blob | null;
+  photoUrl: string | null;
   onRestart: () => void;
+  /** Extra header actions (History). */
+  actions?: React.ReactNode;
   /** Defaults to the confirmScan action; /design passes a fixture. */
   confirm?: (decisions: Decision[]) => Promise<ActionResult<ConfirmResult>>;
   /** Starting UI state; only /design sets it, to show the invalid, failed and selected states. */
   initial?: { attempted?: boolean; error?: string; selected?: string };
 }) {
-  // Lines the agent flagged for a closer look come first.
+  // Lines the agent flagged for a closer look come first; lines confirmed earlier (a partial confirm) stay as they are.
   const rows = useMemo(
-    () => [...result.detections].sort((a, b) => Number(Boolean(b.review)) - Number(Boolean(a.review))),
+    () => result.detections.filter((d) => !d.decision).sort((a, b) => Number(Boolean(b.review)) - Number(Boolean(a.review))),
     [result.detections],
   );
+  const decidedEarlier = result.detections.length - rows.length;
   const [state, setState] = useState<Record<string, RowState>>(() => Object.fromEntries(rows.map((d) => [d.id, initialState(d)])));
-  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [thumbs, setThumbs] = useState<Record<string, Thumb>>({});
   const [attempted, setAttempted] = useState(initial?.attempted ?? false);
   const [error, setError] = useState<string | null>(initial?.error ?? null);
   const [outcome, setOutcome] = useState<ConfirmResult | null>(null);
@@ -133,15 +170,40 @@ export function ReviewTable({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    cropThumbs(photo, rows).then(setThumbs, () => undefined);
-  }, [photo, rows]);
+    if (photo) {
+      cropThumbs(photo, rows).then(setThumbs, () => undefined);
+      return;
+    }
+    const crops = () => setThumbs(Object.fromEntries(rows.flatMap((d) => (d.cropUrl ? [[d.id, d.cropUrl]] : []))));
+    if (!photoUrl) return crops();
+    // The stored photo: every line gets a thumbnail from it, including lines too small to have a stored crop.
+    let alive = true;
+    const img = new Image();
+    img.onload = () => {
+      if (!alive) return;
+      setThumbs(
+        Object.fromEntries(
+          rows.flatMap((d) => {
+            const box = largestBox(d.boxes);
+            return box ? [[d.id, remoteThumb(photoUrl, box, img.naturalWidth, img.naturalHeight)]] : [];
+          }),
+        ),
+      );
+    };
+    img.onerror = () => alive && crops();
+    img.src = photoUrl;
+    return () => {
+      alive = false;
+    };
+  }, [photo, photoUrl, rows]);
 
   const update = (id: string, patch: Partial<RowState>) => setState((prev) => ({ ...prev, [id]: { ...prev[id]!, ...patch } }));
-  const invalidIds = rows.filter((d) => Object.values(rowProblems(state[d.id]!)).some(Boolean)).map((d) => d.id);
-  const counts = rows.reduce<Record<Action, number>>(
-    (acc, d) => ({ ...acc, [state[d.id]!.action]: acc[state[d.id]!.action] + 1 }),
-    { restock: 0, restore: 0, add: 0, skip: 0 },
-  );
+  const invalidIds = rows.filter((d) => Object.values(rowProblems(d, state[d.id]!)).some(Boolean)).map((d) => d.id);
+  const counts = rows.reduce<Record<Action, number>>((acc, d) => {
+    const a = state[d.id]!.action;
+    return a ? { ...acc, [a]: acc[a] + 1 } : acc;
+  }, { restock: 0, restore: 0, add: 0, skip: 0 });
+  const undecided = rows.filter((d) => state[d.id]!.action === null).length;
 
   if (outcome) return <Outcome businessName={businessName} result={outcome} rows={rows} onRestart={onRestart} />;
 
@@ -153,10 +215,11 @@ export function ReviewTable({
     }
     setError(null);
     startTransition(async () => {
-      const decisions = rows.map((d) => toDecision(d, state[d.id]!));
+      const decisions = rows.map((d) => toDecision(d, state[d.id]! as RowState & { action: Action }));
       const res = await (confirm ? confirm(decisions) : confirmScan(businessId, result.scanId, decisions));
       if (res.ok) {
         setOutcome(res.data);
+        window.dispatchEvent(new Event(STOCKTAKE_CHANGED));
         window.scrollTo({ top: 0 });
       } else setError(res.error);
     });
@@ -169,29 +232,43 @@ export function ReviewTable({
   }
 
   // Only the actions in use, so the bar reads "3 restock 2 add" rather than a row of zeros.
-  const summary = (["restock", "restore", "add", "skip"] as const).filter((a) => counts[a] > 0).map((a) => (
-    <span key={a} className="whitespace-nowrap">
-      <span className="font-medium tabular-nums text-gray-900">{counts[a]}</span> {a}
-    </span>
-  ));
+  const summary = [
+    ...(["restock", "restore", "add", "skip"] as const).filter((a) => counts[a] > 0).map((a) => (
+      <span key={a} className="whitespace-nowrap">
+        <span className="font-medium tabular-nums text-gray-900">{counts[a]}</span> {a}
+      </span>
+    )),
+    ...(undecided > 0
+      ? [
+          <span key="choose" className="whitespace-nowrap text-amber-700">
+            <span className="font-medium tabular-nums">{undecided}</span> to choose
+          </span>,
+        ]
+      : []),
+  ];
 
   return (
     <div className="q-rise">
       <PageHeader
         title="Check what we found"
+        // Rerun and Discard join the header actions: let the title wrap rather than truncate.
+        className="[&_h1]:whitespace-normal"
         subtitle={
           rows.length === 0
             ? `Nothing to confirm for ${businessName}.`
             : `${rows.length} product${rows.length === 1 ? "" : "s"} for ${businessName}. Fix counts and matches, then confirm.`
         }
         actions={
-          // With nothing found the empty state carries "New photo" itself.
-          rows.length > 0 && (
-            <Button variant="quiet" onClick={onRestart}>
-              <SolarIcon name="Refresh" iconStyle="Outline" size={16} />
-              New photo
-            </Button>
-          )
+          <>
+            {actions}
+            {/* With nothing found the empty state carries "New photo" itself. */}
+            {rows.length > 0 && (
+              <Button variant="quiet" onClick={onRestart}>
+                <SolarIcon name="Refresh" iconStyle="Outline" size={16} />
+                New photo
+              </Button>
+            )}
+          </>
         }
       />
 
@@ -200,16 +277,41 @@ export function ReviewTable({
         {result.catalogueAvailable === false && (
           <FormMessage variant="warning" message="The catalogue was unavailable, so there are no product matches. You can still add items by name." />
         )}
+        {result.candidateDetails === false && (
+          <FormMessage
+            variant="warning"
+            message="Some product names and prices couldn't be loaded from the catalogue. Check those lines, or come back later."
+          />
+        )}
+        {photoUrl && unreadCells(rows).length >= MIN_UNREAD_CELLS && rows.length > 0 && (
+          <FormMessage
+            variant="warning"
+            message={`Nothing was read in parts of this photo (shaded: ${describeCells(unreadCells(rows))}). If there are products there, take a closer photo of those shelves.`}
+          />
+        )}
+        {(decidedEarlier > 0 || (!photoUrl && rows.length > 0)) && (
+          <FormMessage
+            variant="info"
+            message={[
+              decidedEarlier > 0 && `${decidedEarlier} line${decidedEarlier === 1 ? " was" : "s were"} confirmed earlier and ${decidedEarlier === 1 ? "isn't" : "aren't"} shown.`,
+              !photoUrl && rows.length > 0 && "No shelf photo was kept for this stock-take; each line shows its own crop.",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          />
+        )}
       </div>
 
       {/* Desktop: the photo stays pinned on the left while the lines scroll on the right. */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
-        <Tray className="w-fit max-w-full lg:sticky lg:top-6">
-          <TraySheet className="p-1">
-            <ShelfPhoto url={photoUrl} rows={rows} selected={selected} onSelect={select} />
-          </TraySheet>
-          {rows.length > 0 && <TrayFooter>Click an outline to find its line.</TrayFooter>}
-        </Tray>
+      <div className={cn("mt-6 grid gap-4 lg:items-start", photoUrl && "lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]")}>
+        {photoUrl && (
+          <Tray className="w-fit max-w-full lg:sticky lg:top-6">
+            <TraySheet className="p-1">
+              <ShelfPhoto url={photoUrl} rows={rows} selected={selected} onSelect={select} />
+            </TraySheet>
+            {rows.length > 0 && <TrayFooter>Click an outline to find its line.</TrayFooter>}
+          </Tray>
+        )}
 
         {rows.length === 0 ? (
           <Tray>
@@ -237,7 +339,7 @@ export function ReviewTable({
                   s={state[d.id]!}
                   thumb={thumbs[d.id]}
                   selected={selected === d.id}
-                  problems={attempted ? rowProblems(state[d.id]!) : NO_PROBLEMS}
+                  problems={attempted ? rowProblems(d, state[d.id]!) : NO_PROBLEMS}
                   onChange={(patch) => update(d.id, patch)}
                 />
               ))}
@@ -254,7 +356,7 @@ export function ReviewTable({
             {((attempted && invalidIds.length > 0) || error) && (
               <div className="mb-3 space-y-2 sm:mr-2">
                 {attempted && invalidIds.length > 0 && (
-                  <FormMessage message={`${invalidIds.length} line${invalidIds.length === 1 ? " needs" : "s need"} a count, name or price.`} />
+                  <FormMessage message={`${invalidIds.length} line${invalidIds.length === 1 ? " needs" : "s need"} a product, count, name or price.`} />
                 )}
                 <FormMessage message={error} />
               </div>
@@ -291,10 +393,21 @@ function ShelfPhoto({
   const boxes = rows
     .flatMap((d) => d.boxes.map((b, i) => ({ d, b, key: `${d.id}-${i}` })))
     .sort((p, q) => (q.b.x2 - q.b.x1) * (q.b.y2 - q.b.y1) - (p.b.x2 - p.b.x1) * (p.b.y2 - p.b.y1));
+  const unread = unreadCells(rows);
   return (
     <div className="relative w-fit max-w-full">
       {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
       <img src={url} alt="Shelf photo with each counted unit outlined" className="block max-h-[420px] w-auto max-w-full rounded-[10px] lg:max-h-[calc(100dvh-13rem)]" />
+      {/* Parts of the photo where nothing was read: shaded so the merchant can check them. */}
+      {unread.length >= MIN_UNREAD_CELLS &&
+        unread.map((c) => (
+          <span
+            key={`${c.row}-${c.col}`}
+            aria-hidden
+            className="pointer-events-none absolute border border-dashed border-amber-300/70 bg-black/35"
+            style={{ left: `${c.x1 / 10}%`, top: `${c.y1 / 10}%`, width: `${(c.x2 - c.x1) / 10}%`, height: `${(c.y2 - c.y1) / 10}%` }}
+          />
+        ))}
       {boxes.map(({ d, b, key }) => {
         const on = selected === d.id;
         return (
@@ -342,16 +455,18 @@ function Row({
 }: {
   d: Detection;
   s: RowState;
-  thumb: string | undefined;
+  thumb: Thumb | undefined;
   selected: boolean;
-  problems: { quantity: boolean; name: boolean; price: boolean };
+  problems: { action: boolean; quantity: boolean; name: boolean; price: boolean; product: boolean };
   onChange: (patch: Partial<RowState>) => void;
 }) {
+  const [picking, setPicking] = useState(false);
   const status = storeStatus(d);
   // The product only matters when adding, or when restocking links a hand-typed item; otherwise it's the store's own item.
   const locked = s.action === "restore" || (s.action === "restock" && d.inventoryMatch !== "name");
   const storeItem = d.candidates.find((c) => c.inventoryItemId && c.inventoryItemId === d.inventoryItemId);
-  const picked = locked ? (storeItem ?? d.candidates.find((c) => c.qid === s.choice)) : d.candidates.find((c) => c.qid === s.choice);
+  const pick = s.pick;
+  const asked = pick?.kind === "product" && pick.match === "medium" && !d.inventoryItemId;
   const skipped = s.action === "skip";
   const label = reading(d) || "Unreadable label";
   return (
@@ -373,8 +488,7 @@ function Row({
           skipped && "opacity-50",
         )}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element -- a data URL cut from the local photo */}
-        {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" />}
+        <ThumbImage thumb={thumb} />
       </div>
 
       <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6 lg:flex-col lg:gap-3 xl:flex-row xl:gap-6">
@@ -403,6 +517,9 @@ function Row({
             onChange={(action) => onChange({ action })}
             options={actionsFor(d).map((a) => ({ key: a, label: ACTION_LABEL[a] }))}
           />
+          {s.action === null && (
+            <p className={cn("mt-1.5 text-xs", problems.action ? "text-red-600" : "text-amber-700")}>Not sure it&apos;s your item: choose one.</p>
+          )}
         </div>
       </div>
 
@@ -426,34 +543,61 @@ function Row({
               // Nothing to choose: show the item being restocked as plain text, not a greyed-out select.
               <p className="flex min-h-11 items-center gap-2 text-sm text-gray-700 sm:min-h-10">
                 <SolarIcon name="Box" iconStyle="Outline" size={16} className="shrink-0 text-gray-400" />
-                <span className="min-w-0 break-words">{picked ? candidateName(picked) : "Your item in store"}</span>
+                <span className="min-w-0 break-words">{storeItem ? candidateName(storeItem) : (d.inventoryItemName ?? "Your item in store")}</span>
               </p>
             ) : (
-              <NativeSelect
-                id={`${d.id}-product`}
-                value={s.choice}
-                onChange={(e) => {
-                  const next = d.candidates.find((c) => c.qid === e.target.value);
-                  onChange({
-                    choice: e.target.value,
-                    name: next ? candidateName(next) : reading(d),
-                    ...(next?.price && { price: String(next.price.median) }),
-                  });
-                }}
-                className={cn("h-11 rounded-xl px-3 pr-9 text-sm sm:h-10")}
-              >
-                {d.candidates.map((c) => (
-                  <option key={c.qid} value={c.qid}>
-                    {candidateName(c)}
-                    {c.price ? ` · ~${naira.format(c.price.median)}` : ""}
-                  </option>
-                ))}
-                <option value={NEW}>{d.candidates.length ? "None of these: new item" : "New item (not in catalogue)"}</option>
-              </NativeSelect>
+              <>
+                <button
+                  id={`${d.id}-product`}
+                  type="button"
+                  onClick={() => setPicking(true)}
+                  aria-invalid={problems.product}
+                  className={cn(
+                    "flex min-h-11 w-full items-center gap-2 rounded-xl bg-surface px-3 py-2 text-left text-sm ring-1 ring-hairline/[0.12] transition-colors hover:bg-gray-50 sm:min-h-10",
+                    problems.product && "ring-2 ring-red-500",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 break-words">
+                    {pick?.kind === "product" ? (
+                      <>
+                        <span className="text-gray-900">{pick.name}</span>
+                        {pick.variant && !pick.name.includes(pick.variant) && <span className="text-gray-500"> · {pick.variant}</span>}
+                      </>
+                    ) : pick?.kind === "new" ? (
+                      <span className="text-gray-900">New item (not in catalogue)</span>
+                    ) : (
+                      // Restocking a hand-typed item: a pick only links it to the catalogue.
+                      <span className="text-gray-500">{needsPick(s) ? "Choose a product or “New item”" : "Link a catalogue product (optional)"}</span>
+                    )}
+                  </span>
+                  <SolarIcon name="Alt-Arrow-Right" iconStyle="Outline" size={16} className="shrink-0 text-gray-400" />
+                </button>
+                {asked && (
+                  <Pill tone="amber" className="whitespace-normal">
+                    Is this your item? Check it, or pick another.
+                  </Pill>
+                )}
+                <ProductPicker
+                  open={picking}
+                  onOpenChange={setPicking}
+                  d={d}
+                  current={pick}
+                  thumb={thumb}
+                  onPick={(next) =>
+                    onChange({
+                      pick: next,
+                      name: next.kind === "product" ? next.name : reading(d),
+                      // The catalogue price is a starting point; keep the merchant's own if there is no new one.
+                      ...(next.kind === "product" && next.price && { price: String(next.price.median) }),
+                      ...(next.kind === "new" && { price: s.pick?.kind === "product" ? "" : s.price }),
+                    })
+                  }
+                />
+              </>
             )}
-            {picked?.price && (
+            {pick?.kind === "product" && pick.price && !locked && (
               <p className="text-xs tabular-nums text-gray-500">
-                Catalogue median {naira.format(picked.price.median)} ({naira.format(picked.price.min)}–{naira.format(picked.price.max)})
+                Catalogue median {naira.format(pick.price.median)} ({naira.format(pick.price.min)}–{naira.format(pick.price.max)})
               </p>
             )}
           </div>

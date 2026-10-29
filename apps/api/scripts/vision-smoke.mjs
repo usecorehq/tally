@@ -1,9 +1,5 @@
-// Live smoke test of the shelf-scan pipeline: Muse Spark reads each photo,
-// SAM 3.1 counts each product's units, Qore Catalog matches the products. Uses the built api code, no database.
-// Not part of the build or CI; it spends Meta Model API credit.
-//   pnpm --filter @tally/api build
-//   node --env-file=apps/api/.env apps/api/scripts/vision-smoke.mjs photo1.jpg photo2.jpg …
-// Needs META_MODEL_API_KEY, QORE_CATALOG_BASE_URL, QORE_CATALOG_API_KEY. Never prints a key.
+// Live smoke test of the shelf-scan pipeline (Spark read, SAM counts, catalogue match); no database.
+// Spends Meta Model API credit. Usage: docs/architecture/vision-recognition.md.
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { createRequire } from "node:module";

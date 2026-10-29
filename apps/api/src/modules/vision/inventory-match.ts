@@ -1,25 +1,6 @@
 /**
- * "Does this merchant already have it?" — answered in Tally against the
- * business's own items; Qore Catalog never sees merchant inventory. Pure, no IO.
- * Checked in this order (store first, then catalogue):
- *
- *   reading   → the camera read exactly this before and the merchant confirmed
- *               it as this item (inventory_item_readings). Works for products
- *               the catalogue doesn't know.
- *   catalogue → an active item is linked to one of the plausible candidates'
- *               Qore IDs: "in stock", never a duplicate. Sure only when that
- *               candidate also agrees on size (/v1/match signals.size = 1);
- *               otherwise "is this your X?" — Peak 900g on the shelf must not
- *               restock the merchant's Peak 400g.
- *   catalogue + archived → only an archived item has that Qore ID: "you
- *               removed X, restore?" (restoring keeps its name, price, history).
- *               Same size rule.
- *   name      → a hand-typed item (no Qore ID) whose name holds the brand and
- *               name read off the pack: "is this your X?". Never sure. Needs a
- *               legible brand, exactly one such item and no conflicting size.
- *
- * Within each step, a size-agreeing candidate beats a better-scored one that
- * doesn't; otherwise candidates keep /v1/match's order.
+ * "Does this merchant already have it?", answered in Tally against its own items. Pure, no IO. Checked in order:
+ * remembered branded reading, linked Qore ID (active, then archived), hand-typed name; sure only when sizes agree.
  */
 
 export type InventoryMatch = "reading" | "catalogue" | "name";
@@ -30,6 +11,8 @@ export type InventoryIndex = {
   byQid: Map<string, string>;
   archivedByQid: Map<string, string>;
   byReading: Map<string, string>;
+  /** Display name of every indexed item (active and archived), so a match can say which item it is. */
+  names: Map<string, string>;
   /** Active items without a Qore ID, for name matching. */
   unlinked: { id: string; name: string; variantLabel: string | null }[];
 };
@@ -39,11 +22,7 @@ export type Reading = { brand: string; name: string; pack: string };
 /** sure = false: ask the merchant to confirm before treating it as in stock. */
 export type StockedMatch = { itemId: string; match: InventoryMatch; archived: boolean; sure: boolean };
 
-/**
- * A plausible catalogue candidate, best first. sizeAgrees: /v1/match says both
- * brand and size agree with the label (signals.brand === 1 && signals.size === 1),
- * so an unbranded read never counts as sure.
- */
+/** A plausible catalogue candidate, best first. sizeAgrees: /v1/match says both brand and size match the label. */
 export type CandidateRef = { qid: string; sizeAgrees: boolean };
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}.]+/gu, " ").replace(/\s+/g, " ").trim();
@@ -52,6 +31,9 @@ const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}.]+/gu, " ").re
 export function readingKey({ brand, name, pack }: Reading): string {
   return [brand, name, pack].map(norm).join("|");
 }
+
+/** Only a reading with a legible brand is specific enough to remember and trust. */
+export const rememberable = ({ brand }: Reading): boolean => norm(brand).length > 0;
 
 /** active: the business's live items; archived: its archived items that carry a Qore ID. */
 export function indexInventory(
@@ -67,11 +49,12 @@ export function indexInventory(
     archivedByQid: new Map(archived.filter((i) => i.coreQid && !byQid.has(i.coreQid)).map((i) => [i.coreQid!, i.id])),
     byReading: new Map(readings.filter((r) => live.has(r.itemId)).map((r) => [r.readingKey, r.itemId])),
     unlinked: active.filter((i) => !i.coreQid).map(({ id, name, variantLabel }) => ({ id, name, variantLabel })),
+    names: new Map([...archived, ...active].map((i) => [i.id, i.variantLabel ? `${i.name} ${i.variantLabel}` : i.name])),
   };
 }
 
 export function matchInventory(reading: Reading, candidates: CandidateRef[], index: InventoryIndex): StockedMatch | null {
-  const byReading = index.byReading.get(readingKey(reading));
+  const byReading = rememberable(reading) ? index.byReading.get(readingKey(reading)) : undefined;
   if (byReading) return { itemId: byReading, match: "reading", archived: false, sure: true };
 
   // Size-agreeing candidates first (stable, so /v1/match order holds within each group).

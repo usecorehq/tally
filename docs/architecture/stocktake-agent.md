@@ -12,7 +12,7 @@ Tally has two ways to read a shelf photo, chosen by what the merchant is doing:
 | Time | ~15–30 s, in one request | ~1 minute (first pass + agent), in the background |
 | Use | A fast look; the agent's first pass and fallback | Stock-taking, where accuracy matters more than speed |
 
-Point-to-sell stays a fixed pipeline ([identify](vision-recognition.md#point-to-sell)): a loop of model turns would be too slow at the till.
+Identify one product stays a fixed pipeline ([identify](vision-recognition.md#identify-one-product)): a loop of model turns would be too slow for a single item.
 
 ## How a run works
 
@@ -46,8 +46,10 @@ The pattern from Meta's agent workshop: checks run inside the tools at fixed poi
 | `record_line` | A `CHECK` line, or a changed label, was zoomed into first (waived once the zoom budget is spent) | Refused: "zoom into it first" |
 | `record_line` | The matched product's brand agrees with the brand read ("Close-Up" = "closeup") | Refused: pick a product of that brand or leave qid empty |
 | `record_line` | The matched product's size agrees with the pack read, within 5% (units convert: 0.4kg = 400g) | Refused: pick the matching size or leave qid empty |
+| `record_line` | When both the label and the product name a flavour or variant (orange, vanilla, chicken, original…), they share one | Refused: pick the matching flavour or leave qid empty |
 | `record_line` | `use_counted` has a `count_units` result | Refused |
 | 3 refusals on a line | | **Escalated:** the line is recorded unresolved with `review: "Escalated after 3 refused records: …"` |
+| `record_line` with `unresolved_reason` | | The line keeps its reading and candidates, with `review: "Agent couldn't confirm: <reason>"`, so it sorts first and clients don't pre-select a candidate |
 | `submit_stocktake` | Every line is recorded | Refused, listing the open lines; on the third try it ends with those lines `review: "Not reviewed by the agent: first-pass result."` |
 | Confirm | The merchant reviews every line | The human sign-off |
 
@@ -56,7 +58,7 @@ The pattern from Meta's agent workshop: checks run inside the tools at fixed poi
 - **No invented products:** `record_line` refuses a Qore ID that wasn't returned for that line, by the first pass or one of its searches.
 - **"In stock" is decided by the same rules everywhere:** the final store match is recomputed with `inventory-match.ts`, the same rules the quick scan and identify use, not taken from the model's word.
 - **Label, not catalogue:** readings must be what's printed on the pack. The merchant sees them, and they are what the catalogue learns from.
-- **Counts:** a SAM count replaces the first-pass count only when the agent asks for it, after comparing.
+- **Counts:** a SAM count from `count_units` replaces the first-pass count only when the agent asks for it (`use_counted`), after comparing; that choice stands even when it is under half of Spark's. A line whose first-pass counts disagree is marked `CHECK`, and zooms default to Spark's boxes (where the label was read), not SAM's.
 - **Tool budgets** stop runaway loops; errors come back to the model as text it can act on, never as exceptions.
 - **No server copy:** the photo travels with `store: false` and stateless encrypted reasoning replay, Meta's recommended path for agents. `previous_response_id` (server-stored history) failed on a live run with "referenced response not found or expired".
 
@@ -78,7 +80,7 @@ Poll every 1–2 s.
   "steps": [
     { "turn": 0, "kind": "baseline", "tool": null, "summary": "First pass: 12 products", "ms": 23692 },
     { "turn": 1, "kind": "thought", "tool": null, "summary": "Zooming into the unclear labels.", "ms": 4216 },
-    { "turn": 1, "kind": "tool", "tool": "zoom", "summary": "zoomed 814,569,943,724", "ms": 66 }
+    { "turn": 1, "kind": "tool", "tool": "zoom", "summary": "read the label of \"Peak Full Cream Milk\" up close", "ms": 66 }
   ],
   "result": null
 }
@@ -86,16 +88,26 @@ Poll every 1–2 s.
 
 - `run.status`: `running`, `done`, `fallback` (the agent stopped; `result` is the first pass) or `failed` (`error` says why; also used for a run interrupted by an API restart).
 - `steps`: the trace so far. The app can show it live ("Reading the top shelf…"), and it is the audit trail.
-- On the web, apps/mp's `/stocktake` page polls every 1.5 s and shows the trace as progress (see [Web stock-take](vision-recognition.md#web-stock-take-apps-mp)).
-- `result`: once finished, the scan in the `shelf-scans` shape (`scanId`, `detections`, …), each detection with `evidence: [{ turn, tool, summary }]` and `review`: `null`, or why the merchant should look closely (escalated, or never reviewed by the agent). Show `review` lines first. While the result is fresh (an hour) candidates carry names and prices; later it comes from the stored scan, where candidates are Qore IDs + scores only.
+- On the web, apps/mp's `/stocktake/history/<runId>` page polls every 1.5 s and shows the trace as progress, newest step first, and picks polling back up after a refresh (see [Web stock-take](vision-recognition.md#web-stock-take-apps-mp)).
+- `result`: once finished, the stored scan exactly as [`GET …/shelf-scans/:scanId`](vision-recognition.md#get-apibusinessesidvisionshelf-scansscanid-built) returns it: `status`, detections with candidate names and prices, each line's `decision`, `evidence: [{ turn, tool, summary }]` and `review`: `null`, or why the merchant should look closely (the agent couldn't confirm it, escalated, or never reviewed by the agent). Show `review` lines first, and don't pre-select a candidate on them. `review` and each candidate's `match` are stored, so this holds after a refresh or days later. For the first hour the run's in-memory result supplies candidate details, saving the catalogue lookups.
+
+### `POST /api/businesses/:id/vision/shelf-scans/:scanId/rerun`
+
+A new run on a stored photo, grouped under the photo's first scan (`rerun_of_scan_id`). It runs exactly like a new stock-take, with the same deadlines; only the image comes from R2. See [rerun](vision-recognition.md#post-apibusinessesidvisionshelf-scansscanidrerun-built).
+
+### `GET /api/businesses/:id/vision/stocktakes?limit=`
+
+The history: runs and quick scans, newest first, with status and counts, reruns grouped under their original. See [Stock-take history](vision-recognition.md#get-apibusinessesidvisionstocktakeslimit-built).
 
 ## Data
 
-Migration `0006_add_stocktake_agent`:
+Migration `0006_add_stocktake_agent` (how it ties into scans: [vision schema](vision-schema.md)):
 
 - **`vision_agent_runs`**: business, status, model, turns, input/output tokens, error, who started it, when it started and finished, and the resulting `scan_id`.
 - **`vision_agent_steps`**: one row per step (`baseline`, `thought`, `tool`), with turn, tool, arguments, a short summary (never image data) and time.
 - **`vision_detections.evidence`**: the tool calls behind each line of an agent scan; null for a quick scan.
+- **`vision_agent_runs.rerun_of_scan_id`** (migration `0008_add_stocktake_rerun_discard`): for a rerun, the photo's first scan; null for a new stock-take.
+- **`vision_detections.review`** (migration `0007_add_detection_review`): why the merchant should look closely at a line; null for a quick scan and for lines the agent resolved.
 
 ## Measured (Oct 2026, staging catalogue)
 
@@ -112,7 +124,18 @@ To compare the agent with the quick scan on your own photos with hand-counted tr
 ## Running it
 
 - **No separate service:** the agent is TypeScript in `apps/api` (`modules/vision/stocktake/`). It calls the Meta Model API over HTTPS, like the rest of the vision module, and needs the same env (`META_MODEL_API_KEY`, `QORE_CATALOG_*`, optionally `R2_*`).
-- **Host:** runs live in the API process, so the API must run on a long-lived host (a container or VM), not short-lived serverless functions. A restart loses runs in progress. On boot, and when such a run is read, runs still `running` after 10 minutes are marked `failed` ("Interrupted: the API restarted during the run"). A job queue is the fix when there is more than one API instance.
+- **Host:** runs live in the API process, so the API must run on a long-lived host (a container or VM), not short-lived serverless functions. A job queue is the fix when there is more than one API instance.
+- **Every run ends.** Each phase is raced against a deadline (`STOCKTAKE_DEADLINES` in `vision.service.ts`), so a hung model call or a database connection that never comes can't leave a run `running`:
+
+  | Phase | Deadline | On timeout |
+  |---|---|---|
+  | Store reads at the start of the first pass (before any paid model call) | 20 s | `failed`: "First pass failed: Database busy, retry shortly" |
+  | First pass | 120 s | `failed`: "First pass failed: First pass took longer than 120 s" |
+  | Whole run (the agent gets what the first pass left) | 240 s | `fallback` to the first pass: "Agent stopped: Run deadline reached" |
+  | Each result or status write | 20 s, status write tried 3 times | `failed`: "Could not save the result: …" |
+  | Restart, or a status write that never landed | — | On boot, and when the run is read, a run still `running` after 5 minutes is marked `failed` ("Interrupted: the API restarted during the run") |
+
+- **Database connections:** see [Connection pooling](database.md#connection-pooling). In short, use the transaction pooler (port 6543), with at most 5 connections and idle ones closed after 20 s.
 
 ## Planned
 

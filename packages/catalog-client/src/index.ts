@@ -177,10 +177,8 @@ export class CatalogClient {
   }
 
   /**
-   * POST /v1/images: a product picture for a confirmed Qore ID (scope
-   * feedback:write). Send a tight crop, never the whole shelf. Send the
-   * /v1/feedback line first and pass its clientRef as feedbackClientRef.
-   * Stored once per sha256, so resending is safe. Pending until a curator approves it.
+   * POST /v1/images: a tight product crop for a confirmed Qore ID, linked to its /v1/feedback line via
+   * feedbackClientRef (send feedback first). Stored per sha256, so resends are safe; pending until approved.
    */
   async uploadImage(
     upload: { file: Blob | Uint8Array; filename: string; qid: string; view?: ImageView; feedbackClientRef?: string },

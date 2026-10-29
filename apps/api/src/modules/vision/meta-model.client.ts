@@ -1,9 +1,6 @@
 /**
- * Minimal Meta Model API client: the Responses endpoint only, which serves both
- * Muse Spark and SAM 3.1. Plain fetch, like @tally/catalog-client, so the key
- * never leaves this file except in the Authorization header.
- *
- * Docs: https://dev.meta.ai/docs/protocols/responses, https://dev.meta.ai/docs/error-handling
+ * Minimal Meta Model API client for the Responses endpoint (Muse Spark and SAM 3.1). Plain fetch,
+ * so the key never leaves this file except in the Authorization header.
  */
 
 export class MetaModelError extends Error {

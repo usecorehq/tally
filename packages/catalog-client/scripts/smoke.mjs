@@ -1,7 +1,5 @@
-// Live smoke test against a deployed Qore Catalog. Not part of the build.
-//   pnpm --filter @tally/catalog-client build
-//   QORE_CATALOG_BASE_URL=https://... QORE_CATALOG_API_KEY=... pnpm --filter @tally/catalog-client smoke
-// Never prints the key.
+// Live smoke test against a deployed Qore Catalog; not part of the build. Never prints the key.
+// Usage: docs/architecture/catalog.md.
 import { createRequire } from "node:module";
 
 const { catalogClient, CatalogError } = createRequire(import.meta.url)("../dist/index.js");
