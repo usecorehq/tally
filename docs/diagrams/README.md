@@ -47,9 +47,9 @@ See [`architecture/vision-recognition.md`](../architecture/vision-recognition.md
 
 | Diagram | Description |
 |---|---|
-| [`vision-shelf-scan-sequence.svg`](images/vision-shelf-scan-sequence.svg) | Shelf photo → Muse Spark → SAM 3.1 per product → catalogue match → confirm → inventory + photo feedback. |
+| [`quick-scan.webp`](quick-scan.webp) | Quick scan: shelf photo to stock. Muse Spark reads, then SAM 3.1 counts and Qore Catalog matches in parallel, the store check, save the scan, photo and crops, review, confirm in one transaction, then feedback and crops as training samples. Also the stock-take agent's first pass. |
 | [`vision-schema-erd.svg`](images/vision-schema-erd.svg) | The vision tables and how they relate: scans, detections, readings, stock-take runs and steps, the two links to inventory items, and the soft links to Qore Catalog, R2 and stock movements. See [`architecture/vision-schema.md`](../architecture/vision-schema.md). |
-| [`vision-identify-sequence.svg`](images/vision-identify-sequence.svg) | Identify one product: barcode on device first, then Muse Spark reads the label and Tally matches it to the merchant's items (catalogue only on a miss); confirming remembers the reading. |
+| [`identify-one-product.webp`](identify-one-product.webp) | Identify one product in stock: barcode on the device first (tier 0), then Muse Spark reads the label and Tally matches the shop's own items, asking Qore Catalog only on a miss (tier 1); a tap confirms and the reading is remembered. Tier 2 (on-device model) is planned. |
 
 ## Stock-take agent
 
@@ -57,8 +57,8 @@ See [`architecture/stocktake-agent.md`](../architecture/stocktake-agent.md).
 
 | Diagram | Description |
 |---|---|
-| [`stocktake-agent-sequence.svg`](images/stocktake-agent-sequence.svg) | Async run: first pass, then the Muse Spark tool loop (zoom, catalogue search, SAM count, store check, record), step trace for polling, human confirm. |
-| [`stocktake-history-sequence.svg`](images/stocktake-history-sequence.svg) | Stock-take history and reopening a session: list, stored scan filled back in from Qore Catalog, presigned crops, the photo from the browser. |
+| [`stock-take-agent-run.webp`](stock-take-agent-run.webp) | Stock-take agent, one run step by step: start (202 with a run id), first pass saved as the baseline, the Muse Spark tool loop (zoom up to 30, catalogue search, SAM recount, store check, checked record_line), live trace polled every 1.5 s, the merchant's sign-off. |
+| [`stock-take-history.webp`](stock-take-history.webp) | Stock-take history: list (recents and history by day), reopen any stock-take at its own URL on any device (candidates filled back from Qore Catalog, photo and crops presigned), then rerun, discard or confirm; only one run of a photo is confirmed, the others become superseded. |
 
 ## Database
 
