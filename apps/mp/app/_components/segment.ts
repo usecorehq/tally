@@ -1,7 +1,5 @@
-// Shared classes for the shell's segmented controls (phone nav, appearance).
-// The kit's SegmentedControl thumb is a white sheet on a light track, which
-// vanishes in dark; here the dark track drops to the deepest grey and the
-// thumb keeps a hairline so the selection always reads.
+// Shared classes for the shell's segmented controls. The kit's white thumb vanishes on a dark track,
+// so dark mode drops the track to the deepest grey and keeps a hairline on the thumb.
 
 export const SEGMENT_TRACK = "rounded-xl bg-gray-200/60 dark:bg-gray-50 dark:ring-1 dark:ring-hairline/[0.06]";
 

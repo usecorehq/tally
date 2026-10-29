@@ -3,9 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "./lib/cn";
 
-// Qorelly Design V2 buttons (v2-kit V2Button, list-kit PRIMARY / QUIET_MATERIAL):
-// 12px rectangles, one primary per view. Tones: primary (brand), quiet (white
-// sheet with a hairline), soft (grey well), dark (near-black first-run CTA).
+// Qorelly Design V2 buttons: 12px rectangles, one primary per view; tones primary, quiet, soft, dark.
 // `default` / `outline` / `secondary` are the older names for primary / quiet / soft.
 const buttonVariants = cva(
   "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-colors active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/15 dark:focus-visible:ring-gray-900/40 disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",

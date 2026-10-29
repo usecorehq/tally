@@ -13,10 +13,8 @@ export type TallyDbOptions = {
 
 export function buildTallyDb(connectionUrl: string, opts: TallyDbOptions = {}) {
   const client = postgres(connectionUrl, {
-    // The Supabase pooler is shared with other Qorelly projects (pool_size 15):
-    // keep few connections and give idle ones back, or they hold pooler slots
-    // for the life of the process (postgres.js' default idle_timeout is 0) and
-    // new connections (e.g. a background stock-take) wait.
+    // The Supabase pooler is shared (pool_size 15): keep few connections and release idle ones
+    // (postgres.js defaults idle_timeout to 0), or they hold slots and background work waits.
     max: opts.max ?? 5,
     idle_timeout: 20,
     max_lifetime: 60 * 30,

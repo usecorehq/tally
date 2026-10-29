@@ -3,9 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "drizzle-kit";
 
-// drizzle-kit runs with cwd = packages/db. The root .env wins; if it leaves
-// SUPABASE_DB_URL empty, take it from apps/api/.env (where the API keeps it).
-// Checked explicitly because dotenv never replaces a key set to "".
+// The root .env wins; if it leaves SUPABASE_DB_URL empty, fall back to apps/api/.env
+// (checked explicitly because dotenv never replaces a key set to "").
 config({ path: resolve(__dirname, "../../.env"), quiet: true });
 const apiEnv = resolve(__dirname, "../../apps/api/.env");
 if (!process.env.SUPABASE_DB_URL && existsSync(apiEnv)) {
@@ -24,9 +23,8 @@ export default defineConfig({
   // Only ever diff/push the tally schema — public.*, auth.* and bookmi.* belong
   // to other projects on the same database.
   schemaFilter: ["tally"],
-  // The shared database also hosts bookmi, whose ledger sits in the default
-  // drizzle.__drizzle_migrations. Drizzle's migrator skips any migration older
-  // than the newest ledger row, so sharing that table would silently drop ours.
+  // Own ledger table: bookmi's rows in the shared default drizzle.__drizzle_migrations
+  // would make the migrator skip our older migrations.
   migrations: {
     schema: "tally",
     table: "__drizzle_migrations",

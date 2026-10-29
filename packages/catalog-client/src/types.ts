@@ -153,8 +153,7 @@ export type Category = {
 export type FeedbackOutcome = "accepted" | "corrected" | "new_item" | "removed";
 
 /**
- * accepted → confirmedQid defaults to suggestedQid (one of them required);
- * corrected → confirmedQid required; new_item → confirmedName required, no confirmedQid.
+ * accepted needs suggestedQid or confirmedQid; corrected needs confirmedQid; new_item needs confirmedName, no Qid.
  * Idempotent per clientRef, so retries are safe.
  */
 export type FeedbackItem = {

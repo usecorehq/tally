@@ -14,6 +14,32 @@ export type Candidate = {
   /** Indicative catalogue price in whole Naira; not a sale amount. */
   price?: { median: number; min: number; max: number } | null;
   inventoryItemId?: string | null;
+  /** How well it fits what was read; missing on a stored scan (Qore ID + score only). */
+  match?: MatchStrength;
+  /** The catalogue's approved picture; null until a curator approves one. */
+  image?: CatalogImage;
+};
+
+/** strong: brand and size agree; medium: brand agrees, or a strong name match; low: only just plausible. */
+export type MatchStrength = "strong" | "medium" | "low";
+
+export type CatalogImage = { url: string; width: number | null; height: number | null } | null;
+
+/** A catalogue search hit (GET /api/catalog/products?q=): no price; fetch the product for it. */
+export type CatalogProduct = {
+  qid: string;
+  name: string;
+  variantLabel: string | null;
+  size: { value: number; unit: string } | null;
+  packQty: number;
+  brand: { slug: string; name: string } | null;
+  image?: CatalogImage;
+};
+
+/** GET /api/catalog/products/:qid: the product with its price and its other sizes. */
+export type CatalogProductDetail = CatalogProduct & {
+  price: { median: number; min: number; max: number } | null;
+  variants: { qid: string; variantLabel: string | null; packQty: number }[];
 };
 
 export type Detection = {

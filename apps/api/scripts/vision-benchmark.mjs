@@ -1,13 +1,5 @@
-// Benchmark of the quick scan vs the stock-take agent on shelf photos with hand-counted ground truth.
-// For each photo: the quick scan (Muse Spark read, SAM 3.1 counts, Qore Catalog match), then the agent
-// starting from that same first pass, as VisionService.runStocktake does. Uses the built api code, no
-// database (empty inventory). Not part of the build or CI; it spends Meta Model API credit.
-//   pnpm --filter @tally/api build
-//   node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs <folder or photos>… [--out results.json]
-//   node --env-file=apps/api/.env apps/api/scripts/vision-benchmark.mjs --template shelf1.jpg [--force]
-// Truth per photo: shelf1.truth.json (or shelf1.jpg.truth.json) next to it:
-//   { "products": [{ "brand": "Peak", "name": "Full Cream Milk Powder", "pack": "400g", "count": 12, "qid": "QC-…" | null }] }
-// Needs META_MODEL_API_KEY, QORE_CATALOG_BASE_URL, QORE_CATALOG_API_KEY. Never prints a key.
+// Benchmarks the quick scan against the stock-take agent on shelf photos with hand-counted ground truth.
+// No database; spends Meta Model API credit. Usage: apps/api/README.md#vision-benchmark.
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";

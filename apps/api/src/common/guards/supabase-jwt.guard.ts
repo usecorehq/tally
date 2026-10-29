@@ -13,17 +13,8 @@ import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import type { AuthenticatedUser } from "../decorators/current-user.decorator";
 
 /**
- * Verifies Supabase-issued access tokens.
- *
- * Dual-mode by token header `alg`, with the algorithm family pinned per key
- * source so neither mode can be confused into the other:
- *  - HS256 → the project's legacy shared JWT secret (SUPABASE_JWT_SECRET)
- *  - ES256/RS256 → the project's JWKS (derived from SUPABASE_URL), for when
- *    the Supabase project migrates to asymmetric signing keys
- *
- * `audience: 'authenticated'` is enforced on both paths: the legacy anon and
- * service-role API keys are JWTs signed with the same shared secret but carry
- * no `aud`/`sub`, so they must never authenticate as a user.
+ * Verifies Supabase access tokens: HS256 against the shared secret or ES256/RS256 via JWKS, alg pinned per source.
+ * `aud: authenticated` is enforced so the anon/service-role keys (same secret, no aud/sub) never pass as a user.
  */
 @Injectable()
 export class SupabaseJwtGuard implements CanActivate {

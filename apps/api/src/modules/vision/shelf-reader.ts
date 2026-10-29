@@ -1,11 +1,6 @@
 /**
- * Shelf photo → the distinct products in it, read by Muse Spark in one call.
- * Pure: builds the Responses request and validates the reply, no IO.
- *
- * Spark reports one box per visible unit (Meta's grounding guide: pointing at
- * every instance before counting beats asking for a number), so count is the
- * number of boxes. Boxes are on Spark's 0–1000 grid of the uploaded image.
- * See docs/architecture/vision-recognition.md.
+ * Shelf photo → its distinct products, read by Muse Spark in one call. Pure, no IO.
+ * Spark boxes every visible unit (pointing beats asking for a number), so count = boxes, on a 0–1000 grid.
  */
 
 export const SHELF_MODEL = "muse-spark-1.3";
@@ -114,9 +109,8 @@ export function shelfRequest(image: Buffer, type: ImageType): Record<string, unk
 }
 
 /**
- * Validate Spark's JSON. Decoding is schema-constrained, but the values are
- * still model output: trim text, clamp boxes to the grid, drop unnamed or
- * box-less products, merge duplicates, cap the list.
+ * Validates Spark's JSON: still model output, so trim text, clamp boxes, drop unnamed or box-less products,
+ * merge duplicates and cap the list.
  */
 export function parseShelfProducts(text: string): ShelfProduct[] {
   let raw: unknown;

@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Block secrets from entering git. One script, two callers:
-#   .githooks/pre-commit         → scripts/check-secrets.sh --staged
-#   CI (secrets job)             → scripts/check-secrets.sh --tree
-#                                  scripts/check-secrets.sh --range <base>...HEAD
-# Prints file:line with the secret redacted — never the value itself.
-# Bypass only for a confirmed false positive: git commit --no-verify (CI still checks).
+# Block secrets from entering git (pre-commit: --staged; CI: --tree or --range <base>...HEAD).
+# Prints file:line with the secret redacted, never the value.
 set -euo pipefail
 
 # Extended regexes. Keep them specific: a noisy guard gets bypassed.

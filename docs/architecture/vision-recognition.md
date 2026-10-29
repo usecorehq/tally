@@ -69,7 +69,7 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
 1. Pick one of the user's businesses (`GET /api/businesses`).
 2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to at most a 2560 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation.
 3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then `GET …/stocktakes/:runId` every 1.5 s, showing the step trace as it grows. **Quick scan** calls `POST …/shelf-scans` and waits.
-4. The review table has one row per detection, `review` lines first: the reading, an editable count, the catalogue candidates with their ₦ median, the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box.
+4. The review table has one row per detection, `review` lines first: the reading, an editable count, the product (opens the picker; pre-filled by the rules in [Showing a line](#showing-a-line-clients)), the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box.
 5. Confirm sends every row to `…/shelf-scans/:scanId/confirm` and shows the outcome: created, restocked, restored, skipped, invalid lines with their reasons, and the feedback sent.
 
 - **Calls:** every call is a server action (`apps/mp/app/stocktake/actions.ts`) that uses the session's Supabase token. The browser never sees the token, and the Meta key stays in apps/api. Server actions accept up to 5 MB (`experimental.serverActions.bodySizeLimit`).
@@ -154,9 +154,12 @@ Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the 
 
 - **Pre-fill by the top candidate's `match`:**
   - `strong`: pre-fill its name and price.
-  - `medium`: pre-fill, but ask "Is this your item?".
-  - `low`: **don't pre-fill.** Default the line to "New item" with the label's reading as the name (e.g. "Blue box") and no price; the low suggestions appear only in the picker. Live, an unbranded "Blue box" otherwise pre-filled a hair dye at ₦11,499.
-- **Product picker** (tapping a line's product):
+  - `medium`: pre-fill, but ask "Is this your item?". A stored scan has no `match`: treat it as medium.
+  - `low`: **don't pre-fill.** Nothing is picked: the merchant must choose a product or "New item" before confirming. The name is the label's reading (e.g. "Blue box") with no price; the low suggestions appear only in the picker. Live, an unbranded "Blue box" otherwise pre-filled a hair dye at ₦11,499.
+  - **A `review` reason overrides the match: pre-fill nothing.** The agent couldn't confirm the line. Live, an unreadable "Cooking Oil" pre-picked Dax Hair Pomade and was confirmed as is.
+  - No candidates: a new item named from the label.
+  - A restock of a hand-typed item (`inventoryMatch: "name"`) needs no pick; a pick only links the item to the Qore ID.
+- **Product picker** (tapping a line's product; built in apps/mp, `product-picker.tsx`):
   - **Suggested:** the line's `candidates`, each with its image or the crop, name, size or variant, ~₦ median and a match pill. The current pick is selected.
   - **Other sizes of the selected product:** `GET /api/catalog/products/:qid` returns `variants: [{ qid, variantLabel, packQty }]`. A variant carries no price, so fetch the chosen variant the same way for its price. Picking another size fixes the most common error: right product, wrong size.
   - **Search the catalogue:** `GET /api/catalog/products?q=…&limit=10`, debounced.

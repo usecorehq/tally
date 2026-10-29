@@ -3,10 +3,8 @@ import { createServer, type Server, type Socket } from "node:net";
 import { buildTallyDb, sql } from "@tally/db";
 
 /**
- * A full Supabase pooler looks like a server that accepts the TCP connection
- * but never finishes the Postgres handshake. Queries must fail fast (connect
- * timeout), including the ones queued behind busy connections, instead of
- * hanging: that hang kept a stock-take "running" for minutes.
+ * A full Supabase pooler accepts TCP but never finishes the handshake; queries (queued ones too)
+ * must fail on the connect timeout instead of leaving a stock-take "running".
  */
 describe("buildTallyDb against a pooler that never answers", () => {
   let server: Server;
@@ -33,9 +31,8 @@ describe("buildTallyDb against a pooler that never answers", () => {
     const ms = Date.now() - t0;
 
     expect(results.every((r) => r.status === "rejected")).toBe(true);
-    // Each connection slot fails once per connect timeout, so queued queries fail in waves:
-    // about (queries / max) × timeout (here 30 / 2 × 1 s ≈ 15 s; in production 5 slots × 10 s).
-    // Bounded, but not instant, which is why the stock-take also has its own deadlines.
+    // Slots fail once per connect timeout, so queued queries fail in waves of about (queries / max) × timeout.
+    // Bounded but not instant, which is why the stock-take also has its own deadlines.
     expect(ms).toBeLessThan(20_000);
     const reasons = new Set(results.map((r) => String((r as PromiseRejectedResult).reason?.cause?.code ?? (r as PromiseRejectedResult).reason?.code)));
     expect([...reasons]).toEqual(["CONNECT_TIMEOUT"]);
