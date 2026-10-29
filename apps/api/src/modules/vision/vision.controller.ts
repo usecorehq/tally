@@ -140,6 +140,43 @@ export class VisionController {
     return this.vision.getStocktake(businessId, user.sub, runId);
   }
 
+  @Post("photo-check")
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_IDENTIFY_IMAGE_BYTES + 1, files: 1 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ schema: { type: "object", properties: { image: { type: "string", format: "binary" } }, required: ["image"] } })
+  @ApiOperation({
+    summary:
+      "Before a scan: is this shelf photo worth reading? One photo (JPEG/PNG/WebP, ≤ 1 MB, ~1024 px long edge). Muse Spark returns a verdict (good, usable, retake), issues worst first, one instruction, a rough product count, label legibility and the area with the most readable products. Advice only: nothing is stored.",
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        verdict: "retake",
+        issues: ["too_far", "angled"],
+        instruction: "Step closer so one or two shelves fill the photo.",
+        productsVisible: 30,
+        labelsLegible: "few",
+        region: { x1: 420, y1: 120, x2: 980, y2: 560 },
+        model: "muse-spark-1.3",
+        ms: 2400,
+      },
+    },
+  })
+  checkPhoto(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() { businessId }: BusinessParams,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: MAX_IDENTIFY_IMAGE_BYTES, message: "Image must be 1 MB or smaller" })
+        .build({ errorHttpStatusCode: 413, fileIsRequired: false }),
+    )
+    file: UploadedImage | undefined,
+  ) {
+    if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
+    return this.vision.checkPhoto(businessId, user.sub, file.buffer);
+  }
+
   @Post("identify")
   @HttpCode(200)
   @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_IDENTIFY_IMAGE_BYTES + 1, files: 1 } }))
