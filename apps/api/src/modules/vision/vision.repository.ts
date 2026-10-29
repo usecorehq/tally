@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, schema, sql } from "@tally/db";
 import { TALLY_DB, type TallyDb } from "../../drizzle/drizzle.module";
 import { outcomeFor, type DecidedDetection } from "./confirm-plan";
-import { readingKey } from "./inventory-match";
+import { readingKey, rememberable } from "./inventory-match";
 import type { Detection } from "./shelf-scan";
 import type { ConfirmDecision } from "./vision.dto";
 
@@ -238,7 +238,7 @@ export class VisionRepository {
           })
           .where(eq(visionDetections.id, det.id));
 
-        if (applied.item) {
+        if (applied.item && rememberable(det)) {
           // Remember what the camera read for this item, so the next scan recognises it.
           await tx
             .insert(inventoryItemReadings)
@@ -265,6 +265,15 @@ export class VisionRepository {
       result.pendingFeedback = await this.pendingFeedback(tx, scanId);
       return result;
     });
+  }
+
+  /** True when itemId is an active (not archived) item of this business. */
+  async isActiveItem(businessId: string, itemId: string): Promise<boolean> {
+    const [item] = await this.db
+      .select({ id: inventoryItems.id })
+      .from(inventoryItems)
+      .where(and(eq(inventoryItems.businessId, businessId), eq(inventoryItems.id, itemId), isNull(inventoryItems.archivedAt)));
+    return Boolean(item);
   }
 
   /**

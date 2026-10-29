@@ -14,7 +14,7 @@ A **scan** (`vision_scans`) is one shelf photo. Each product found in it is a **
 |---|---|---|---|
 | `vision_scans` | One shelf photo: sha256 and size (never the photo), model ids, time per stage, `open` → `confirmed` | `businesses` | `POST …/vision/shelf-scans`, or a stock-take run when it saves its result |
 | `vision_detections` | One product in a scan: what Muse Spark read, Spark and SAM counts, boxes, catalogue candidates, the store match, and then the merchant's decision | `vision_scans` | Inserted with its scan; decision columns set by `POST …/shelf-scans/:scanId/confirm` |
-| `inventory_item_readings` | "The camera read `brand\|name\|pack`, and the merchant said it is this item" | `inventory_items` | Scan confirm (every non-skip line) and `POST …/vision/identify/confirm` |
+| `inventory_item_readings` | "The camera read `brand\|name\|pack`, and the merchant said it is this item" | `inventory_items` | Scan confirm (every non-skip line with a brand) and `POST …/vision/identify/confirm` |
 | `vision_agent_runs` | One stock-take: status, model, turns, tokens, error, the resulting scan | `businesses` | `POST …/vision/stocktakes` creates it; the background run updates it |
 | `vision_agent_steps` | One step of a run: `baseline` (first pass), `thought` or `tool` with its arguments and a short summary | `vision_agent_runs` | The background run, as it goes |
 
@@ -70,14 +70,14 @@ confirm       POST shelf-scans/:scanId/confirm, one transaction
                                           (or a restock if an active item already has that Qore ID or name)
                         skip            → nothing
               → vision_detections decision columns
-              → inventory_item_readings upsert (every non-skip line)
+              → inventory_item_readings upsert (every non-skip line with a brand)
               → vision_scans confirmed once no line is undecided
               after commit, best-effort: catalogue feedback → feedback_sent_at, crop uploads
 
-identify      POST identify/confirm → inventory_item_readings upsert
+identify      POST identify/confirm → inventory_item_readings upsert (with a brand)
 ```
 
-The next scan checks the store before the catalogue: first `inventory_item_readings` (`inventory_match = reading`), then items linked to a candidate's Qore ID (`catalogue`), then hand-typed item names (`name`). That's why confirming once makes the same product show as **In store** next time.
+The next scan checks the store before the catalogue: first `inventory_item_readings` (`inventory_match = reading`, branded readings only), then items linked to a candidate's Qore ID (`catalogue`), then hand-typed item names (`name`). That's why confirming once makes the same product show as **In store** next time.
 
 ## What the database enforces
 

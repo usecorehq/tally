@@ -58,7 +58,7 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
    - `add` creates the merchant's copy (`source = 'photo'`, with the Qore ID when picked from the catalogue) and an `opening` stock movement. It never duplicates an active item with the same Qore ID or name: that item is restocked instead. The catalogue picture is not copied; it is shown from Qore Catalog by Qore ID.
    - `restock` adds a `restock` movement. With a `qid`, a hand-typed item is linked to that product so later scans match exactly.
    - `restore` un-archives the item (keeping its name, price and history), then restocks it.
-   - Every non-skip decision remembers the reading for that item (`inventory_item_readings`).
+   - Every non-skip decision remembers the reading for that item (`inventory_item_readings`), when the reading has a brand. "Cooking oil" or "bucket" alone could be any product, so unbranded readings are never remembered or matched.
    - Then every decided line goes to Qore Catalog as `source: "photo"` feedback, clientRef `<scanId>:<position>`. After that feedback is sent, each line confirmed with a Qore ID has its crop uploaded to `POST /v1/images` (`view: on_shelf`, same clientRef as `feedbackClientRef`). See "Product crops" below. As in [onboarding](onboarding.md), a catalogue outage never undoes the stock changes; unsent feedback goes out on the next confirm of the scan.
    - Retries are safe: decided detections are left alone, and stock movements are keyed by detection id.
 
@@ -206,7 +206,7 @@ Point-to-sell. Multipart, one field `image`: JPEG, PNG or WebP, at most 1 MB. Se
 
 ### `POST /api/businesses/:id/vision/identify/confirm` (built)
 
-`{ "reading": <identify's reading, unchanged>, "itemId": "…" }` remembers that reading for that active item, so the next identify recognises it from the reading with no catalogue call. Call it when the merchant confirms a suggestion or picks the right item. Returns `{ itemId, readingKey }`; 404 when the item isn't an active item of this business.
+`{ "reading": <identify's reading, unchanged>, "itemId": "…" }` remembers that reading for that active item, so the next identify recognises it from the reading with no catalogue call. Call it when the merchant confirms a suggestion or picks the right item. Returns `{ itemId, readingKey }`, where `readingKey` is null when the reading has no brand (too vague to remember); 404 when the item isn't an active item of this business.
 
 ### `GET /api/businesses/:id/vision/shelf-scans/:scanId` (built)
 
@@ -281,7 +281,7 @@ Migration `0004_add_vision_scans`, all in the `tally` schema. Child rows carry `
 
 - **`vision_scans`** (built): business, status (`open`, `confirmed`), the photo's sha256 and size, model ids, time per stage, `created_by`.
 - **`vision_detections`** (built): the scan and position; brand, name, pack and look as read; Spark's and SAM's counts; boxes and confidence; candidates as `[{qid, score}]`; the item it looks like and how it was found. The merchant's decision (migration `0005_add_vision_decisions`): action, feedback outcome, confirmed Qore ID, item, quantity, who decided and when, and when feedback was sent.
-- **`inventory_item_readings`** (written on confirm): `brand|name|pack` as read → the merchant's item. One reading maps to one item per business.
+- **`inventory_item_readings`** (written on confirm, branded readings only): `brand|name|pack` as read → the merchant's item. One reading maps to one item per business.
 
 Identify calls are not stored; only a confirmed reading is (`inventory_item_readings`).
 

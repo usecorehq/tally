@@ -96,6 +96,7 @@ async function app(apiKey: string | undefined) {
     })),
     markFeedbackSent: jest.fn(async () => undefined),
     rememberReading: jest.fn(async () => true),
+    isActiveItem: jest.fn(async () => true),
     createRun: jest.fn(async () => "run-1"),
     failStaleRuns: jest.fn(async (_before: Date) => 0),
     addStep: jest.fn(async (_b: string, _r: string, _s: unknown) => undefined),
@@ -611,6 +612,26 @@ describe("VisionController identify (HTTP)", () => {
 
     it("404 when the item isn't an active item of this business", async () => {
       ctx.repo.rememberReading.mockResolvedValueOnce(false);
+      await request(nest.getHttpServer())
+        .post(confirmPath)
+        .set(auth)
+        .send({ reading: { brand: "Closeup", name: "Toothpaste", pack: "" }, itemId: ITEM })
+        .expect(404);
+    });
+
+    it("doesn't remember a reading without a brand: too vague", async () => {
+      ctx.repo.rememberReading.mockClear();
+      const res = await request(nest.getHttpServer())
+        .post(confirmPath)
+        .set(auth)
+        .send({ reading: { brand: "", name: "Cooking Oil", pack: "" }, itemId: ITEM })
+        .expect(200);
+      expect(ctx.repo.rememberReading).not.toHaveBeenCalled();
+      expect(res.body).toEqual({ itemId: ITEM, readingKey: null });
+    });
+
+    it("404 for an unbranded reading when the item isn't an active item of this business", async () => {
+      ctx.repo.isActiveItem.mockResolvedValueOnce(false);
       await request(nest.getHttpServer())
         .post(confirmPath)
         .set(auth)

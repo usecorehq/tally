@@ -5,7 +5,8 @@
  *
  *   reading   → the camera read exactly this before and the merchant confirmed
  *               it as this item (inventory_item_readings). Works for products
- *               the catalogue doesn't know.
+ *               the catalogue doesn't know. Branded readings only: "cooking oil"
+ *               or "bucket" alone could be any product.
  *   catalogue → an active item is linked to one of the plausible candidates'
  *               Qore IDs: "in stock", never a duplicate. Sure only when that
  *               candidate also agrees on size (/v1/match signals.size = 1);
@@ -53,6 +54,9 @@ export function readingKey({ brand, name, pack }: Reading): string {
   return [brand, name, pack].map(norm).join("|");
 }
 
+/** Only a reading with a legible brand is specific enough to remember and trust. */
+export const rememberable = ({ brand }: Reading): boolean => norm(brand).length > 0;
+
 /** active: the business's live items; archived: its archived items that carry a Qore ID. */
 export function indexInventory(
   active: Item[],
@@ -71,7 +75,7 @@ export function indexInventory(
 }
 
 export function matchInventory(reading: Reading, candidates: CandidateRef[], index: InventoryIndex): StockedMatch | null {
-  const byReading = index.byReading.get(readingKey(reading));
+  const byReading = rememberable(reading) ? index.byReading.get(readingKey(reading)) : undefined;
   if (byReading) return { itemId: byReading, match: "reading", archived: false, sure: true };
 
   // Size-agreeing candidates first (stable, so /v1/match order holds within each group).
