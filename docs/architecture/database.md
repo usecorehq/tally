@@ -1,6 +1,6 @@
 # Database
 
-> Diagrams: [tables (ERD)](../diagrams/images/tally-erd.svg) · [schema isolation](../diagrams/images/database-isolation.svg) · [migration flow](../diagrams/images/migration-flow.svg)
+> Diagrams: [tables (ERD)](../diagrams/images/tally-erd.svg) · [vision tables](../diagrams/images/vision-schema-erd.svg) ([doc](vision-schema.md)) · [schema isolation](../diagrams/images/database-isolation.svg) · [migration flow](../diagrams/images/migration-flow.svg)
 
 Tally stores its data in the **`tally` schema of the shared Qorelly Supabase Postgres**. Same database as Qorelly (`public`) and bookmi (`bookmi`), separate schema, separate migration ledger.
 
