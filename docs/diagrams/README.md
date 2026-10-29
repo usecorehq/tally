@@ -34,13 +34,14 @@ See [`architecture/onboarding.md`](../architecture/onboarding.md).
 |---|---|
 | [`onboarding-sequence.svg`](images/onboarding-sequence.svg) ([source](mermaid/onboarding-sequence.mmd)) | Business creation → template → starter inventory + opening stock → catalogue feedback, including retry safety and best-effort feedback. |
 
-## Vision recognition (planned)
+## Vision recognition
 
 See [`architecture/vision-recognition.md`](../architecture/vision-recognition.md).
 
 | Diagram | Description |
 |---|---|
 | [`vision-shelf-scan-sequence.svg`](images/vision-shelf-scan-sequence.svg) ([source](mermaid/vision-shelf-scan-sequence.mmd)) | Shelf photo → Muse Spark → SAM 3.1 per product → catalogue match → confirm → inventory + photo feedback. |
+| [`vision-schema-erd.svg`](images/vision-schema-erd.svg) ([source](mermaid/vision-schema-erd.mmd)) | The vision tables and how they relate: scans, detections, readings, stock-take runs and steps, the two links to inventory items, and the soft links to Qore Catalog, R2 and stock movements. See [`architecture/vision-schema.md`](../architecture/vision-schema.md). |
 | [`vision-identify-sequence.svg`](images/vision-identify-sequence.svg) ([source](mermaid/vision-identify-sequence.mmd)) | Point to sell: barcode on device first, then Muse Spark reads the label and Tally matches it to the merchant's items (catalogue only on a miss); confirming remembers the reading. |
 
 ## Stock-take agent
@@ -57,7 +58,7 @@ See [`architecture/database.md`](../architecture/database.md) and [`guides/datab
 
 | Diagram | Description |
 |---|---|
-| [`tally-erd.svg`](images/tally-erd.svg) ([source](mermaid/tally-erd.mmd)) | The `tally` tables and how they relate: businesses, members, inventory, stock movements, sales, sale items, payments. Which columns triggers maintain. |
+| [`tally-erd.svg`](images/tally-erd.svg) ([source](mermaid/tally-erd.mmd)) | The `tally` tables and how they relate: businesses, members, inventory, stock movements, sales, sale items, payments, and the vision tables (in detail in `vision-schema-erd`). Which columns triggers maintain. |
 | [`database-isolation.svg`](images/database-isolation.svg) ([source](mermaid/database-isolation.mmd)) | Schemas in the shared Qorelly database, which repo migrates which, and where each ledger lives. |
 | [`migration-flow.svg`](images/migration-flow.svg) ([source](mermaid/migration-flow.mmd)) | schema.ts → generate → review → PR → staging → frozen → CTO applies production. |
 

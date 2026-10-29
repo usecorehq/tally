@@ -67,7 +67,7 @@ If SAM finds nothing for a product, or its request fails, the count stays Muse S
 `/stocktake` in the merchant portal (built) runs the same flow from a browser, so the shelf scan doesn't need the mobile app:
 
 1. Pick one of the user's businesses (`GET /api/businesses`).
-2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to a 1600 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation.
+2. Upload or capture a photo (`<input capture="environment">` opens the rear camera on phones). The browser scales it to at most a 2560 px long edge and re-encodes it as JPEG (quality 0.8), applying EXIF rotation.
 3. **Start stock-take** runs the [agent](stocktake-agent.md): `POST …/stocktakes`, then `GET …/stocktakes/:runId` every 1.5 s, showing the step trace as it grows. **Quick scan** calls `POST …/shelf-scans` and waits.
 4. The review table has one row per detection, `review` lines first: the reading, an editable count, the catalogue candidates with their ₦ median, the store status, and the action (restock, restore, add with name and price prefilled, or skip). A thumbnail of each product is cut from the local photo by its largest box.
 5. Confirm sends every row to `…/shelf-scans/:scanId/confirm` and shows the outcome: created, restocked, restored, skipped, invalid lines with their reasons, and the feedback sent.
@@ -95,7 +95,7 @@ All routes need a Supabase JWT and are for business members only (403 otherwise;
 
 ### `POST /api/businesses/:id/vision/shelf-scans` (built)
 
-Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the declared type), at most 4 MB. Send it at about a 1600 px long edge. Returns 200:
+Multipart, one field `image`: JPEG, PNG or WebP (checked by content, not by the declared type), at most 4 MB. Send it at up to a 2560 px long edge: on a full shelf, packs are often only 50–100 px wide at 1000 px, too small for a crop Qore Catalog accepts. Returns 200:
 
 ```json
 {
@@ -249,7 +249,7 @@ Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–2
 
 When a scan is stored, Tally cuts one crop per detection (its largest box, 6% margin, at most 640 px, WebP) from the photo while it is still in memory. The crop shows the product, never the whole shelf or the people in it. It is stored in Cloudflare R2 (bucket `tally-media`) at `tally/crops/<scanId>/<position>.webp`. The full photo is not stored.
 
-- **Size:** crops with a short side under 160 px are skipped, because Qore Catalog rejects them.
+- **Size:** crops down to a 48 px short side are stored in R2 for Tally's own dataset. Only crops with a short side of 160 px or more are uploaded to Qore Catalog, which rejects smaller ones; the check runs on the stored crop at confirm time.
 - **Lines with a Qore ID:** on confirm, after the line's feedback is sent, Tally reads the crop back and uploads it as a candidate picture of the confirmed product. A curator approves or rejects it in Qore Catalog. Approved pictures come back on products as `image.url`.
 - **New items:** lines confirmed as a new item (no Qore ID) or skipped send nothing.
 - **Best-effort:** a crop or upload failure never fails the scan or the confirm. The scan response reports `cropsStored`; confirm reports `images: { uploaded, skipped, failed }`.
@@ -257,7 +257,7 @@ When a scan is stored, Tally cuts one crop per detection (its largest box, 6% ma
 
 ## Data
 
-Migration `0004_add_vision_scans`, all in the `tally` schema. Child rows carry `business_id` and use composite foreign keys, like the rest of the schema. Tally keeps its own readings and only Qore IDs + match scores from the catalogue: no catalogue names or prices.
+Migration `0004_add_vision_scans`, all in the `tally` schema. Child rows carry `business_id` and use composite foreign keys, like the rest of the schema. Tally keeps its own readings and only Qore IDs + match scores from the catalogue: no catalogue names or prices. How these tables relate, and who writes what: [vision schema](vision-schema.md).
 
 - **`vision_scans`** (built): business, status (`open`, `confirmed`), the photo's sha256 and size, model ids, time per stage, `created_by`.
 - **`vision_detections`** (built): the scan and position; brand, name, pack and look as read; Spark's and SAM's counts; boxes and confidence; candidates as `[{qid, score}]`; the item it looks like and how it was found. The merchant's decision (migration `0005_add_vision_decisions`): action, feedback outcome, confirmed Qore ID, item, quantity, who decided and when, and when feedback was sent.

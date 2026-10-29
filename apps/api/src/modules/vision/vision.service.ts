@@ -14,7 +14,7 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
-import { bestBox, cropKey, makeCrops } from "./crops";
+import { bestBox, catalogueSized, cropKey, makeCrops, MIN_STORED_CROP_SIDE } from "./crops";
 import { indexInventory, matchInventory, readingKey, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
@@ -361,12 +361,13 @@ export class VisionService implements OnApplicationBootstrap {
 
   /**
    * One crop per detection (its largest box) to R2 at tally/crops/<scanId>/<position>.webp,
-   * read back on confirm. Best-effort: a crop failure never fails the scan.
+   * read back on confirm. Kept down to MIN_STORED_CROP_SIDE for Tally's own dataset;
+   * only crops Qore Catalog accepts are uploaded there. Best-effort: a crop failure never fails the scan.
    */
   private async storeCrops(scanId: string, image: Buffer, detections: Detection[]): Promise<number> {
     if (!this.media.enabled || detections.length === 0) return 0;
     try {
-      const crops = await makeCrops(image, detections.map((d) => bestBox(d.boxes)));
+      const crops = await makeCrops(image, detections.map((d) => bestBox(d.boxes)), { minSide: MIN_STORED_CROP_SIDE });
       const results = await Promise.allSettled(
         crops.map((crop, position) => (crop ? this.media.put(cropKey(scanId, position), crop, "image/webp").then(() => 1) : 0)),
       );
@@ -487,8 +488,8 @@ export class VisionService implements OnApplicationBootstrap {
   /**
    * Send each confirmed line's crop to Qore Catalog as an on_shelf picture of
    * its Qore ID, linked to the line's feedback (same clientRef). Lines without
-   * a Qore ID (new_item, skip) send nothing. Stored by sha256 there, so a
-   * resend is harmless.
+   * a Qore ID (new_item, skip), or whose crop is under Qore Catalog's 160 px
+   * minimum, send nothing. Stored by sha256 there, so a resend is harmless.
    */
   private async uploadCrops(lines: ConfirmResult["pendingFeedback"]): Promise<ConfirmResponse["images"]> {
     const images = { uploaded: 0, skipped: 0, failed: 0 };
@@ -496,7 +497,7 @@ export class VisionService implements OnApplicationBootstrap {
       lines.map(async (line) => {
         const qid = line.outcome === "accepted" || line.outcome === "corrected" ? line.confirmedQid : null;
         const crop = qid && this.media.enabled ? await this.media.get(cropKey(line.scanId, line.position)).catch(() => null) : null;
-        if (!qid || !crop) {
+        if (!qid || !crop || !(await catalogueSized(crop).catch(() => false))) {
           images.skipped++;
           return;
         }

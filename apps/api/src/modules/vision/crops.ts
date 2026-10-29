@@ -7,8 +7,10 @@
 import sharp from "sharp";
 import type { Box } from "./shelf-reader";
 
-/** Qore Catalog rejects pictures whose short side is under 160 px. */
+/** Qore Catalog rejects pictures whose short side is under 160 px: smaller crops stay in R2 only. */
 export const MIN_CROP_SIDE = 160;
+/** Smallest crop worth keeping in R2 for Tally's own dataset; below this it is noise. */
+export const MIN_STORED_CROP_SIDE = 48;
 const MAX_CROP_SIDE = 640;
 /** Margin around the box, as a share of its size, so the label edge isn't cut off. */
 const PAD = 0.06;
@@ -38,7 +40,7 @@ export function pixelRegion(box: Box, width: number, height: number): { left: nu
 
 /**
  * WebP crops for each box (null where none is worth keeping: no box, or a
- * short side under MIN_CROP_SIDE). Decodes the photo once; honours EXIF
+ * short side under minSide, MIN_CROP_SIDE by default). Decodes the photo once; honours EXIF
  * orientation; output carries no metadata.
  */
 export async function makeCrops(
@@ -62,4 +64,10 @@ export async function makeCrops(
         .toBuffer();
     }),
   );
+}
+
+/** True when a stored crop is big enough for Qore Catalog (short side >= MIN_CROP_SIDE). */
+export async function catalogueSized(crop: Uint8Array): Promise<boolean> {
+  const { width, height } = await sharp(crop).metadata();
+  return Math.min(width ?? 0, height ?? 0) >= MIN_CROP_SIDE;
 }
