@@ -18,4 +18,4 @@ Docs are part of the change, not a follow-up. A PR is not ready if it changes be
 
 ## Diagrams
 
-Diagrams are maintained as images, not generated from source: the overviews in `docs/diagrams/` (`process-reengineering.webp`, `stock-take-agent.webp`) and the SVGs in `docs/diagrams/images/`. When a change makes one wrong, replace the image in the same PR, or note in the PR that it needs regenerating. Built = solid, planned = dashed.
+Diagrams are maintained as images, not generated from source: the overviews in `docs/diagrams/` (`1.process-reengineering.webp`, `2.stock-take-agent-highlevel.webp`) and the SVGs in `docs/diagrams/images/`. When a change makes one wrong, replace the image in the same PR, or note in the PR that it needs regenerating. Built = solid, planned = dashed.

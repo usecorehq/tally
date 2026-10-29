@@ -12,13 +12,13 @@ Status: sign-in on every surface; web onboarding (business + starter inventory f
 
 The same job, from counting by hand and typing every item to one photo per shelf and a yes from the merchant.
 
-<img src="docs/diagrams/process-reengineering.webp" alt="Stock-taking before and after Tally: a manual count across owner, staff, notebook and inventory app, versus one photo per shelf checked by the stock-take agent and confirmed by the merchant" width="100%">
+<img src="docs/diagrams/1.process-reengineering.webp" alt="Stock-taking before and after Tally: a manual count across owner, staff, notebook and inventory app, versus one photo per shelf checked by the stock-take agent and confirmed by the merchant" width="100%">
 
 ## How the stock-take agent counts a shelf
 
 Muse Spark reads and plans, SAM 3.1 counts, Qore Catalog names and prices. Tally checks every answer, and the merchant has the final say. Details: [stock-take agent](docs/architecture/stocktake-agent.md) and [vision recognition](docs/architecture/vision-recognition.md).
 
-<img src="docs/diagrams/stock-take-agent.webp" alt="How the stock-take agent counts a shelf: a first pass (Muse Spark reads, SAM 3.1 counts, Qore Catalog matches), an agent loop with zoom, search, store check and recount tools, merchant review, confirm, and the catalogue learning from each decision" width="100%">
+<img src="docs/diagrams/2.stock-take-agent-highlevel.webp" alt="How the stock-take agent counts a shelf: a first pass (Muse Spark reads, SAM 3.1 counts, Qore Catalog matches), an agent loop with zoom, search, store check and recount tools, merchant review, confirm, and the catalogue learning from each decision" width="100%">
 
 ---
 
