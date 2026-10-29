@@ -73,6 +73,12 @@ const STALE_RUN_MS = STOCKTAKE_DEADLINES.runMs + 60_000;
 const DETAIL_CONCURRENCY = 8;
 const DETAIL_TTL_MS = 10 * 60 * 1000;
 const CROP_URL_SECONDS = 60 * 60;
+/** New-item resolutions from Qore Catalog: how often, and how much per run. */
+const RESOLUTIONS_EVERY_MS = 15 * 60 * 1000;
+const RESOLUTIONS_PAGE = 200;
+const RESOLUTIONS_MAX_PAGES = 20;
+/** A scan line's feedback clientRef, `<scanId>:<position>`. */
+const SCAN_LINE_REF = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d+)$/;
 
 export type IdentifyResult = {
   model: string;
@@ -101,14 +107,15 @@ export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
   feedback: { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string };
   /**
    * Crops sent to Qore Catalog as training samples for lines confirmed with a Qore ID. Best-effort; skippedBy says why
-   * lines sent nothing (no Qore ID, no stored crop, under 96 px); samples are what Qore Catalog stored.
+   * lines sent nothing (skipped lines, no stored crop, under 96 px); samples are what Qore Catalog stored.
    */
   images: {
     uploaded: number;
     skipped: number;
     failed: number;
     skippedBy: { noProduct: number; noCrop: number; tooSmall: number };
-    samples: { ref: string; sampleId: string | null; status: string }[];
+    /** qid null: a new item's crop, pending until a curator creates, links or dismisses it. */
+    samples: { ref: string; qid: string | null; sampleId: string | null; status: string }[];
   };
 };
 
@@ -324,6 +331,52 @@ export class VisionService implements OnApplicationBootstrap {
   async onApplicationBootstrap(): Promise<void> {
     const n = await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS)).catch(() => 0);
     if (n) this.logger.warn(`Marked ${n} interrupted stock-take run(s) failed`);
+    // Shortly after boot, then on a timer; unref'd so it never keeps the process alive.
+    setTimeout(() => void this.syncResolutions(), 30_000).unref?.();
+    setInterval(() => void this.syncResolutions(), RESOLUTIONS_EVERY_MS).unref?.();
+  }
+
+  private syncing = false;
+
+  /**
+   * Applies what Qore Catalog's curators did with new-item lines since the last one applied (the cursor is inclusive,
+   * so already-applied lines are skipped). Lines that aren't a scan's (onboarding) are counted and ignored.
+   */
+  async syncResolutions(): Promise<{ applied: number; linked: number; ignored: number } | null> {
+    if (this.syncing) return null;
+    this.syncing = true;
+    const totals = { applied: 0, linked: 0, ignored: 0 };
+    try {
+      let since = (await this.repo.resolutionCursor())?.toISOString();
+      for (let page = 0; page < RESOLUTIONS_MAX_PAGES; page++) {
+        const { items } = await this.catalog.client.feedbackResolutions({ ...(since && { since }), limit: RESOLUTIONS_PAGE });
+        for (const item of items) {
+          const ref = SCAN_LINE_REF.exec(item.clientRef);
+          if (!ref) {
+            totals.ignored++;
+            continue;
+          }
+          const outcome = await this.repo.applyResolution(ref[1]!, Number(ref[2]), { ...item, resolvedAt: new Date(item.resolvedAt) });
+          if (outcome === "unknown") totals.ignored++;
+          if (outcome === "recorded" || outcome === "linked" || outcome === "kept") totals.applied++;
+          if (outcome === "linked") totals.linked++;
+          if (outcome === "kept") this.logger.log(`Resolution for ${item.clientRef} recorded; the item keeps its own Qore ID or another item has ${item.qid}`);
+        }
+        const last = items.at(-1)?.resolvedAt;
+        // A full page that doesn't move the cursor would repeat forever: stop and try again next time.
+        if (items.length < RESOLUTIONS_PAGE || !last || last === since) break;
+        since = last;
+      }
+      if (totals.applied || totals.ignored) {
+        this.logger.log(`Catalogue resolutions: ${totals.applied} applied (${totals.linked} items linked), ${totals.ignored} ignored`);
+      }
+      return totals;
+    } catch (err) {
+      this.logger.warn(`Catalogue resolutions not synced: ${(err as Error).message}`);
+      return null;
+    } finally {
+      this.syncing = false;
+    }
   }
 
   /**
@@ -878,7 +931,8 @@ export class VisionService implements OnApplicationBootstrap {
     await Promise.all(
       lines.map(async (line) => {
         const qid = line.outcome === "accepted" || line.outcome === "corrected" ? line.confirmedQid : null;
-        if (!qid) return skip(line, "noProduct", `no catalogue product (${line.outcome})`);
+        // A new item's crop goes without a qid, so curators can see it and decide whether to catalogue it.
+        if (!qid && line.outcome !== "new_item") return skip(line, "noProduct", `no catalogue product (${line.outcome})`);
         if (!this.media.enabled) return skip(line, "noCrop", "R2 is not configured");
         const crop = await this.media.get(cropKey(line.scanId, line.position)).catch((err: unknown) => {
           this.logger.warn(`Crop ${feedbackRef(line.scanId, line.position)} could not be read from R2: ${(err as Error).message}`);
@@ -894,13 +948,13 @@ export class VisionService implements OnApplicationBootstrap {
           const res = await this.catalog.client.uploadImage({
             file: crop,
             filename: `${line.position}.webp`,
-            qid,
+            ...(qid && { qid }),
             view: "on_shelf",
             feedbackClientRef: ref,
             sample: sampleContext(line, await photoSize(line.scanId)),
           });
           images.uploaded++;
-          images.samples.push({ ref, sampleId: res.sampleId ?? null, status: res.status });
+          images.samples.push({ ref, qid, sampleId: res.sampleId ?? null, status: res.status });
           this.logger.log(`Crop ${ref} sent: sample ${res.sampleId ?? "none"} (${res.status})`);
         } catch (err) {
           images.failed++;
