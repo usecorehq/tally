@@ -317,6 +317,18 @@ Errors:
 
 Measured on photos of Nigerian shops (Oct 2026): the Muse Spark read takes 8–24 s, then SAM takes 3–6 s and the catalogue match about 1–3 s, in parallel. The whole scan takes about 12–30 s. Read time grows with the number of units in the frame, because Spark writes one box per unit. Show progress on the device rather than blocking.
 
+## Shelf sweep (experimental)
+
+**Status: built for the benchmark only. No route uses it and there is no switch yet.** On dense shelves each product is only a few dozen pixels in the single Spark read, so products get missed or merged. The stock-take agent only zooms into lines the first pass found, so it never recovers a product the read missed. The sweep (`src/modules/vision/shelf-sweep.ts`) reads the shelf the way a person counts one: row by row, left to right.
+
+1. **Layout:** one Spark call on a 1024 px copy returns shelf rows (horizontal bands) and, when a row holds more than about 12 products, bays (vertical sections), on the 0–1000 grid. Bands become contiguous cuts from 0 to 1000, so nothing between them goes unread. The layout is capped at 6 rows, 3 bays and 12 cells. If the call fails or returns no usable rows, the sweep uses a fixed 3 × 2 grid.
+2. **Sweep:** each cell is cut from the full-resolution, EXIF-rotated upload. Its crop extends 10% of the cell's size past each edge, so neighbouring crops share 20%. Each cell is scaled to a 1024–2048 px long edge and read with the quick scan's prompt and schema, unchanged. Up to 4 cells are read at a time and results are kept in reading order. Each cell call has a 45 s timeout, and the whole sweep has an 80 s deadline. Cells that haven't started by the deadline are marked unreadable.
+3. **Stitch:** cell boxes are mapped back onto the photo's grid. A unit belongs to the cell whose own area (without the overlap) holds its centre, so a unit seen in two overlapping crops is counted once. If that cell couldn't be read, its neighbours' overlap supplies the unit. Products with the same normalised brand and name (an unread brand or pack matches any) merge across cells: their boxes combine and duplicates (IoU > 0.5) drop. Any two products' near-identical boxes (IoU > 0.8) go to the more confident reading. Each product keeps the cells that saw it.
+4. **Coverage:** every cell ends as `read`, `empty` or `unreadable`, with a line like "Row 2, left: 4 products (11 units)". `sweepSteps` turns the layout and these lines into `baseline` trace steps for when a stock-take uses the sweep. The sweep fails only when no cell could be read.
+5. **Then the usual pipeline:** SAM counting (the half-of-Spark agreement rule still applies), the catalogue match, the store match and the agent all run unchanged on the stitched products.
+
+**Cost and time:** the sweep makes 1 + cells Spark calls (up to 13), against 1 for the single read. Token counts are summed across all of them. With SAM and the catalogue match, it is designed to fit the stock-take's 120 s first-pass deadline. To compare it with the single read, run `vision-benchmark.mjs --sweep` (see the apps/api README). It gets a DB-configured switch only if those numbers justify one.
+
 ## Product crops
 
 When a scan is stored, Tally cuts one crop per detection (its largest box, 6% margin, at most 640 px, WebP) from the photo while it is still in memory. The crop shows the product, never the whole shelf or the people in it. It is stored in Cloudflare R2 (bucket `tally-media`) at `tally/crops/<scanId>/<position>.webp`.
