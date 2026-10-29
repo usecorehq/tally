@@ -14,6 +14,7 @@ import { SessionSkeleton } from "../../stocktake/session-skeleton";
 import { RunFailed } from "../../stocktake/session";
 import { HistoryButton } from "../../stocktake/stocktake-flow";
 import { RecentsList } from "../../stocktake/recents";
+import { DiscardButton, RerunButton } from "../../stocktake/scan-actions";
 import type { Variant } from "./variants";
 import {
   DETECTIONS,
@@ -27,6 +28,7 @@ import {
   RESULT_NO_CATALOGUE,
   STEPS,
   confirmed,
+  ended,
   drawShelf,
   history,
   reopened,
@@ -37,6 +39,12 @@ const BUSINESSES = [
   { id: "b2", name: "Lekki Mini Mart" },
 ];
 const noop = () => undefined;
+// Rerun says why it can't run; Discard succeeds after a pause. Neither calls a server action.
+const fakeRerun = async () => ({ ok: false as const, status: 409, error: "Preview only: a real rerun opens the new run here." });
+const fakeDiscard = async () => {
+  await new Promise((r) => setTimeout(r, 600));
+  return { ok: true as const, data: { status: "discarded" as const } };
+};
 
 const PICK_ERRORS: Partial<Record<Variant, string>> = {
   "pick-file-error": ERRORS.file,
@@ -98,6 +106,7 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
         error={variant === "history-failed" ? "Something went wrong on our side. Try again." : undefined}
         onBusiness={setBusinessId}
         onRetry={noop}
+        discard={fakeDiscard}
       />
     );
   }
@@ -113,6 +122,23 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
         <PageHeader title="Stock-take" className="[&_h1]:whitespace-normal" actions={<HistoryButton href="#" />} />
         <LoadFailed title="We couldn't open this stock-take" body={ERRORS.failed} onRetry={noop} />
       </div>
+    );
+  }
+  if (variant === "session-discarded" || variant === "session-superseded") {
+    if (Object.keys(crops).length === 0 || now === null) return <p className="text-sm text-gray-500">Drawing the fixture crops…</p>;
+    const scan = ended(variant === "session-discarded" ? "discarded" : "superseded", crops, now);
+    return (
+      <ConfirmedView
+        scan={scan}
+        businessName={BUSINESSES[0]!.name}
+        kind="stocktake"
+        actions={
+          <>
+            <HistoryButton href="#" />
+            {scan.canRerun && <RerunButton businessId="b1" scanId="scan-fixture" run={fakeRerun} />}
+          </>
+        }
+      />
     );
   }
   if (variant === "session-confirmed") {
@@ -133,7 +159,13 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
         photo={null}
         photoUrl={null}
         onRestart={noop}
-        actions={<HistoryButton href="#" />}
+        actions={
+          <>
+            <HistoryButton href="#" />
+            <RerunButton businessId="b1" scanId="scan-fixture" run={fakeRerun} />
+            <DiscardButton businessId="b1" scanId="scan-fixture" discard={fakeDiscard} onDone={noop} />
+          </>
+        }
         confirm={async () => ({ ok: true, data: OUTCOME })}
       />
     );

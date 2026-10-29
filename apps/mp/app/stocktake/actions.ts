@@ -72,6 +72,26 @@ export async function stocktakeHistory(businessId: string, limit = 50): Promise<
   }
 }
 
+/** Rerun a stored stock-take on its kept photo (202 { runId }); the new run joins the photo's group. */
+export async function rerunScan(businessId: string, scanId: string): Promise<ActionResult<{ runId: string }>> {
+  try {
+    const data = await api<{ runId: string }>(`${vision(businessId)}/shelf-scans/${encodeURIComponent(scanId)}/rerun`, { method: "POST" });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Drop an open stock-take: read-only, kept for audit. */
+export async function discardScan(businessId: string, scanId: string): Promise<ActionResult<{ status: "discarded" }>> {
+  try {
+    const data = await api<{ status: "discarded" }>(`${vision(businessId)}/shelf-scans/${encodeURIComponent(scanId)}/discard`, { method: "POST" });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** The sidebar's recents: the business in ?business= (else the user's first) and its newest stock-takes. */
 export async function recentStocktakes(business: string | null): Promise<ActionResult<{ businessId: string; entries: HistoryEntry[] }>> {
   try {

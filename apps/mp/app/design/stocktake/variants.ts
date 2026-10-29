@@ -31,6 +31,8 @@ export const VARIANTS = [
   "session-loading",
   "session-working-no-photo",
   "session-reopened",
+  "session-discarded",
+  "session-superseded",
   "session-confirmed",
   "session-failed",
   "session-not-found",

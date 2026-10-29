@@ -245,14 +245,31 @@ const none = { add: 0, restock: 0, restore: 0, skip: 0 };
 
 export function history(now: number): HistoryEntry[] {
   const ago = agoFrom(now);
+  const base = { rerunOf: null, fallback: false, confirmedAt: null, error: null, decided: none, preview: [] as string[], reruns: [] as HistoryEntry[] };
   return [
-    { id: "r1", kind: "stocktake", runId: "r1", scanId: null, status: "running", fallback: false, startedAt: ago(1), confirmedAt: null, error: null, lines: null, decided: none , preview: [] },
-    { id: "r2", kind: "stocktake", runId: "r2", scanId: "s2", status: "review", fallback: false, startedAt: ago(42), confirmedAt: null, error: null, lines: 7, decided: { ...none, restock: 2 } , preview: ["Peak", "Milo", "Indomie"] },
-    { id: "s3", kind: "quick", runId: null, scanId: "s3", status: "review", fallback: false, startedAt: ago(95), confirmedAt: null, error: null, lines: 0, decided: none , preview: [] },
-    { id: "r4", kind: "stocktake", runId: "r4", scanId: "s4", status: "confirmed", fallback: true, startedAt: ago(26 * 60), confirmedAt: ago(26 * 60 - 9), error: null, lines: 8, decided: { add: 2, restock: 5, restore: 0, skip: 1 } , preview: ["Golden Penny", "Dettol", "Zobo"] },
-    { id: "r5", kind: "stocktake", runId: "r5", scanId: null, status: "failed", fallback: false, startedAt: ago(27 * 60), confirmedAt: null, error: "First pass failed: Database busy, retry shortly", lines: null, decided: none , preview: [] },
-    { id: "s6", kind: "quick", runId: null, scanId: "s6", status: "confirmed", fallback: false, startedAt: ago(5 * 24 * 60), confirmedAt: ago(5 * 24 * 60 - 4), error: null, lines: 3, decided: { add: 1, restock: 1, restore: 1, skip: 0 }, preview: ["Cooking Oil", "Blue box"] },
-    { id: "s7", kind: "quick", runId: null, scanId: "s7", status: "confirmed", fallback: false, startedAt: ago(400 * 24 * 60), confirmedAt: ago(400 * 24 * 60 - 6), error: null, lines: 2, decided: { add: 0, restock: 2, restore: 0, skip: 0 }, preview: ["Peak", "Milo"] },
+    { ...base, id: "r1", kind: "stocktake", runId: "r1", scanId: null, status: "running", startedAt: ago(1), lines: null },
+    // A photo run three times: the first and one rerun superseded by the confirmed rerun.
+    {
+      ...base,
+      id: "r2",
+      kind: "stocktake",
+      runId: "r2",
+      scanId: "s2",
+      status: "superseded",
+      startedAt: ago(42),
+      lines: 7,
+      preview: ["Peak", "Milo", "Indomie"],
+      reruns: [
+        { ...base, id: "r2a", kind: "stocktake", runId: "r2a", scanId: "s2a", rerunOf: "s2", status: "confirmed", startedAt: ago(30), confirmedAt: ago(25), lines: 8, decided: { add: 1, restock: 6, restore: 0, skip: 1 }, preview: ["Peak", "Milo", "Indomie"] },
+        { ...base, id: "r2b", kind: "stocktake", runId: "r2b", scanId: "s2b", rerunOf: "s2", status: "superseded", startedAt: ago(28), lines: 8, preview: ["Peak", "Milo", "Indomie"] },
+      ],
+    },
+    { ...base, id: "r3", kind: "stocktake", runId: "r3", scanId: "s3r", status: "review", startedAt: ago(60), lines: 5, decided: { ...none, restock: 1 }, preview: ["Golden Penny", "Dettol"] },
+    { ...base, id: "s3", kind: "quick", runId: null, scanId: "s3", status: "discarded", startedAt: ago(95), lines: 4, preview: ["Zobo", "Tasty Tom"] },
+    { ...base, id: "r4", kind: "stocktake", runId: "r4", scanId: "s4", status: "confirmed", fallback: true, startedAt: ago(26 * 60), confirmedAt: ago(26 * 60 - 9), lines: 8, decided: { add: 2, restock: 5, restore: 0, skip: 1 }, preview: ["Golden Penny", "Dettol", "Zobo"] },
+    { ...base, id: "r5", kind: "stocktake", runId: "r5", scanId: null, status: "failed", startedAt: ago(27 * 60), error: "First pass failed: Database busy, retry shortly", lines: null },
+    { ...base, id: "s6", kind: "quick", runId: null, scanId: "s6", status: "review", startedAt: ago(5 * 24 * 60), lines: 0 },
+    { ...base, id: "s7", kind: "quick", runId: null, scanId: "s7", status: "confirmed", startedAt: ago(400 * 24 * 60), confirmedAt: ago(400 * 24 * 60 - 6), lines: 2, decided: { ...none, restock: 2 }, preview: ["Peak", "Milo"] },
   ];
 }
 
@@ -264,6 +281,10 @@ export function reopened(crops: Record<string, string>, now: number): ScanView {
     status: "open",
     createdAt: ago(42),
     confirmedAt: null,
+    discardedAt: null,
+    supersededAt: null,
+    rerunOf: null,
+    canRerun: true,
     catalogueAvailable: true,
     candidateDetails: false,
     detections: DETECTIONS.map((d, position) => ({
@@ -286,6 +307,10 @@ export function confirmed(crops: Record<string, string>, now: number): ScanView 
     status: "confirmed",
     createdAt: ago(26 * 60),
     confirmedAt: ago(26 * 60 - 9),
+    discardedAt: null,
+    supersededAt: null,
+    rerunOf: null,
+    canRerun: false,
     catalogueAvailable: true,
     detections: DETECTIONS.map((d, position) => {
       const action = ACTIONS[position % ACTIONS.length]!;
@@ -304,5 +329,20 @@ export function confirmed(crops: Record<string, string>, now: number): ScanView 
         },
       };
     }),
+  };
+}
+
+/** Read-only ends: discarded by the merchant (still rerunnable), or superseded by a confirmed rerun. */
+export function ended(status: "discarded" | "superseded", crops: Record<string, string>, now: number): ScanView {
+  const ago = agoFrom(now);
+  const scan = reopened(crops, now);
+  return {
+    ...scan,
+    status,
+    discardedAt: status === "discarded" ? ago(10) : null,
+    supersededAt: status === "superseded" ? ago(25) : null,
+    canRerun: status === "discarded",
+    candidateDetails: true,
+    detections: scan.detections.map((d) => ({ ...d, decision: null })),
   };
 }

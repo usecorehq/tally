@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import sharp from "sharp";
-import { ForbiddenException, INestApplication, Logger, NotFoundException, ValidationPipe } from "@nestjs/common";
+import { ConflictException, ForbiddenException, INestApplication, Logger, NotFoundException, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
@@ -54,6 +54,8 @@ const storedScan = (overrides: Record<string, unknown> = {}) => ({
   catalogueAvailable: true,
   createdAt: new Date("2026-10-29T09:00:00Z"),
   confirmedAt: null,
+  discardedAt: null,
+  supersededAt: null,
   detections: [
     {
       id: DET,
@@ -165,6 +167,7 @@ async function app(apiKey: string | undefined) {
     history: jest.fn(async (_b: string, _limit: number) => ({
       runs: [] as Record<string, unknown>[],
       quick: [] as Record<string, unknown>[],
+      reruns: [] as Record<string, unknown>[],
       counts: [] as Record<string, unknown>[],
     })),
     confirm: jest.fn(async () => ({
@@ -180,7 +183,11 @@ async function app(apiKey: string | undefined) {
     markFeedbackSent: jest.fn(async () => undefined),
     rememberReading: jest.fn(async () => true),
     isActiveItem: jest.fn(async () => true),
-    createRun: jest.fn(async () => "run-1"),
+    createRun: jest.fn(async (..._args: unknown[]) => "run-1"),
+    group: jest.fn(async (_b: string, scanId: string) => ({ root: scanId, scanIds: [scanId] })),
+    groupSettled: jest.fn(async (_ids: string[]) => false),
+    supersedeIfSettled: jest.fn(async (_b: string, _s: string) => false),
+    discard: jest.fn(async (_b: string, _s: string) => ({ status: "discarded", discardedAt: new Date("2026-10-30T09:00:00Z") })),
     failStaleRuns: jest.fn(async (_before: Date) => 0),
     addStep: jest.fn(async (_b: string, _r: string, _s: unknown) => undefined),
     finishRun: jest.fn(async (_r: string, _e: Record<string, unknown>) => undefined),
@@ -918,7 +925,7 @@ describe("VisionController stock-takes (HTTP)", () => {
     ]);
     const res = await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
     expect(res.body).toEqual({ runId: "run-1", status: "running" });
-    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3");
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", null);
 
     expect(await waitForFinish()).toMatchObject({ status: "done", scanId: "scan-1", turns: 1, error: null });
     const [, saved] = ctx.repo.saveScan.mock.calls[0] as unknown as [unknown, { evidence?: { tool: string }[] }[]];
@@ -1025,6 +1032,124 @@ describe("VisionController stock-takes (HTTP)", () => {
   });
 });
 
+describe("VisionController rerun and discard (HTTP)", () => {
+  let nest: INestApplication;
+  let ctx: Awaited<ReturnType<typeof app>>;
+  let fetchSpy: ReturnType<typeof jest.spyOn<typeof global, "fetch">>;
+  const scanPath = `/api/businesses/${BIZ}/vision/shelf-scans/${SCAN}`;
+  const ROOT = "00000000-0000-4000-8000-0000000000e1";
+
+  beforeAll(async () => {
+    fetchSpy = jest.spyOn(global, "fetch");
+    ctx = await app("LLM_000_not-a-real-key");
+    nest = ctx.nest;
+  });
+  afterAll(async () => {
+    await nest.close();
+    fetchSpy.mockRestore();
+  });
+  beforeEach(() => {
+    fetchSpy.mockReset();
+    ctx.media.enabled = true;
+    ctx.media.get.mockReset();
+    ctx.repo.createRun.mockClear();
+    ctx.repo.finishRun.mockClear();
+    ctx.repo.supersedeIfSettled.mockClear();
+    ctx.repo.groupSettled.mockResolvedValue(false);
+    ctx.repo.group.mockResolvedValue({ root: ROOT, scanIds: [ROOT, SCAN] });
+    ctx.businesses.listInventory.mockResolvedValue([] as never);
+  });
+  afterEach(() => {
+    ctx.media.enabled = false;
+  });
+
+  it.each([
+    ["rerun", `${scanPath}/rerun`],
+    ["discard", `${scanPath}/discard`],
+  ])("%s needs a Supabase JWT", async (_name, p) => {
+    await request(nest.getHttpServer()).post(p).expect(401);
+  });
+
+  it("reruns the stored photo as a new run grouped under the photo's first scan", async () => {
+    const photo = await sharp({ create: { width: 400, height: 300, channels: 3, background: "#c33" } }).jpeg().toBuffer();
+    ctx.media.get.mockImplementation(async (key: string) => (key === `tally/scans/${SCAN}.jpg` ? new Uint8Array(photo) : null));
+    // The agent fails, so the run falls back to its first pass and saves that.
+    fetchSpy.mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.tools) return new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 });
+      const textOut = body.model === "sam-3.1" ? "" : JSON.stringify({ products: [peak] });
+      return new Response(JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: textOut }] }] }), { status: 200 });
+    });
+    const res = await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(202);
+    expect(res.body).toEqual({ runId: "run-1", status: "running", rerunOf: ROOT });
+    expect(ctx.businesses.getForMember).toHaveBeenCalledWith(BIZ, USER);
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", ROOT);
+    for (let i = 0; i < 100 && ctx.repo.finishRun.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(ctx.repo.finishRun.mock.calls[0]?.[1]).toMatchObject({ status: "fallback", scanId: "scan-1" });
+    // Its scan checks the group: a sibling confirmed meanwhile supersedes it at once.
+    expect(ctx.repo.supersedeIfSettled).toHaveBeenCalledWith(BIZ, "scan-1");
+  });
+
+  it("409 when no photo was kept for the stock-take, and nothing starts", async () => {
+    ctx.media.get.mockResolvedValue(null);
+    const res = await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(409);
+    expect(res.body.message).toMatch(/photo wasn't kept/);
+    ctx.media.enabled = false;
+    await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(409);
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("409 when a run of this photo has already moved stock", async () => {
+    ctx.repo.groupSettled.mockResolvedValue(true);
+    const res = await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(409);
+    expect(res.body.message).toMatch(/already confirmed/);
+    expect(ctx.media.get).not.toHaveBeenCalled();
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+  });
+
+  it("checks membership before reading the photo", async () => {
+    ctx.businesses.getForMember.mockRejectedValueOnce(new ForbiddenException("Not a member of this business"));
+    await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(403);
+    expect(ctx.media.get).not.toHaveBeenCalled();
+  });
+
+  it("discards an open scan", async () => {
+    const res = await request(nest.getHttpServer()).post(`${scanPath}/discard`).set(auth).expect(200);
+    expect(ctx.repo.discard).toHaveBeenCalledWith(BIZ, SCAN);
+    expect(res.body).toEqual({ status: "discarded", discardedAt: "2026-10-30T09:00:00.000Z" });
+  });
+
+  it("409 when discarding a confirmed scan", async () => {
+    ctx.repo.discard.mockRejectedValueOnce(new ConflictException("This stock-take is confirmed; only an open one can be discarded"));
+    await request(nest.getHttpServer()).post(`${scanPath}/discard`).set(auth).expect(409);
+  });
+
+  it("confirm reports the siblings it superseded, and a superseded scan can't be confirmed", async () => {
+    const add = { detectionId: DET, action: "add", qid: "QC-7K2M-9XQ4-R", name: "Peak Milk 400g", price: "4500", quantity: 6 };
+    ctx.repo.confirm.mockResolvedValueOnce({
+      created: 1, restocked: 0, restored: 0, skipped: 0, alreadyDecided: 0, invalid: [], scanConfirmed: true, superseded: 2, pendingFeedback: [],
+    } as never);
+    const ok = await request(nest.getHttpServer()).post(`${scanPath}/confirm`).set(auth).send({ decisions: [add] }).expect(200);
+    expect(ok.body.superseded).toBe(2);
+    ctx.repo.confirm.mockRejectedValueOnce(new ConflictException("This stock-take is superseded and can't be confirmed"));
+    await request(nest.getHttpServer()).post(`${scanPath}/confirm`).set(auth).send({ decisions: [add] }).expect(409);
+  });
+
+  it("reopen says whether it can be rerun, and which scan it reruns", async () => {
+    ctx.media.exists.mockResolvedValue(true);
+    const open = await request(nest.getHttpServer()).get(scanPath).set(auth).expect(200);
+    expect(open.body).toMatchObject({ canRerun: true, rerunOf: ROOT, discardedAt: null, supersededAt: null });
+    ctx.repo.groupSettled.mockResolvedValue(true);
+    const settled = await request(nest.getHttpServer()).get(scanPath).set(auth).expect(200);
+    expect(settled.body.canRerun).toBe(false);
+    ctx.media.exists.mockResolvedValue(false);
+    ctx.repo.groupSettled.mockResolvedValue(false);
+    const noPhoto = await request(nest.getHttpServer()).get(scanPath).set(auth).expect(200);
+    expect(noPhoto.body.canRerun).toBe(false);
+  });
+});
+
 describe("VisionController stock-take history (HTTP)", () => {
   let nest: INestApplication;
   let ctx: Awaited<ReturnType<typeof app>>;
@@ -1071,6 +1196,7 @@ describe("VisionController stock-take history (HTTP)", () => {
         { runId: "run-failed", runStatus: "failed", error: "First pass failed: busy", startedAt: at(10), scanId: null, scanStatus: null, confirmedAt: null },
       ],
       quick: [{ scanId: "scan-quick", scanStatus: "confirmed", startedAt: at(40), confirmedAt: at(45) }],
+      reruns: [],
       counts: [
         { scanId: "scan-open", lines: 5, add: 0, restock: 0, restore: 0, skip: 0, names: ["Peak", "peak", "", "Milo", "Indomie", "Dettol"] },
         { scanId: "scan-quick", lines: 4, add: 1, restock: 2, restore: 0, skip: 1, names: ["Cooking Oil"] },
@@ -1080,9 +1206,9 @@ describe("VisionController stock-take history (HTTP)", () => {
     // Stale runs are marked failed first, so nothing shows "running" forever.
     expect(ctx.repo.failStaleRuns).toHaveBeenCalled();
     expect(res.body).toEqual([
-      { id: "run-running", kind: "stocktake", runId: "run-running", scanId: null, status: "running", fallback: false, startedAt: at(50).toISOString(), confirmedAt: null, error: null, lines: null, decided: { add: 0, restock: 0, restore: 0, skip: 0 }, preview: [] },
-      { id: "scan-quick", kind: "quick", runId: null, scanId: "scan-quick", status: "confirmed", fallback: false, startedAt: at(40).toISOString(), confirmedAt: at(45).toISOString(), error: null, lines: 4, decided: { add: 1, restock: 2, restore: 0, skip: 1 }, preview: ["Cooking Oil"] },
-      { id: "run-open", kind: "stocktake", runId: "run-open", scanId: "scan-open", status: "review", fallback: true, startedAt: at(30).toISOString(), confirmedAt: null, error: null, lines: 5, decided: { add: 0, restock: 0, restore: 0, skip: 0 }, preview: ["Peak", "Milo", "Indomie"] },
+      { id: "run-running", kind: "stocktake", runId: "run-running", scanId: null, status: "running", rerunOf: null, fallback: false, startedAt: at(50).toISOString(), confirmedAt: null, error: null, lines: null, decided: { add: 0, restock: 0, restore: 0, skip: 0 }, preview: [], reruns: [] },
+      { id: "scan-quick", kind: "quick", runId: null, scanId: "scan-quick", status: "confirmed", rerunOf: null, fallback: false, startedAt: at(40).toISOString(), confirmedAt: at(45).toISOString(), error: null, lines: 4, decided: { add: 1, restock: 2, restore: 0, skip: 1 }, preview: ["Cooking Oil"], reruns: [] },
+      { id: "run-open", kind: "stocktake", runId: "run-open", scanId: "scan-open", status: "review", rerunOf: null, fallback: true, startedAt: at(30).toISOString(), confirmedAt: null, error: null, lines: 5, decided: { add: 0, restock: 0, restore: 0, skip: 0 }, preview: ["Peak", "Milo", "Indomie"], reruns: [] },
     ]);
   });
 
@@ -1090,10 +1216,42 @@ describe("VisionController stock-take history (HTTP)", () => {
     ctx.repo.history.mockResolvedValueOnce({
       runs: [{ runId: "run-failed", runStatus: "failed", error: "First pass failed: busy", startedAt: at(10), scanId: null, scanStatus: null, confirmedAt: null }],
       quick: [],
+      reruns: [],
       counts: [],
     });
     const res = await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
     expect(res.body).toMatchObject([{ status: "failed", error: "First pass failed: busy", lines: null }]);
+  });
+
+  it("groups reruns under the photo's first scan, oldest first; a fresh rerun brings the group to the top", async () => {
+    const run = (runId: string, min: number, scanId: string | null, scanStatus: string | null, rerunOf: string | null = null, runStatus = "done") =>
+      ({ runId, runStatus, error: null, startedAt: at(min), scanId, scanStatus, confirmedAt: scanStatus === "confirmed" ? at(min + 2) : null, rerunOf });
+    ctx.repo.history.mockResolvedValueOnce({
+      runs: [run("run-root", 10, "scan-root", "superseded"), run("run-other", 20, "scan-other", "open")],
+      quick: [],
+      reruns: [run("run-r1", 30, "scan-r1", "confirmed", "scan-root"), run("run-r2", 40, "scan-r2", "superseded", "scan-root"), run("run-r3", 45, null, null, "scan-root", "running")],
+      counts: [],
+    });
+    const res = await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
+    expect(res.body.map((e: { id: string }) => e.id)).toEqual(["run-root", "run-other"]);
+    expect(res.body[0]).toMatchObject({ status: "superseded", rerunOf: null });
+    expect(res.body[0].reruns.map((e: { id: string; status: string; rerunOf: string }) => [e.id, e.status, e.rerunOf])).toEqual([
+      ["run-r1", "confirmed", "scan-root"],
+      ["run-r2", "superseded", "scan-root"],
+      ["run-r3", "running", "scan-root"],
+    ]);
+    expect(res.body[1].reruns).toEqual([]);
+  });
+
+  it("a discarded scan shows as discarded", async () => {
+    ctx.repo.history.mockResolvedValueOnce({
+      runs: [{ runId: "run-d", runStatus: "done", error: null, startedAt: at(5), scanId: "scan-d", scanStatus: "discarded", confirmedAt: null, rerunOf: null }],
+      quick: [],
+      reruns: [],
+      counts: [],
+    });
+    const res = await request(nest.getHttpServer()).get(historyPath).set(auth).expect(200);
+    expect(res.body[0].status).toBe("discarded");
   });
 
   it("empty history is an empty list", async () => {

@@ -9,10 +9,17 @@ export function entryTitle(e: HistoryEntry): string {
   return e.preview.length > 0 ? e.preview.join(", ") : plural(e.lines ?? 0, "product");
 }
 
+/** Every entry, reruns included, newest first: the sidebar's flat list. */
+export function flatEntries(entries: HistoryEntry[]): HistoryEntry[] {
+  return entries.flatMap((e) => [e, ...(e.reruns ?? [])]).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
 /** One line under the title: what it found, or what was decided. */
 export function entrySummary(e: HistoryEntry): string {
   if (e.status === "running") return "The agent is still working on it";
   if (e.status === "failed") return e.error ?? "It stopped before finishing";
+  if (e.status === "discarded") return `${plural(e.lines ?? 0, "line")} · discarded, nothing more applied`;
+  if (e.status === "superseded") return `${plural(e.lines ?? 0, "line")} · another run of this photo was confirmed`;
   const lines = plural(e.lines ?? 0, "line");
   if (e.status === "review") {
     if (e.lines === 0) return "No products found in the photo";

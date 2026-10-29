@@ -203,6 +203,28 @@ export class VisionController {
     return this.vision.getScan(businessId, user.sub, scanId);
   }
 
+  @Post("shelf-scans/:scanId/rerun")
+  @HttpCode(202)
+  @ApiOperation({
+    summary:
+      "Rerun a stock-take on its stored photo: a new agent run, grouped under the photo's first scan (rerunOf). Poll …/stocktakes/:runId. 409 when no photo was kept, or when a run of this photo has already moved stock.",
+  })
+  @ApiOkResponse({ schema: { example: { runId: "7c21…", status: "running", rerunOf: "9a41…" } } })
+  rerun(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
+    return this.vision.rerun(businessId, user.sub, scanId);
+  }
+
+  @Post("shelf-scans/:scanId/discard")
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      "Discard an open stock-take: read-only from now on, everything kept for audit. Idempotent. 409 when it is confirmed or superseded. Lines confirmed earlier stay applied.",
+  })
+  @ApiOkResponse({ schema: { example: { status: "discarded", discardedAt: "2026-10-30T09:12:00.000Z" } } })
+  discard(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
+    return this.vision.discard(businessId, user.sub, scanId);
+  }
+
   @Post("shelf-scans/:scanId/confirm")
   @HttpCode(200)
   @ApiOperation({
@@ -219,6 +241,7 @@ export class VisionController {
         alreadyDecided: 0,
         invalid: [],
         scanConfirmed: true,
+        superseded: 0,
         feedback: { sent: 6, recorded: 6, duplicates: 0 },
       },
     },
