@@ -122,6 +122,7 @@ export class VisionController {
           error: null,
           lines: 8,
           decided: { add: 2, restock: 5, restore: 0, skip: 1 },
+          preview: ["Peak", "Milo", "Indomie"],
         },
       ],
     },

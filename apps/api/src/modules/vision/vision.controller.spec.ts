@@ -1013,7 +1013,8 @@ describe("VisionController stock-take history (HTTP)", () => {
     expect(ctx.repo.history).toHaveBeenLastCalledWith(BIZ, 5);
   });
 
-  it("merges runs and quick scans newest first, with status and counts", async () => {
+  // The preview dedupes names ignoring case and skips blank readings.
+  it("merges runs and quick scans newest first, with status, counts and a preview", async () => {
     ctx.repo.history.mockResolvedValueOnce({
       runs: [
         { runId: "run-running", runStatus: "running", error: null, startedAt: at(50), scanId: null, scanStatus: null, confirmedAt: null },
@@ -1022,17 +1023,17 @@ describe("VisionController stock-take history (HTTP)", () => {
       ],
       quick: [{ scanId: "scan-quick", scanStatus: "confirmed", startedAt: at(40), confirmedAt: at(45) }],
       counts: [
-        { scanId: "scan-open", lines: 5, add: 0, restock: 0, restore: 0, skip: 0 },
-        { scanId: "scan-quick", lines: 4, add: 1, restock: 2, restore: 0, skip: 1 },
+        { scanId: "scan-open", lines: 5, add: 0, restock: 0, restore: 0, skip: 0, names: ["Peak", "peak", "", "Milo", "Indomie", "Dettol"] },
+        { scanId: "scan-quick", lines: 4, add: 1, restock: 2, restore: 0, skip: 1, names: ["Cooking Oil"] },
       ],
     });
     const res = await request(nest.getHttpServer()).get(`${historyPath}?limit=3`).set(auth).expect(200);
     // Stale runs are marked failed first, so nothing shows "running" forever.
     expect(ctx.repo.failStaleRuns).toHaveBeenCalled();
     expect(res.body).toEqual([
-      { id: "run-running", kind: "stocktake", runId: "run-running", scanId: null, status: "running", fallback: false, startedAt: at(50).toISOString(), confirmedAt: null, error: null, lines: null, decided: { add: 0, restock: 0, restore: 0, skip: 0 } },
-      { id: "scan-quick", kind: "quick", runId: null, scanId: "scan-quick", status: "confirmed", fallback: false, startedAt: at(40).toISOString(), confirmedAt: at(45).toISOString(), error: null, lines: 4, decided: { add: 1, restock: 2, restore: 0, skip: 1 } },
-      { id: "run-open", kind: "stocktake", runId: "run-open", scanId: "scan-open", status: "review", fallback: true, startedAt: at(30).toISOString(), confirmedAt: null, error: null, lines: 5, decided: { add: 0, restock: 0, restore: 0, skip: 0 } },
+      { id: "run-running", kind: "stocktake", runId: "run-running", scanId: null, status: "running", fallback: false, startedAt: at(50).toISOString(), confirmedAt: null, error: null, lines: null, decided: { add: 0, restock: 0, restore: 0, skip: 0 }, preview: [] },
+      { id: "scan-quick", kind: "quick", runId: null, scanId: "scan-quick", status: "confirmed", fallback: false, startedAt: at(40).toISOString(), confirmedAt: at(45).toISOString(), error: null, lines: 4, decided: { add: 1, restock: 2, restore: 0, skip: 1 }, preview: ["Cooking Oil"] },
+      { id: "run-open", kind: "stocktake", runId: "run-open", scanId: "scan-open", status: "review", fallback: true, startedAt: at(30).toISOString(), confirmedAt: null, error: null, lines: 5, decided: { add: 0, restock: 0, restore: 0, skip: 0 }, preview: ["Peak", "Milo", "Indomie"] },
     ]);
   });
 

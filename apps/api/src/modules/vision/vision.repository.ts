@@ -243,6 +243,8 @@ export class VisionRepository {
               restock: sql<number>`count(*) filter (where ${visionDetections.action} = 'restock')::int`,
               restore: sql<number>`count(*) filter (where ${visionDetections.action} = 'restore')::int`,
               skip: sql<number>`count(*) filter (where ${visionDetections.action} = 'skip')::int`,
+              // What was read, in scan order (brand, else name): the entry's title.
+              names: sql<string[]>`(array_agg(coalesce(nullif(${visionDetections.brand}, ''), ${visionDetections.name}) order by ${visionDetections.position}))[1:12]`,
             })
             .from(visionDetections)
             .where(and(eq(visionDetections.businessId, businessId), inArray(visionDetections.scanId, scanIds)))

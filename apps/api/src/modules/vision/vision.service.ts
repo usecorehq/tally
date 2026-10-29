@@ -168,7 +168,17 @@ export type HistoryEntry = {
   lines: number | null;
   /** Decided lines by action. An add can land as a restock when the item already exists. */
   decided: { add: number; restock: number; restore: number; skip: number };
+  /** Up to 3 distinct products read (brand, else name), in scan order: a title for the entry. */
+  preview: string[];
 };
+
+const PREVIEW_NAMES = 3;
+
+/** Distinct names, ignoring case, keeping the first spelling. */
+function previewNames(names: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  return (names ?? []).filter((n) => n.trim() && !seen.has(n.trim().toLowerCase()) && seen.add(n.trim().toLowerCase())).slice(0, PREVIEW_NAMES);
+}
 
 @Injectable()
 export class VisionService implements OnApplicationBootstrap {
@@ -523,7 +533,11 @@ export class VisionService implements OnApplicationBootstrap {
     const byScan = new Map(counts.map((c) => [c.scanId, c]));
     const tally = (scanId: string | null) => {
       const c = scanId ? byScan.get(scanId) : undefined;
-      return { lines: scanId ? (c?.lines ?? 0) : null, decided: { add: c?.add ?? 0, restock: c?.restock ?? 0, restore: c?.restore ?? 0, skip: c?.skip ?? 0 } };
+      return {
+        lines: scanId ? (c?.lines ?? 0) : null,
+        decided: { add: c?.add ?? 0, restock: c?.restock ?? 0, restore: c?.restore ?? 0, skip: c?.skip ?? 0 },
+        preview: previewNames(c?.names),
+      };
     };
     const scanStatus = (s: string | null): HistoryEntry["status"] => (s === "confirmed" ? "confirmed" : "review");
     const entries: HistoryEntry[] = [
