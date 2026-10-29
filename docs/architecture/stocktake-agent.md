@@ -48,6 +48,7 @@ The pattern from Meta's agent workshop: checks run inside the tools at fixed poi
 | `record_line` | The matched product's size agrees with the pack read, within 5% (units convert: 0.4kg = 400g) | Refused: pick the matching size or leave qid empty |
 | `record_line` | `use_counted` has a `count_units` result | Refused |
 | 3 refusals on a line | | **Escalated:** the line is recorded unresolved with `review: "Escalated after 3 refused records: …"` |
+| `record_line` with `unresolved_reason` | | The line keeps its reading and candidates, with `review: "Agent couldn't confirm: <reason>"`, so it sorts first and clients don't pre-select a candidate |
 | `submit_stocktake` | Every line is recorded | Refused, listing the open lines; on the third try it ends with those lines `review: "Not reviewed by the agent: first-pass result."` |
 | Confirm | The merchant reviews every line | The human sign-off |
 
@@ -87,7 +88,7 @@ Poll every 1–2 s.
 - `run.status`: `running`, `done`, `fallback` (the agent stopped; `result` is the first pass) or `failed` (`error` says why; also used for a run interrupted by an API restart).
 - `steps`: the trace so far. The app can show it live ("Reading the top shelf…"), and it is the audit trail.
 - On the web, apps/mp's `/stocktake` page polls every 1.5 s and shows the trace as progress (see [Web stock-take](vision-recognition.md#web-stock-take-apps-mp)).
-- `result`: once finished, the scan in the `shelf-scans` shape (`scanId`, `detections`, …), each detection with `evidence: [{ turn, tool, summary }]` and `review`: `null`, or why the merchant should look closely (escalated, or never reviewed by the agent). Show `review` lines first. While the result is fresh (an hour) candidates carry names and prices; later it comes from the stored scan, where candidates are Qore IDs + scores only.
+- `result`: once finished, the scan in the `shelf-scans` shape (`scanId`, `detections`, …), each detection with `evidence: [{ turn, tool, summary }]` and `review`: `null`, or why the merchant should look closely (the agent couldn't confirm it, escalated, or never reviewed by the agent). Show `review` lines first, and don't pre-select a candidate on them. While the result is fresh (an hour) candidates carry names and prices; later it comes from the stored scan, where candidates are Qore IDs + scores only.
 
 ## Data
 

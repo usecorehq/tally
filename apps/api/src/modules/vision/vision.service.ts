@@ -15,7 +15,7 @@ import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
 import { bestBox, catalogueSized, cropKey, makeCrops, MIN_STORED_CROP_SIDE } from "./crops";
-import { indexInventory, matchInventory, readingKey, type InventoryMatch, type Reading } from "./inventory-match";
+import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
 import { assignInstances, distinctLooks, parseSamInstances, SAM_MODEL, samRequest, type SamInstance } from "./sam-counter";
@@ -430,9 +430,16 @@ export class VisionService implements OnApplicationBootstrap {
     );
   }
 
-  /** The merchant confirmed an identify result: remember the reading for that item. */
-  async confirmIdentify(businessId: string, userId: string, reading: Reading, itemId: string): Promise<{ itemId: string; readingKey: string }> {
+  /**
+   * The merchant confirmed an identify result: remember the reading for that item.
+   * A reading without a brand is too vague to remember: readingKey is null.
+   */
+  async confirmIdentify(businessId: string, userId: string, reading: Reading, itemId: string): Promise<{ itemId: string; readingKey: string | null }> {
     await this.businesses.getForMember(businessId, userId);
+    if (!rememberable(reading)) {
+      if (!(await this.repo.isActiveItem(businessId, itemId))) throw new NotFoundException(`No item ${itemId}`);
+      return { itemId, readingKey: null };
+    }
     const key = readingKey(reading);
     if (!(await this.repo.rememberReading(businessId, itemId, key))) throw new NotFoundException(`No item ${itemId}`);
     return { itemId, readingKey: key };

@@ -325,7 +325,9 @@ export class StocktakeSession {
       const line = this.lines[i]!;
       // The plausibility filter judges candidates against the (possibly rewritten) brand; a product the
       // agent explicitly recorded stays on top, and the merchant still confirms it.
-      const review = line.review ?? (line.recorded ? null : "Not reviewed by the agent: first-pass result.");
+      const review =
+        line.review ??
+        (!line.recorded ? "Not reviewed by the agent: first-pass result." : line.unresolved ? `Agent couldn't confirm: ${line.unresolved}` : null);
       if (line.chosenQid && d.candidates[0]?.qid !== line.chosenQid) {
         const chosen = line.candidates.find((c) => c.qid === line.chosenQid)!;
         const rest = d.candidates.filter((c) => c.qid !== line.chosenQid);
