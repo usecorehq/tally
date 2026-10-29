@@ -42,6 +42,13 @@ const pending = {
   quantity: 6,
   itemName: "Peak Milk 400g",
   price: "4500.00",
+  sample: {
+    boxes: [{ x1: 100, y1: 200, x2: 300, y2: 700 }],
+    countSource: "sam",
+    capturedAt: new Date("2026-10-29T09:00:00Z"),
+    readModel: "muse-spark-1.3",
+    countModel: "sam-3.1",
+  },
 };
 
 /** A stored scan as repo.getScan returns it: one decided line (restocked) and one the agent flagged. */
@@ -198,7 +205,16 @@ async function app(apiKey: string | undefined) {
       match: jest.fn(async () => ({
         items: [{ ref: "0", query: {}, parsedPack: null, candidates: [{ qid: "QC-A", name: "Peak 400g", variantLabel: null, size: null, packQty: 1, brand: null, score: 0.9, signals: { text: 1, brand: 1, size: 0.5 }, price: null }] }],
       })),
-      uploadImage: jest.fn(async () => ({ sha256: "ab", qid: "QC-7K2M-9XQ4-R", view: "on_shelf", status: "pending", width: 400, height: 600 })),
+      uploadImage: jest.fn(async (_upload: Record<string, unknown>) => ({
+        sha256: "ab",
+        qid: "QC-7K2M-9XQ4-R",
+        view: "on_shelf",
+        status: "accepted",
+        width: 400,
+        height: 600,
+        role: "training",
+        sampleId: "smp_1",
+      })),
       getProduct: jest.fn(async (qid: string): Promise<Record<string, unknown>> => {
         if (qid === peakDetail.qid) return peakDetail;
         throw Object.assign(new Error("not found"), { status: 404 });
@@ -330,7 +346,7 @@ describe("VisionController shelf-scans (HTTP)", () => {
       const photo = await sharp({ create: { width: 1000, height: 1000, channels: 3, background: "#c33" } }).jpeg().toBuffer();
       const big = { ...peak, boxes: [{ x_min: 100, y_min: 100, x_max: 600, y_max: 700 }] };
       const tiny = { ...peak, name: "Tiny", boxes: [{ x_min: 900, y_min: 900, x_max: 920, y_max: 930 }] };
-      // ~85 x 106 px: under Qore Catalog's 160 px, still kept for Tally's own dataset.
+      // ~85 x 106 px: under Qore Catalog's 96 px, still kept for Tally's own dataset.
       const small = { ...peak, name: "Small", boxes: [{ x_min: 700, y_min: 100, x_max: 780, y_max: 200 }] };
       fetchSpy.mockImplementation(metaApi(() => sparkReply([big, tiny, small]), () => samReply("")));
       const log = jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
@@ -586,7 +602,7 @@ describe("VisionController confirm + get (HTTP)", () => {
       scanConfirmed: true,
       feedback: { sent: 1, recorded: 1, duplicates: 0 },
       // R2 is off in this suite: no crop to send.
-      images: { uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 1, tooSmall: 0 } },
+      images: { uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 1, tooSmall: 0 }, samples: [] },
     });
   });
 
@@ -609,8 +625,36 @@ describe("VisionController confirm + get (HTTP)", () => {
         qid: "QC-7K2M-9XQ4-R",
         view: "on_shelf",
         feedbackClientRef: `${SCAN}:0`,
+        // The stored photo is 400 × 600 here: the 0–1000 box in its pixels, plus what counted the line and the label.
+        sample: {
+          box: { x: 40, y: 120, w: 80, h: 300 },
+          sourceWidth: 400,
+          sourceHeight: 600,
+          detectorModel: "sam-3.1",
+          capturedAt: "2026-10-29T09:00:00.000Z",
+          labelBrand: "Peak",
+          labelName: "Full Cream Milk Powder",
+          labelPack: "400g",
+        },
       });
-      expect(res.body.images).toEqual({ uploaded: 1, skipped: 0, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
+      expect(ctx.media.get).toHaveBeenCalledWith(`tally/scans/${SCAN}.jpg`);
+      expect(res.body.images).toEqual({
+        uploaded: 1,
+        skipped: 0,
+        failed: 0,
+        skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 },
+        samples: [{ ref: `${SCAN}:0`, sampleId: "smp_1", status: "accepted" }],
+      });
+    });
+
+    it("without the stored photo, sends no box but still the rest of the context", async () => {
+      ctx.media.get.mockImplementation(async (key: string) => (key.startsWith("tally/scans/") ? null : await webp(400, 600)));
+      await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+      const sent = ctx.catalog.client.uploadImage.mock.calls[0]![0] as { sample: Record<string, unknown> };
+      expect(sent.sample).not.toHaveProperty("box");
+      expect(sent.sample).not.toHaveProperty("sourceWidth");
+      expect(sent.sample).toMatchObject({ detectorModel: "sam-3.1", labelBrand: "Peak" });
+      ctx.media.get.mockImplementation(async () => (await webp(400, 600)) as Uint8Array | null);
     });
 
     it("sends nothing for a new item (no Qore ID) or a line without a stored crop", async () => {
@@ -630,14 +674,14 @@ describe("VisionController confirm + get (HTTP)", () => {
       ctx.media.get.mockResolvedValueOnce(null);
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 2, failed: 0, skippedBy: { noProduct: 1, noCrop: 1, tooSmall: 0 } });
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 2, failed: 0, skippedBy: { noProduct: 1, noCrop: 1, tooSmall: 0 }, samples: [] });
     });
 
-    it("keeps a crop under 160 px out of Qore Catalog", async () => {
-      ctx.media.get.mockResolvedValueOnce(await webp(120, 300));
+    it("keeps a crop under 96 px out of Qore Catalog", async () => {
+      ctx.media.get.mockResolvedValueOnce(await webp(90, 300));
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 1 } });
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 1 }, samples: [] });
     });
 
     it("an upload failure is counted, not fatal, and logged with Qore Catalog's reason", async () => {
@@ -646,17 +690,17 @@ describe("VisionController confirm + get (HTTP)", () => {
         Object.assign(new Error(`Catalog POST /v1/images failed: 400 No feedback line ${SCAN}:0 for this key`), { status: 400 }),
       );
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
-      expect(res.body.images).toEqual({ uploaded: 0, skipped: 0, failed: 1, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 0, failed: 1, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 }, samples: [] });
       expect(warn).toHaveBeenCalledWith(`Crop ${SCAN}:0 rejected by Qore Catalog: Catalog POST /v1/images failed: 400 No feedback line ${SCAN}:0 for this key`);
       warn.mockRestore();
     });
 
     it("logs why each line sent nothing", async () => {
       const log = jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
-      ctx.media.get.mockResolvedValueOnce(await webp(120, 300));
+      ctx.media.get.mockResolvedValueOnce(await webp(90, 300));
       await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
-      expect(log).toHaveBeenCalledWith(`Crop ${SCAN}:0 not sent: crop 120×300 is under Qore Catalog's 160 px minimum`);
-      expect(log).toHaveBeenCalledWith("Crops to Qore Catalog: 0 uploaded, 0 failed, 1 skipped (0 no product, 0 no crop, 1 too small)");
+      expect(log).toHaveBeenCalledWith(`Crop ${SCAN}:0 not sent: crop 90×300 is under Qore Catalog's 96 px minimum`);
+      expect(log).toHaveBeenCalledWith("Crops to Qore Catalog: 0 uploaded, 0 failed, 1 skipped (0 no product, 0 no crop, 1 too small); samples 0 accepted, 0 pending");
       log.mockRestore();
     });
 

@@ -13,9 +13,31 @@ export type UploadImageResponse = {
   sha256: string;
   qid: string;
   view: ImageView;
-  status: "pending";
+  /** accepted: stored as a training sample at once (trusted key); pending: waits for a curator. */
+  status: "pending" | "accepted";
   width: number;
   height: number;
+  /** "training" for shelf crops linked to a feedback line. */
+  role?: string;
+  /** The training sample; the same id again on a retry. */
+  sampleId?: string;
+};
+
+/** Optional training context for an uploaded crop; omitted fields are left out of the form. */
+export type ImageSampleContext = {
+  /** The detection box in the source photo's pixels; w and h > 0. */
+  box?: { x: number; y: number; w: number; h: number };
+  sourceWidth?: number;
+  sourceHeight?: number;
+  detectorModel?: string;
+  /** 0–1. */
+  detectorConfidence?: number;
+  /** ISO 8601. */
+  capturedAt?: string;
+  /** What was read off the label; Qore Catalog falls back to the feedback line's input. */
+  labelBrand?: string;
+  labelName?: string;
+  labelPack?: string;
 };
 
 export type Product = {
