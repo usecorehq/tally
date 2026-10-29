@@ -304,12 +304,18 @@ export const visionScans = tally.table(
     matchMs: integer("match_ms").notNull(),
     createdBy: uuid("created_by").notNull(),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    // The merchant dropped it unconfirmed; kept read-only for audit.
+    discardedAt: timestamp("discarded_at", { withTimezone: true }),
+    // Another run of the same photo was confirmed; kept read-only for audit.
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     unique("vision_scans_business_id_key").on(t.businessId, t.id),
-    check("vision_scans_status", sql`status in ('open', 'confirmed')`),
+    check("vision_scans_status", sql`status in ('open', 'confirmed', 'discarded', 'superseded')`),
     check("vision_scans_confirmed_consistent", sql`(status = 'confirmed') = (confirmed_at is not null)`),
+    check("vision_scans_discarded_consistent", sql`(status = 'discarded') = (discarded_at is not null)`),
+    check("vision_scans_superseded_consistent", sql`(status = 'superseded') = (superseded_at is not null)`),
     check("vision_scans_image_sha256_format", sql`image_sha256 ~ '^[0-9a-f]{64}$'`),
     index("vision_scans_business_created_idx").on(t.businessId, t.createdAt.desc()),
   ],
@@ -410,6 +416,8 @@ export const visionAgentRuns = tally.table(
       .references(() => businesses.id, { onDelete: "cascade" }),
     // Set when the run saves its scan (done, or fallback to the quick scan).
     scanId: uuid("scan_id"),
+    // A rerun of a stored photo: the first scan of that photo (the group's root), never a rerun's own scan.
+    rerunOfScanId: uuid("rerun_of_scan_id"),
     status: text("status").notNull().default("running"),
     model: text("model").notNull(),
     turns: integer("turns").notNull().default(0),
@@ -428,6 +436,12 @@ export const visionAgentRuns = tally.table(
       columns: [t.businessId, t.scanId],
       foreignColumns: [visionScans.businessId, visionScans.id],
     }),
+    foreignKey({
+      name: "vision_agent_runs_rerun_of_fk",
+      columns: [t.businessId, t.rerunOfScanId],
+      foreignColumns: [visionScans.businessId, visionScans.id],
+    }),
+    index("vision_agent_runs_rerun_of_idx").on(t.businessId, t.rerunOfScanId),
     check("vision_agent_runs_status", sql`status in ('running', 'done', 'fallback', 'failed')`),
     check("vision_agent_runs_finished_consistent", sql`(status = 'running') = (finished_at is null)`),
     check("vision_agent_runs_counts_nonneg", sql`turns >= 0 and input_tokens >= 0 and output_tokens >= 0`),
