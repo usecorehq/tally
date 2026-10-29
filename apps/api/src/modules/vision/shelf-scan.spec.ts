@@ -77,6 +77,9 @@ describe("buildDetections", () => {
       // candidate() sets signals.size = 1
       inventoryNeedsConfirm: false,
     });
+    // The review names the item it will restock.
+    expect(first!.inventoryItemName).toBe("Peak 400g");
+    expect(second!.inventoryItemName).toBeNull();
     expect(first!.candidates.map((c) => [c.qid, c.inventoryItemId])).toEqual([
       ["QC-A", "item-a"],
       ["QC-B", null],

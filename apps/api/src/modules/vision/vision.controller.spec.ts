@@ -484,6 +484,7 @@ describe("VisionController confirm + get (HTTP)", () => {
         position: 0,
         inventoryItemId: "item-a",
         inventoryItemArchived: false,
+        inventoryItemName: expect.any(String),
         // A strong catalogue match is sure.
         inventoryNeedsConfirm: false,
         review: null,

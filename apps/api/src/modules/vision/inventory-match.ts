@@ -11,6 +11,8 @@ export type InventoryIndex = {
   byQid: Map<string, string>;
   archivedByQid: Map<string, string>;
   byReading: Map<string, string>;
+  /** Display name of every indexed item (active and archived), so a match can say which item it is. */
+  names: Map<string, string>;
   /** Active items without a Qore ID, for name matching. */
   unlinked: { id: string; name: string; variantLabel: string | null }[];
 };
@@ -47,6 +49,7 @@ export function indexInventory(
     archivedByQid: new Map(archived.filter((i) => i.coreQid && !byQid.has(i.coreQid)).map((i) => [i.coreQid!, i.id])),
     byReading: new Map(readings.filter((r) => live.has(r.itemId)).map((r) => [r.readingKey, r.itemId])),
     unlinked: active.filter((i) => !i.coreQid).map(({ id, name, variantLabel }) => ({ id, name, variantLabel })),
+    names: new Map([...archived, ...active].map((i) => [i.id, i.variantLabel ? `${i.name} ${i.variantLabel}` : i.name])),
   };
 }
 

@@ -84,6 +84,8 @@ export type Detection = {
    * or a catalogue match whose size agrees with the label.
    */
   inventoryNeedsConfirm: boolean;
+  /** That item's name, so the review can say which item will be restocked; null with no match. */
+  inventoryItemName: string | null;
 };
 
 /** One /v1/match item per product, ref = its index, so results map back without relying on order. */
@@ -123,7 +125,7 @@ export function buildDetections(
       confidence: p.confidence,
       candidates,
       // All plausible candidates, not just the 3 shown: the merchant's size may rank lower.
-      ...stocked(matchInventory(p, candidateRefs(plausibleCandidates), inventory)),
+      ...stocked(matchInventory(p, candidateRefs(plausibleCandidates), inventory), inventory),
     };
   });
 }
@@ -147,10 +149,17 @@ function counted(
 
 function stocked(
   m: StockedMatch | null,
-): Pick<Detection, "inventoryItemId" | "inventoryMatch" | "inventoryItemArchived" | "inventoryNeedsConfirm"> {
+  inventory: InventoryIndex,
+): Pick<Detection, "inventoryItemId" | "inventoryMatch" | "inventoryItemArchived" | "inventoryNeedsConfirm" | "inventoryItemName"> {
   return m
-    ? { inventoryItemId: m.itemId, inventoryMatch: m.match, inventoryItemArchived: m.archived, inventoryNeedsConfirm: !m.sure }
-    : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false, inventoryNeedsConfirm: false };
+    ? {
+        inventoryItemId: m.itemId,
+        inventoryMatch: m.match,
+        inventoryItemArchived: m.archived,
+        inventoryNeedsConfirm: !m.sure,
+        inventoryItemName: inventory.names.get(m.itemId) ?? null,
+      }
+    : { inventoryItemId: null, inventoryMatch: null, inventoryItemArchived: false, inventoryNeedsConfirm: false, inventoryItemName: null };
 }
 
 export function toCandidate(c: MatchCandidate, inventory: InventoryIndex): DetectionCandidate {

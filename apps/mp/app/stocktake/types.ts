@@ -59,6 +59,8 @@ export type Detection = {
   inventoryMatch: "reading" | "catalogue" | "name" | null;
   inventoryItemArchived: boolean;
   inventoryNeedsConfirm: boolean;
+  /** The store item's name, for a line that matched one. */
+  inventoryItemName?: string | null;
   /** Agent scans only: why the merchant should look closely (escalated, or never reviewed by the agent). */
   review?: string | null;
   evidence?: { turn: number; tool: string; summary: string }[] | null;
