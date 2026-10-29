@@ -1,6 +1,6 @@
 # Stock-take agent
 
-> Diagram: [stock-take agent](../diagrams/images/stocktake-agent-sequence.svg). Part of [vision recognition](vision-recognition.md).
+> Diagrams: [how the agent counts a shelf](../diagrams/stock-take-agent.webp), [one run, step by step](../diagrams/stock-take-agent-run.webp). Part of [vision recognition](vision-recognition.md).
 >
 > **Built:** the agent loop, its tools, async runs with a step trace, fallback to the quick scan, and verification with refusal and escalation. **Planned:** measuring the agent against the quick scan to decide the default (see [Planned](#planned)).
 
