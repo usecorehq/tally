@@ -29,7 +29,7 @@ Every tool wraps code the quick scan already uses (`stocktake/stocktake-session.
 
 | Tool | What it does | Limits |
 |---|---|---|
-| `zoom(line, box?)` | Returns a close-up of the line's product **as an image** (tool results can carry images), cut from the photo in memory | 20 per run |
+| `zoom(line, box?)` | Returns a close-up of the line's product **as an image** (tool results can carry images), cut from the photo in memory | 30 per run; then "zoom budget used up" and the agent records from what it has |
 | `search_catalogue(line, brand, name, pack)` | Qore Catalog `/v1/match`, plausibility-filtered; retry with other wording | 3 per line |
 | `find_in_store(line)` | The merchant's own items, with the shared [inventory rules](vision-recognition.md) | — |
 | `count_units(line, look)` | SAM 3.1 count for a look like "red box"; only used if `record_line` says `use_counted` | 2 per line |
