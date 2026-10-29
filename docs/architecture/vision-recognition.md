@@ -4,7 +4,7 @@
 >
 > **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, point-to-sell identify (tier 1), and product crops (R2) sent to Qore Catalog as pictures. **Planned:** an on-device model. Planned endpoint shapes may change before they ship.
 
-The merchant points the phone camera at products and Tally recognises them. There are two flows. Stock-taking can also run as an agent; see [Stock-take agent](stocktake-agent.md).
+The merchant points the phone camera at products and Tally recognises them. Product side (users, screens, metrics, delivery slices): [photo-to-inventory PRD](../prd-photo-to-inventory.md). There are two flows. Stock-taking can also run as an agent; see [Stock-take agent](stocktake-agent.md).
 
 On the web, the merchant portal's `/stocktake` page runs the shelf scan from an uploaded or captured photo (see [Web stock-take](#web-stock-take-apps-mp)).
 

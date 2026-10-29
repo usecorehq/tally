@@ -1,6 +1,8 @@
 part of 'sign_in_cubit.dart';
 
-enum SignInStatus { initial, submitting, success, failure }
+/// [unconfirmed]: right password, email never confirmed — a code was sent;
+/// the page opens the code screen.
+enum SignInStatus { initial, submitting, success, failure, unconfirmed }
 
 class SignInState extends Equatable {
   const SignInState({this.status = SignInStatus.initial, this.user, this.error});
@@ -9,12 +11,7 @@ class SignInState extends Equatable {
   final MerchantUser? user;
   final String? error;
 
-  SignInState copyWith({
-    SignInStatus? status,
-    MerchantUser? user,
-    String? error,
-    bool clearError = false,
-  }) =>
+  SignInState copyWith({SignInStatus? status, MerchantUser? user, String? error, bool clearError = false}) =>
       SignInState(
         status: status ?? this.status,
         user: user ?? this.user,

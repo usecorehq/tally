@@ -1,4 +1,7 @@
+"use client";
+
 import * as React from "react";
+import { FIELD } from "./field";
 import { cn } from "./lib/cn";
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
@@ -11,10 +14,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
         if (type === "number") e.currentTarget.blur();
         onWheel?.(e);
       }}
-      className={cn(
-        "flex h-9 w-full rounded-none border border-input bg-transparent px-3 py-1 text-base transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive md:text-sm",
-        className,
-      )}
+      className={cn("h-12 read-only:text-gray-500", FIELD, className)}
       ref={ref}
       {...props}
     />
@@ -22,4 +22,9 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
 );
 Input.displayName = "Input";
 
-export { Input };
+const Textarea = React.forwardRef<HTMLTextAreaElement, React.ComponentProps<"textarea">>(({ className, ...props }, ref) => (
+  <textarea ref={ref} className={cn("min-h-[88px] resize-none py-3", FIELD, className)} {...props} />
+));
+Textarea.displayName = "Textarea";
+
+export { Input, Textarea };

@@ -3,8 +3,8 @@
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { Button, FormMessage, SolarIcon } from "@tally/ui";
-import { BackButton, OnboardingShell, SavingScreen, StepHeading } from "../../_components/onboarding-shell";
-import { PICK_HEADING, StarterDone, StarterList, StarterReview } from "../../_components/starter-items";
+import { BackButton, ContinueButton, OnboardingShell, SavingScreen, StepHeading } from "../../_components/onboarding-shell";
+import { PICK_HEADING, StarterDone, StarterList, StarterReview, keptSummary } from "../../_components/starter-items";
 import { initialStates, invalidRowKeys, toStarterItem, type StarterResult, type TemplateRow } from "../../_lib/starter";
 import { submitStarter } from "./actions";
 
@@ -22,7 +22,7 @@ export function ItemsWizard({ business, rows }: { business: { id: string; name: 
 
   if (result) {
     return (
-      <OnboardingShell step={3}>
+      <OnboardingShell step={3} view="done">
         <StarterDone businessName={business.name} result={result} />
       </OnboardingShell>
     );
@@ -34,7 +34,7 @@ export function ItemsWizard({ business, rows }: { business: { id: string; name: 
       <OnboardingShell step={3}>
         <StepHeading {...PICK_HEADING} />
         <FormMessage variant="info" message="We don't have starter suggestions for this business type yet." />
-        <Button asChild size="cta" className="mt-8">
+        <Button asChild size="lg" className="mt-8 max-sm:w-full">
           <Link href="/">Go to dashboard</Link>
         </Button>
       </OnboardingShell>
@@ -45,11 +45,13 @@ export function ItemsWizard({ business, rows }: { business: { id: string; name: 
     return (
       <OnboardingShell
         step={3}
+        view="review"
         footer={
           <>
             <BackButton onClick={() => setReview(false)} />
             <Button
-              size="cta"
+              size="lg"
+              className="max-sm:flex-1 sm:min-w-36"
               onClick={() => {
                 setError(null);
                 startTransition(async () => {
@@ -76,13 +78,14 @@ export function ItemsWizard({ business, rows }: { business: { id: string; name: 
   return (
     <OnboardingShell
       step={3}
+      view="pick"
+      summary={keptSummary(rows, state)}
       footer={
         <>
-          <Button variant="ghost" size="cta" className="text-gray-500 hover:text-gray-700" asChild>
+          <Button variant="quiet" size="lg" className="max-sm:flex-1" asChild>
             <Link href="/">Not now</Link>
           </Button>
-          <Button
-            size="cta"
+          <ContinueButton
             onClick={() => {
               // Qorelly rule: Continue stays enabled; pressing it flags what's missing.
               setAttempted(true);
@@ -95,10 +98,7 @@ export function ItemsWizard({ business, rows }: { business: { id: string; name: 
               setReview(true);
               window.scrollTo({ top: 0 });
             }}
-          >
-            Continue
-            <SolarIcon name="Alt-Arrow-Right" iconStyle="Bold" size={16} />
-          </Button>
+          />
         </>
       }
     >

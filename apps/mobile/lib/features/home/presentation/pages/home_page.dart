@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/design/v15_widgets.dart';
 import '../../../../injection_container.dart';
 import '../../../auth/domain/entities/merchant_user.dart';
-import '../../../auth/presentation/bloc/auth_bloc.dart';
-import '../../../business/domain/entities/business.dart';
 import '../../../business/presentation/cubit/business_cubit.dart';
-import '../../../inventory/presentation/pages/scanner_page.dart';
+import '../../../business/domain/entities/business_draft.dart';
+import '../../../business/presentation/cubit/starter_items_cubit.dart';
+import '../../../business/presentation/pages/setup_business_page.dart';
+import '../../../business/presentation/pages/starter_items_page.dart';
+import 'home_shell.dart';
 
+/// Signed in: load the user's businesses, then the tab shell for the selected one.
 class HomePage extends StatelessWidget {
   const HomePage({super.key, required this.user});
   final MerchantUser user;
@@ -16,120 +20,90 @@ class HomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => sl<BusinessCubit>()..load(),
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Tally'),
-          actions: [
-            IconButton(
-              tooltip: 'Sign out',
-              icon: const Icon(Icons.logout),
-              onPressed: () => context.read<AuthBloc>().add(const AuthSignOutRequested()),
-            ),
-          ],
-        ),
-        body: BlocBuilder<BusinessCubit, BusinessState>(
-          builder: (context, state) => switch (state) {
-            BusinessLoading() => const Center(child: CircularProgressIndicator()),
-            // A failed read is an error with retry, never "no businesses".
-            BusinessLoadError(:final message) => _Message(
-              icon: Icons.cloud_off_outlined,
-              title: "Couldn't load your businesses",
-              body: message,
-              action: FilledButton(
-                onPressed: () => context.read<BusinessCubit>().load(),
-                child: const Text('Try again'),
-              ),
-            ),
-            BusinessNone() => const _Message(
-              icon: Icons.storefront_outlined,
-              title: 'Set up your business first',
-              body: 'Create your business and starter inventory in the Tally web app, then come back here to scan.',
-            ),
-            BusinessReady(:final businesses, :final selected) => _Ready(
-              user: user,
-              businesses: businesses,
-              selectedId: selected.id,
-            ),
-          },
-        ),
+      child: BlocBuilder<BusinessCubit, BusinessState>(
+        builder: (context, state) => switch (state) {
+          BusinessReady(:final businesses, :final selected) => HomeShell(
+            user: user,
+            businesses: businesses,
+            selected: selected,
+          ),
+          BusinessNone() => _BusinessGate(state: state),
+          _ => Scaffold(
+            body: SafeArea(child: _BusinessGate(state: state)),
+          ),
+        },
       ),
     );
   }
 }
 
-class _Ready extends StatelessWidget {
-  const _Ready({required this.user, required this.businesses, required this.selectedId});
-  final MerchantUser user;
-  final List<Business> businesses;
-  final String selectedId;
+class _BusinessGate extends StatelessWidget {
+  const _BusinessGate({required this.state});
+  final BusinessState state;
 
   @override
   Widget build(BuildContext context) {
-    final cubit = context.read<BusinessCubit>();
-    final selected = businesses.firstWhere((b) => b.id == selectedId);
-    final theme = Theme.of(context);
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(selected.name, style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        Text(user.email ?? '', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        if (businesses.length > 1) ...[
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: selectedId,
-            decoration: const InputDecoration(labelText: 'Business'),
-            items: [for (final b in businesses) DropdownMenuItem(value: b.id, child: Text(b.name))],
-            onChanged: (id) => cubit.select(businesses.firstWhere((b) => b.id == id)),
-          ),
-        ],
-        const SizedBox(height: 32),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-          icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Scan barcode'),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => ScannerPage(businessId: selected.id, businessName: selected.name),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Point at a product to find it in your stock. Scan something new once to link it to an item.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-      ],
-    );
+    return switch (state) {
+      // A failed read is an error with retry, never "no businesses".
+      BusinessLoadError(:final message) => V15MessageState(
+        icon: IconsOutline.danger_circle,
+        title: "Couldn't load your businesses",
+        body: message,
+        action: V15Button('Try again', tone: V15Tone.quiet, onPressed: () => context.read<BusinessCubit>().load()),
+      ),
+      // No business yet: onboarding, as apps/mp's /onboarding.
+      BusinessNone() => const _Onboarding(),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
   }
 }
 
-class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.title, required this.body, this.action});
-  final IconData icon;
-  final String title;
-  final String body;
-  final Widget? action;
+/// Step 1 collects the name and type, step 2 picks the stock and creates the
+/// business on Finish or Skip; then the app opens on it.
+class _Onboarding extends StatefulWidget {
+  const _Onboarding();
+
+  @override
+  State<_Onboarding> createState() => _OnboardingState();
+}
+
+class _OnboardingState extends State<_Onboarding> {
+  BusinessDraft? _draft;
+  bool _onStarter = false;
+
+  /// Lives across Back so the picks are kept; a new type starts it over.
+  StarterItemsCubit? _starter;
+
+  void _continue(BusinessDraft draft) {
+    final starter = _starter;
+    if (starter != null && starter.state.draft.subtypeCode == draft.subtypeCode) {
+      starter.rename(draft);
+    } else {
+      starter?.close();
+      _starter = sl<StarterItemsCubit>(param1: draft)..load();
+    }
+    setState(() {
+      _draft = draft;
+      _onStarter = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _starter?.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 40, color: theme.colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(title, style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(body, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
-            if (action != null) ...[const SizedBox(height: 20), action!],
-          ],
-        ),
-      ),
+    final starter = _starter;
+    if (starter == null || !_onStarter) {
+      return SetupBusinessPage(initial: _draft, onContinue: _continue);
+    }
+    return StarterItemsPage(
+      cubit: starter,
+      onBack: () => setState(() => _onStarter = false),
+      onDone: () => context.read<BusinessCubit>().load(),
     );
   }
 }

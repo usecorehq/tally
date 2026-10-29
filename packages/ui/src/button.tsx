@@ -3,41 +3,51 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "./lib/cn";
 
-// Ported from Qorelly packages/ui (V1): rounded-full, press-scale, no shadows.
+// Qorelly Design V2 buttons (v2-kit V2Button, list-kit PRIMARY / QUIET_MATERIAL):
+// 12px rectangles, one primary per view. Tones: primary (brand), quiet (white
+// sheet with a hairline), soft (grey well), dark (near-black first-run CTA).
+// `default` / `outline` / `secondary` are the older names for primary / quiet / soft.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition active:scale-95 motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-colors active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/15 dark:focus-visible:ring-gray-900/40 disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary-hover",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        primary: "bg-primary text-white hover:bg-primary-hover",
+        default: "bg-primary text-white hover:bg-primary-hover",
+        quiet: "bg-surface text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.06] hover:bg-gray-50",
+        outline: "bg-surface text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.06] hover:bg-gray-50",
+        soft: "bg-gray-100 text-gray-900 hover:bg-gray-200",
+        secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200",
+        // In dark the scale inverts: gray-900 is near-white, so its ink is the surface.
+        dark: "bg-gray-900 text-surface hover:bg-gray-800",
+        ghost: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+        destructive: "bg-red-600 text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600",
+        link: "text-primary underline-offset-4 hover:underline active:scale-100",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 px-3 text-xs",
-        lg: "h-10 px-8",
-        icon: "h-9 w-9",
-        cta: "min-h-[44px] px-4 sm:px-6 py-3 text-sm sm:text-base",
+        sm: "h-8 rounded-lg px-3 text-[13px]",
+        md: "h-10 px-4",
+        default: "h-10 px-4",
+        lg: "h-11 px-4",
+        // A full-width flow CTA (checkout, confirm): 48px.
+        xl: "h-12 px-5 text-[15px]",
+        cta: "h-11 px-5",
+        icon: "h-10 w-10",
       },
+      block: { true: "w-full" },
     },
-    defaultVariants: { variant: "default", size: "default" },
+    defaultVariants: { variant: "primary", size: "md" },
   },
 );
 
-export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, block, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+    return <Comp className={cn(buttonVariants({ variant, size, block, className }))} ref={ref} {...props} />;
   },
 );
 Button.displayName = "Button";

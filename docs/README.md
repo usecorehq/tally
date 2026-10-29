@@ -2,6 +2,10 @@
 
 Everything about how Tally is built and how to run it. Docs ship with the code: a PR that changes behaviour updates the doc and diagram that describe it (see [Keeping docs current](guides/documentation.md)).
 
+## Product
+
+- **[Photo-to-inventory PRD](prd-photo-to-inventory.md)** — *Planned.* The product side of [vision recognition](architecture/vision-recognition.md): users, screens, metrics, delivery slices, landing page.
+
 ## Architecture
 
 Why we made the choices we made. Read these before changing something load-bearing.

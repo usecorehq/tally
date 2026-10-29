@@ -1,7 +1,11 @@
 /*
- * Tally design tokens — Qorelly's merchant-portal system for Tailwind 4.
- * Qorelly V1 rules (rounded-full buttons, no box shadows, Solar Bold/Outline)
- * with V2's neutral grey palette and the #7856FF primary. Light only for now.
+ * Tally design tokens — Qorelly Design V2 ("Tray") for Tailwind 4.
+ * Source: Qorelly packages/ui/src/styles/v2-tokens.css and v2-motion.css,
+ * rules at design.qorelly.com. Grey trays hold white sheets; buttons and
+ * fields are 12–14px rectangles; colour is for meaning. Dark follows
+ * Qorelly's V2 dark (apps/mp/src/index.css): an inverted neutral scale, white
+ * sheets become --color-surface, hairlines turn white, pale status tints
+ * become translucent washes with light ink. `.dark` on <html> switches it.
  *
  * Import once per app:  @import "@tally/ui/theme.css";
  */
@@ -13,8 +17,12 @@
   --color-popover: hsl(0 0% 100%);
   --color-popover-foreground: hsl(0 0% 9%);
 
+  /* Sheets and hairlines: use bg-surface / ring-hairline, never bg-white / ring-black. */
+  --color-surface: #ffffff;
+  --color-hairline: #000000;
+
   --color-primary: #7856ff;
-  --color-primary-foreground: hsl(210 40% 98%);
+  --color-primary-foreground: #ffffff;
   --color-primary-hover: #6b4de6;
   --color-primary-light: #f0ecff;
   --color-primary-dark: #5a3fd9;
@@ -26,13 +34,13 @@
   --color-accent: hsl(0 0% 96.1%);
   --color-accent-foreground: hsl(0 0% 9%);
   --color-destructive: hsl(0 84.2% 60.2%);
-  --color-destructive-foreground: hsl(210 40% 98%);
+  --color-destructive-foreground: #ffffff;
 
   --color-border: hsl(0 0% 89.8%);
   --color-input: hsl(0 0% 89.8%);
   --color-ring: hsl(0 0% 63.9%);
 
-  /* Neutral greys (Qorelly V2 palette) */
+  /* V2 greys are Tailwind's neutral scale; gray-* and neutral-* are the same. */
   --color-gray-50: rgb(250 250 250);
   --color-gray-100: rgb(245 245 245);
   --color-gray-200: rgb(229 229 229);
@@ -45,12 +53,19 @@
   --color-gray-900: rgb(23 23 23);
   --color-gray-950: rgb(10 10 10);
 
-  /* Allowed radii: pills and cards. */
-  --radius-button: 9999px;
-  --radius-card: 24px;
+  /* Qorelly's --radius scale: rounded-lg / -md / -sm = 12 / 10 / 8px. */
+  --radius-lg: 0.75rem;
+  --radius-md: 10px;
+  --radius-sm: 8px;
 
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
   *,
@@ -59,8 +74,235 @@
     border-color: var(--color-border);
   }
   body {
-    background-color: var(--color-gray-50);
+    background-color: var(--color-surface);
     color: var(--color-gray-900);
     -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* ─── V2 dark ─────────────────────────────────────────────────────────────── */
+.dark {
+  color-scheme: dark;
+  /* Inverted scale: 50/100 are the darkest (trays sit as wells), 900 is near-white ink. */
+  --color-gray-50: rgb(13 13 15);
+  --color-gray-100: rgb(17 17 19);
+  --color-gray-200: rgb(44 44 47);
+  --color-gray-300: rgb(62 62 66);
+  --color-gray-400: rgb(112 112 118);
+  --color-gray-500: rgb(148 148 154);
+  --color-gray-600: rgb(178 178 184);
+  --color-gray-700: rgb(206 206 211);
+  --color-gray-800: rgb(228 228 231);
+  --color-gray-900: rgb(243 243 245);
+  --color-gray-950: rgb(250 250 250);
+  /* A step above the trays, so a sheet on a tray still reads as raised. */
+  --color-surface: rgb(31 31 34);
+  --color-hairline: #ffffff;
+
+  --color-background: hsl(240 4% 12.5%);
+  --color-foreground: hsl(240 5% 96%);
+  --color-card: hsl(240 4% 12.5%);
+  --color-card-foreground: hsl(240 5% 96%);
+  --color-popover: hsl(240 4% 14%);
+  --color-popover-foreground: hsl(240 5% 96%);
+  --color-secondary: hsl(240 4% 17%);
+  --color-secondary-foreground: hsl(240 5% 96%);
+  --color-muted: hsl(240 6% 7%);
+  --color-muted-foreground: hsl(240 3% 62%);
+  --color-accent: hsl(240 4% 17%);
+  --color-accent-foreground: hsl(240 5% 96%);
+  --color-border: hsl(240 3% 20%);
+  --color-input: hsl(240 3% 20%);
+  --color-ring: hsl(240 3% 45%);
+  /* Initials tiles (nameTone): deep washes with light ink. */
+  --tone-orange-bg: rgb(249 115 22 / 0.18);
+  --tone-orange-ink: rgb(253 186 116);
+  --tone-emerald-bg: rgb(16 185 129 / 0.18);
+  --tone-emerald-ink: rgb(110 231 183);
+  --tone-indigo-bg: rgb(99 102 241 / 0.18);
+  --tone-indigo-ink: rgb(165 180 252);
+  --tone-pink-bg: rgb(236 72 153 / 0.18);
+  --tone-pink-ink: rgb(249 168 212);
+  --tone-sky-bg: rgb(14 165 233 / 0.18);
+  --tone-sky-ink: rgb(125 211 252);
+  --tone-yellow-bg: rgb(234 179 8 / 0.18);
+  --tone-yellow-ink: rgb(253 224 71);
+  --tone-violet-bg: rgb(139 92 246 / 0.18);
+  --tone-violet-ink: rgb(196 181 253);
+  /* The pale brand tint (chips, selected rows) becomes a deep wash of it. */
+  --color-primary-light: color-mix(in srgb, var(--color-primary) 24%, rgb(31 31 34));
+
+  --color-red-50: rgb(239 68 68 / 0.14);
+  --color-red-100: rgb(239 68 68 / 0.14);
+  --color-red-200: rgb(239 68 68 / 0.24);
+  --color-red-300: rgb(239 68 68 / 0.32);
+  --color-red-600: rgb(248 113 113);
+  --color-red-700: rgb(252 165 165);
+  --color-red-800: rgb(252 165 165);
+  --color-red-900: rgb(252 165 165);
+  --color-amber-50: rgb(245 158 11 / 0.14);
+  --color-amber-100: rgb(245 158 11 / 0.14);
+  --color-amber-200: rgb(245 158 11 / 0.24);
+  --color-amber-300: rgb(245 158 11 / 0.32);
+  --color-amber-600: rgb(251 191 36);
+  --color-amber-700: rgb(252 211 77);
+  --color-amber-800: rgb(252 211 77);
+  --color-amber-900: rgb(252 211 77);
+  --color-yellow-50: rgb(234 179 8 / 0.14);
+  --color-yellow-100: rgb(234 179 8 / 0.14);
+  --color-yellow-200: rgb(234 179 8 / 0.24);
+  --color-yellow-300: rgb(234 179 8 / 0.32);
+  --color-yellow-600: rgb(250 204 21);
+  --color-yellow-700: rgb(253 224 71);
+  --color-yellow-800: rgb(253 224 71);
+  --color-yellow-900: rgb(253 224 71);
+  --color-emerald-50: rgb(16 185 129 / 0.14);
+  --color-emerald-100: rgb(16 185 129 / 0.14);
+  --color-emerald-200: rgb(16 185 129 / 0.24);
+  --color-emerald-300: rgb(16 185 129 / 0.32);
+  --color-emerald-600: rgb(52 211 153);
+  --color-emerald-700: rgb(110 231 183);
+  --color-emerald-800: rgb(110 231 183);
+  --color-emerald-900: rgb(110 231 183);
+  --color-green-50: rgb(34 197 94 / 0.14);
+  --color-green-100: rgb(34 197 94 / 0.14);
+  --color-green-200: rgb(34 197 94 / 0.24);
+  --color-green-300: rgb(34 197 94 / 0.32);
+  --color-green-600: rgb(74 222 128);
+  --color-green-700: rgb(134 239 172);
+  --color-green-800: rgb(134 239 172);
+  --color-green-900: rgb(134 239 172);
+  --color-blue-50: rgb(59 130 246 / 0.14);
+  --color-blue-100: rgb(59 130 246 / 0.14);
+  --color-blue-200: rgb(59 130 246 / 0.24);
+  --color-blue-300: rgb(59 130 246 / 0.32);
+  --color-blue-600: rgb(96 165 250);
+  --color-blue-700: rgb(147 197 253);
+  --color-blue-800: rgb(147 197 253);
+  --color-blue-900: rgb(147 197 253);
+  --color-violet-50: rgb(139 92 246 / 0.14);
+  --color-violet-100: rgb(139 92 246 / 0.14);
+  --color-violet-200: rgb(139 92 246 / 0.24);
+  --color-violet-300: rgb(139 92 246 / 0.32);
+  --color-violet-600: rgb(167 139 250);
+  --color-violet-700: rgb(196 181 253);
+  --color-violet-800: rgb(196 181 253);
+  --color-violet-900: rgb(196 181 253);
+  --color-orange-50: rgb(249 115 22 / 0.14);
+  --color-orange-100: rgb(249 115 22 / 0.14);
+  --color-orange-200: rgb(249 115 22 / 0.24);
+  --color-orange-300: rgb(249 115 22 / 0.32);
+  --color-orange-600: rgb(251 146 60);
+  --color-orange-700: rgb(253 186 116);
+  --color-orange-800: rgb(253 186 116);
+  --color-orange-900: rgb(253 186 116);
+  --color-pink-50: rgb(236 72 153 / 0.14);
+  --color-pink-100: rgb(236 72 153 / 0.14);
+  --color-pink-200: rgb(236 72 153 / 0.24);
+  --color-pink-300: rgb(236 72 153 / 0.32);
+  --color-pink-600: rgb(244 114 182);
+  --color-pink-700: rgb(249 168 212);
+  --color-pink-800: rgb(249 168 212);
+  --color-pink-900: rgb(249 168 212);
+  --color-indigo-50: rgb(99 102 241 / 0.14);
+  --color-indigo-100: rgb(99 102 241 / 0.14);
+  --color-indigo-200: rgb(99 102 241 / 0.24);
+  --color-indigo-300: rgb(99 102 241 / 0.32);
+  --color-indigo-600: rgb(129 140 248);
+  --color-indigo-700: rgb(165 180 252);
+  --color-indigo-800: rgb(165 180 252);
+  --color-indigo-900: rgb(165 180 252);
+  --color-sky-50: rgb(14 165 233 / 0.14);
+  --color-sky-100: rgb(14 165 233 / 0.14);
+  --color-sky-200: rgb(14 165 233 / 0.24);
+  --color-sky-300: rgb(14 165 233 / 0.32);
+  --color-sky-600: rgb(56 189 248);
+  --color-sky-700: rgb(125 211 252);
+  --color-sky-800: rgb(125 211 252);
+  --color-sky-900: rgb(125 211 252);
+}
+
+/* V2 motion (v2-motion.css): enter once, never loop; still under reduced motion.
+ * `backwards`, not `both`: a filled transform would make the element the
+ * containing block for fixed children and break sticky footers. */
+@keyframes q-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes q-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes q-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes q-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+@keyframes q-step-fwd {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+@keyframes q-step-back {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+@layer utilities {
+  .q-rise,
+  .q-stagger > * {
+    animation: q-rise 280ms var(--ease-out) backwards;
+  }
+  .q-stagger > :nth-child(2) {
+    animation-delay: 40ms;
+  }
+  .q-stagger > :nth-child(3) {
+    animation-delay: 80ms;
+  }
+  .q-stagger > :nth-child(4) {
+    animation-delay: 120ms;
+  }
+  .q-stagger > :nth-child(5) {
+    animation-delay: 160ms;
+  }
+  .q-stagger > :nth-child(n + 6) {
+    animation-delay: 200ms;
+  }
+  .q-fade-in {
+    animation: q-fade 200ms ease backwards;
+  }
+  .q-sheet-up {
+    animation: q-sheet-up 280ms var(--ease-drawer) backwards;
+  }
+  .q-pop {
+    animation: q-pop 180ms var(--ease-out) backwards;
+  }
+  .q-step-fwd {
+    animation: q-step-fwd 240ms var(--ease-out) backwards;
+  }
+  .q-step-back {
+    animation: q-step-back 240ms var(--ease-out) backwards;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .q-rise,
+  .q-stagger > *,
+  .q-fade-in,
+  .q-sheet-up,
+  .q-pop,
+  .q-step-fwd,
+  .q-step-back {
+    animation: none;
   }
 }
