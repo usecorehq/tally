@@ -29,8 +29,9 @@ app/api/auth/[...nextauth]/      NextAuth route handlers
 app/_components/                 AppShell (V2 frame: sidebar nav, stock-take recents on /stocktake pages, white inset panel), TallyMark
 app/(home)/page.tsx              home (route group, so its loading.tsx covers home only): the user's businesses (name → inventory, Stock-take action)
 app/inventory/                   inventory (?business=<id>): scan card, search, Items / Units / Low stock tiles, stock list
-app/onboarding/                  setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish
+app/onboarding/                  first-time setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish; home once a business exists
   [businessId]/items/            starter items for a business that already exists
+app/businesses/new/              Add a business: the same wizard, with a close button back home
 app/stocktake/                   new stock-take: business + photo, then the run continues at its own URL (?business=<id>)
   history/                       the business's stock-takes and quick scans, newest first, grouped by day, reruns nested
   history/[id]/                  one session (run or quick scan): progress (polling resumes after a refresh), review, or read-only
