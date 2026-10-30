@@ -51,7 +51,7 @@ Child tables carry `business_id` and use composite foreign keys (`(business_id, 
 
 ## OAuth clients (Connect Tally)
 
-Partner apps ("clients") act on one business after its merchant consents, through an OAuth 2.0 authorization-code + PKCE flow. The tables exist; the endpoints that use them are planned (see [Auth](auth.md#connect-tally-planned)).
+Partner apps ("clients") act on one business after its merchant consents, through an OAuth 2.0 authorization-code + PKCE flow. The OAuth endpoints that use them are in `apps/api/src/modules/clients/` (see [Auth](auth.md#connect-tally)).
 
 | Table | Notes |
 |---|---|
