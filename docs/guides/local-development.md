@@ -25,6 +25,7 @@ The repo-root `.env` is read by every app. An app may also have its own `apps/<a
 | `SUPABASE_JWT_SECRET` | api | Qorelly Supabase → API → JWT settings |
 | `SUPABASE_DB_URL` | api, drizzle-kit | Staging Postgres connection string |
 | `AUTH_SECRET` | mp | `openssl rand -base64 32` |
+| `EMBED_HOST` | mp | Leave unset locally: `/embed/*` is then served on localhost ([Embedded stock-take](../architecture/embed.md)) |
 | `PORT`, `CORS_ORIGINS` | api | defaults in `.env.example` |
 
 The mobile app does not read this file — it has its own per-flavor `apps/mobile/.env.<flavor>` (see below).
