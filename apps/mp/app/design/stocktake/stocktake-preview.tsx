@@ -90,7 +90,7 @@ const OUTCOMES = {
 export function StocktakePreview({ variant }: { variant: Variant }) {
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [startedAt] = useState(() => Date.now() - 48_000);
-  const [businessId, setBusinessId] = useState("b1");
+  const businessId = "b1";
   const [crops, setCrops] = useState<Record<string, string>>({});
   // Set after mount: fixture times relative to it would differ between server and client render.
   const [now, setNow] = useState<number | null>(null);
@@ -129,7 +129,6 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
         businessId={businessId}
         entries={variant === "history-failed" ? null : variant === "history-empty" ? [] : history(now)}
         error={variant === "history-failed" ? "Something went wrong on our side. Try again." : undefined}
-        onBusiness={setBusinessId}
         onRetry={noop}
         discard={fakeDiscard}
       />
@@ -211,9 +210,7 @@ export function StocktakePreview({ variant }: { variant: Variant }) {
     const withPhoto = variant !== "pick" && variant !== "pick-preparing" && variant !== "pick-file-error";
     return (
       <PickView
-        businesses={BUSINESSES}
         businessId={businessId}
-        onBusiness={setBusinessId}
         error={PICK_ERRORS[variant] ?? null}
         preparing={variant === "pick-preparing"}
         photo={withPhoto ? photo : null}
