@@ -32,7 +32,10 @@ app/(home)/page.tsx              home (route group, so its loading.tsx covers ho
 app/inventory/                   inventory (?business=<id>): scan card, search, Items / Units / Low stock tiles, stock list
 app/onboarding/                  first-time setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish; home once a business exists
   [businessId]/items/            starter items for a business that already exists
-app/businesses/new/              Add a business: the same wizard, with a close button back home
+app/businesses/new/              Add a business: the same wizard, with a close button back home (or back to consent via ?returnTo=/oauth/authorize…)
+app/oauth/authorize/             Connect Tally consent: account chooser, business picker, Allow / Cancel (page or popup); not frameable
+app/settings/                    Settings (?business=<id>): integrations/ (connected apps, revoke), usage/ (today vs plan, 30 days, by source), plan/ (simulated subscribe)
+  limit-reached.tsx              LimitReached: a 429 from a stock-take explained, with Upgrade
 app/stocktake/                   new stock-take: business + photo, then the run continues at its own URL (?business=<id>)
   history/                       the business's stock-takes and quick scans, newest first, grouped by day, reruns nested
   history/[id]/                  one session (run or quick scan): progress (polling resumes after a refresh), review, or read-only
@@ -48,7 +51,8 @@ app/stocktake/                   new stock-take: business + photo, then the run 
   stocktake-flow.tsx             business + photo picker, live agent trace
   review-table.tsx               one row per undecided detection: count, candidate, store status, action; then the outcome
   product-picker.tsx             the line's product sheet: suggestions with match strength, other sizes, catalogue search, new item
-app/design/                      dev-only previews of the V2 kit and every page state with fixture data
+app/design/                      dev-only previews of the V2 kit and every page state with fixture data (connect/ and settings/ list their states)
+lib/api.ts                       server-only api() to apps/api with the session's token; ApiError carries the API's `code` (or OAuth `error`)
 lib/format.ts                    ₦ and quantity strings without floats
 ```
 
