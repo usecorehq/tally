@@ -7,7 +7,8 @@ import type { schema } from "@tally/db";
 import * as jwt from "jsonwebtoken";
 import { randomBytes, randomUUID } from "node:crypto";
 import request from "supertest";
-import { SupabaseJwtGuard } from "../../common/guards/supabase-jwt.guard";
+import { AuthGuard } from "../../common/guards/auth.guard";
+import { GrantStatusService } from "../../common/guards/grant-status.service";
 import { ClientsController } from "./clients.controller";
 import { ClientsRepository, type ClientsTx } from "./clients.repository";
 import { ClientsService } from "./clients.service";
@@ -84,6 +85,11 @@ class FakeRepo {
   }
 
   findClient = async (clientId: string) => this.clients.find((c) => c.clientId === clientId);
+  findClientById = async (id: string) => this.clients.find((c) => c.id === id);
+  findBusiness = async (id: string) => {
+    const o = this.owners.find((x) => x.businessId === id);
+    return o && { id: o.businessId, name: o.name };
+  };
   ownedBusinesses = async (userId: string, clientId: string) =>
     this.owners
       .filter((o) => o.userId === userId)
@@ -120,7 +126,8 @@ describe("ClientsController (HTTP)", () => {
         ClientsService,
         { provide: ClientsRepository, useValue: repo },
         { provide: ConfigService, useValue: { get: (k: string) => config[k] } },
-        { provide: APP_GUARD, useClass: SupabaseJwtGuard },
+        { provide: GrantStatusService, useValue: { isLive: async ({ grantId }: { grantId: string }) => repo.grants.some((g) => g.id === grantId && !g.revokedAt) } },
+        { provide: APP_GUARD, useClass: AuthGuard },
       ],
     }).compile();
     app = moduleRef.createNestApplication({ logger: false });
@@ -440,6 +447,78 @@ describe("ClientsController (HTTP)", () => {
       expect(repo.grants[0]!.revokedAt).not.toBeNull();
       await refresh(first.refresh_token).expect(400);
       await http().delete(`/api/clients/v1/grants/${randomUUID()}`).set(bearer(OWNER)).expect(404);
+    });
+  });
+
+  describe("me, sessions, embed-config", () => {
+    const embedTokenFrom = async (accessToken: string) =>
+      (await http().post("/api/clients/v1/sessions").set({ Authorization: `Bearer ${accessToken}` }).expect(200)).body;
+
+    it("me describes the token's client, business and scopes", async () => {
+      const { access_token } = await connect();
+      const res = await http().get("/api/clients/v1/me").set({ Authorization: `Bearer ${access_token}` }).expect(200);
+      expect(res.body).toEqual({ client_id: CLIENT_ID, business: { id: BIZ, name: "Shop A" }, scopes: ["stocktake:write", "stocktake:read"] });
+    });
+
+    it("me and sessions are 403 for a Supabase user", async () => {
+      expect((await http().get("/api/clients/v1/me").set(bearer(OWNER)).expect(403)).body.code).toBe("client_token_required");
+      await http().post("/api/clients/v1/sessions").set(bearer(OWNER)).expect(403);
+    });
+
+    it("a session is a 900 s embed token with the grant's scopes", async () => {
+      const { access_token } = await connect();
+      const body = await embedTokenFrom(access_token);
+      expect(body.business_id).toBe(BIZ);
+      const claims = jwt.verify(body.session_token, CLIENT_JWT_SECRET, { audience: "tally-embed", issuer: "tally", algorithms: ["HS256"] }) as jwt.JwtPayload;
+      expect(claims).toMatchObject({ sub: OWNER, bid: BIZ, cid: CLIENT_UUID, gid: repo.grants[0]!.id, scope: "stocktake:write stocktake:read" });
+      expect(claims.exp! - claims.iat!).toBe(900);
+      expect(new Date(body.expires_at).getTime()).toBe(claims.exp! * 1000);
+    });
+
+    it("an embed token can't mint sessions or read me", async () => {
+      const { access_token } = await connect();
+      const { session_token } = await embedTokenFrom(access_token);
+      await http().post("/api/clients/v1/sessions").set({ Authorization: `Bearer ${session_token}` }).expect(403);
+      await http().get("/api/clients/v1/me").set({ Authorization: `Bearer ${session_token}` }).expect(403);
+    });
+
+    it("sessions need stocktake:write", async () => {
+      repo.clients[0]!.allowedScopes = ["stocktake:read"];
+      const verifier = randomToken();
+      const { body } = await http()
+        .post("/api/clients/v1/oauth/codes")
+        .set(bearer(OWNER))
+        .send({ ...authorizeQuery, scope: "stocktake:read", business_id: BIZ, code_challenge: pkceS256(verifier), code_challenge_method: "S256" })
+        .expect(200);
+      const { access_token } = (await exchange(body.code, verifier).expect(200)).body;
+      const res = await http().post("/api/clients/v1/sessions").set({ Authorization: `Bearer ${access_token}` }).expect(403);
+      expect(res.body.code).toBe("insufficient_scope");
+    });
+
+    it("a client token is 401 grant_revoked once the merchant disconnects", async () => {
+      const { access_token } = await connect();
+      await http().delete(`/api/clients/v1/grants/${repo.grants[0]!.id}`).set(bearer(OWNER)).expect(204);
+      const res = await http().get("/api/clients/v1/me").set({ Authorization: `Bearer ${access_token}` }).expect(401);
+      expect(res.body.code).toBe("grant_revoked");
+    });
+
+    it("client tokens can't reach the user-only clients routes", async () => {
+      const { access_token } = await connect();
+      const auth = { Authorization: `Bearer ${access_token}` };
+      await http().get("/api/clients/v1/oauth/authorize-info").set(auth).query(authorizeQuery).expect(403);
+      await http().get("/api/clients/v1/grants").set(auth).query({ businessId: BIZ }).expect(403);
+    });
+
+    it("embed-config is public and returns only the non-secret fields", async () => {
+      repo.clients[0]!.allowedOrigins = ["https://partner.example"];
+      const res = await http().get("/api/clients/v1/embed-config").query({ client_id: CLIENT_ID }).expect(200);
+      expect(res.body).toEqual({ client_id: CLIENT_ID, name: "Partner App", status: "active", allowed_origins: ["https://partner.example"], theme: {} });
+    });
+
+    it("embed-config is 404 for an unknown or malformed client_id", async () => {
+      expect((await http().get("/api/clients/v1/embed-config").query({ client_id: "tc_000000000000000000000000" }).expect(404)).body.code).toBe("unknown_client");
+      await http().get("/api/clients/v1/embed-config").query({ client_id: "nope" }).expect(404);
+      await http().get("/api/clients/v1/embed-config").expect(404);
     });
   });
 });

@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
+import { Scopes } from "../../common/decorators/scopes.decorator";
 import {
   BarcodeParams,
   BusinessParams,
@@ -41,18 +42,21 @@ export class BusinessesController {
   }
 
   @Get(":businessId")
+  @Scopes("inventory:read")
   @ApiOperation({ summary: "One business (members only)." })
   get(@CurrentUser() user: AuthenticatedUser, @Param() { businessId }: BusinessParams) {
     return this.businesses.getForMember(businessId, user.sub);
   }
 
   @Get(":businessId/inventory")
+  @Scopes("inventory:read")
   @ApiOperation({ summary: "The business's inventory, by name (members only)." })
   inventory(@CurrentUser() user: AuthenticatedUser, @Param() { businessId }: BusinessParams) {
     return this.businesses.listInventory(businessId, user.sub);
   }
 
   @Get(":businessId/inventory/barcode/:code")
+  @Scopes("inventory:read")
   @ApiOperation({ summary: "Find the item with this barcode (scan to find). 404 when no active item has it." })
   findByBarcode(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, code }: BarcodeParams) {
     return this.businesses.findByBarcode(businessId, user.sub, code);

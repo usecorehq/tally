@@ -70,3 +70,9 @@ export class GrantParams {
   @IsUUID()
   id!: string;
 }
+
+export class EmbedConfigQuery {
+  @ApiPropertyOptional({ example: "tc_0123456789abcdefghijklmn" })
+  @IsOptional()
+  client_id?: unknown;
+}

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, jest 
 import sharp from "sharp";
 import { ConflictException, ForbiddenException, INestApplication, Logger, NotFoundException, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import * as jwt from "jsonwebtoken";
 import { createHash } from "node:crypto";
@@ -12,6 +12,8 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { MAX_IDENTIFY_IMAGE_BYTES, MAX_SHELF_IMAGE_BYTES, VisionController } from "./vision.controller";
 import { R2Storage } from "../media/r2-storage";
+import { UsageLimitException, UsageLimitFilter } from "../usage/usage-errors";
+import { UsageService } from "../usage/usage.service";
 import { VisionRepository } from "./vision.repository";
 import { STOCKTAKE_DEADLINES, VisionService } from "./vision.service";
 
@@ -232,6 +234,7 @@ async function app(apiKey: string | undefined) {
     presignedGetUrl: jest.fn(async (key: string, _seconds?: number) => `https://r2.example/${key}?sig=1`),
     exists: jest.fn(async (_key: string) => false),
   };
+  const usage = { limitCheck: jest.fn(async (_b: string, _c: string | null) => undefined) };
   const config: Record<string, unknown> = { "supabase.jwtSecret": SECRET, "meta.apiKey": apiKey, "meta.baseUrl": "https://api.meta.ai/v1" };
   const moduleRef = await Test.createTestingModule({
     controllers: [VisionController],
@@ -241,6 +244,8 @@ async function app(apiKey: string | undefined) {
       { provide: CatalogService, useValue: catalog },
       { provide: VisionRepository, useValue: repo },
       { provide: R2Storage, useValue: media },
+      { provide: UsageService, useValue: usage },
+      { provide: APP_FILTER, useClass: UsageLimitFilter },
       { provide: ConfigService, useValue: { get: (k: string) => config[k], getOrThrow: (k: string) => config[k] } },
       { provide: APP_GUARD, useClass: SupabaseJwtGuard },
     ],
@@ -249,7 +254,7 @@ async function app(apiKey: string | undefined) {
   nest.setGlobalPrefix("api");
   nest.useGlobalPipes(new ValidationPipe({ transform: true }));
   await nest.init();
-  return { nest, businesses, catalog, repo, media };
+  return { nest, businesses, catalog, repo, media, usage };
 }
 
 describe("VisionController shelf-scans (HTTP)", () => {
@@ -1048,7 +1053,7 @@ describe("VisionController stock-takes (HTTP)", () => {
     ]);
     const res = await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
     expect(res.body).toEqual({ runId: "run-1", status: "running" });
-    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", null);
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", null, null);
 
     expect(await waitForFinish()).toMatchObject({ status: "done", scanId: "scan-1", turns: 1, error: null });
     const [, saved] = ctx.repo.saveScan.mock.calls[0] as unknown as [unknown, { evidence?: { tool: string }[] }[]];
@@ -1218,7 +1223,7 @@ describe("VisionController rerun and discard (HTTP)", () => {
     const res = await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(202);
     expect(res.body).toEqual({ runId: "run-1", status: "running", rerunOf: ROOT });
     expect(ctx.businesses.getForMember).toHaveBeenCalledWith(BIZ, USER);
-    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", ROOT);
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", ROOT, null);
     for (let i = 0; i < 100 && ctx.repo.finishRun.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
     expect(ctx.repo.finishRun.mock.calls[0]?.[1]).toMatchObject({ status: "fallback", scanId: "scan-1" });
     // Its scan checks the group: a sibling confirmed meanwhile supersedes it at once.
@@ -1454,5 +1459,80 @@ describe("VisionService.syncResolutions", () => {
     expect(await vision.syncResolutions()).toBeNull();
     expect(warn).toHaveBeenCalledWith("Catalogue resolutions not synced: Catalog GET /v1/feedback/resolutions failed: 403");
     warn.mockRestore();
+  });
+});
+
+describe("VisionController usage limits and attribution", () => {
+  let ctx: Awaited<ReturnType<typeof app>>;
+  let fetchSpy: ReturnType<typeof jest.spyOn<typeof global, "fetch">>;
+  const CLIENT = "00000000-0000-4000-8000-0000000000e1";
+  const server = () => ctx.nest.getHttpServer();
+  const waitForFinish = async () => {
+    for (let i = 0; i < 100 && ctx.repo.finishRun.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+  };
+
+  beforeAll(async () => {
+    fetchSpy = jest.spyOn(global, "fetch");
+    ctx = await app("LLM_000_not-a-real-key");
+  });
+  afterAll(async () => {
+    await ctx.nest.close();
+    fetchSpy.mockRestore();
+  });
+  beforeEach(() => {
+    fetchSpy.mockReset();
+    fetchSpy.mockImplementation(metaApi(() => sparkReply([peak]), () => samReply(samText)));
+    ctx.usage.limitCheck.mockReset();
+    ctx.usage.limitCheck.mockResolvedValue(undefined);
+    ctx.repo.createRun.mockClear();
+    ctx.repo.saveScan.mockClear();
+    ctx.repo.finishRun.mockClear();
+  });
+
+  it("a quick scan over the plan limit is 429 plan_limit with Retry-After, before any model call", async () => {
+    ctx.usage.limitCheck.mockRejectedValueOnce(new UsageLimitException("plan_limit", "The Free plan allows 5 stock-takes a day.", 4321));
+    const res = await request(server()).post(path).set(auth).attach("image", JPEG, "shelf.jpg").expect(429);
+    expect(res.headers["retry-after"]).toBe("4321");
+    expect(res.body).toEqual({ statusCode: 429, code: "plan_limit", message: "The Free plan allows 5 stock-takes a day.", retry_after_seconds: 4321 });
+    expect(ctx.usage.limitCheck).toHaveBeenCalledWith(BIZ, null);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(ctx.repo.saveScan).not.toHaveBeenCalled();
+  });
+
+  it("a stock-take over the concurrency limit is 429 concurrent_runs and creates no run", async () => {
+    ctx.usage.limitCheck.mockRejectedValueOnce(new UsageLimitException("concurrent_runs", "Too many stock-takes are running.", 30));
+    const res = await request(server()).post(`/api/businesses/${BIZ}/vision/stocktakes`).set(auth).attach("image", JPEG, "shelf.jpg").expect(429);
+    expect(res.headers["retry-after"]).toBe("30");
+    expect(res.body.code).toBe("concurrent_runs");
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+  });
+
+  it("a rerun is limit-checked before its photo is fetched", async () => {
+    ctx.media.enabled = true;
+    ctx.media.get.mockClear();
+    ctx.usage.limitCheck.mockRejectedValueOnce(new UsageLimitException("plan_limit", "Over the limit.", 60));
+    await request(server()).post(`/api/businesses/${BIZ}/vision/shelf-scans/${SCAN}/rerun`).set(auth).expect(429);
+    ctx.media.enabled = false;
+    expect(ctx.media.get).not.toHaveBeenCalled();
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+  });
+
+  it("a user's quick scan stores client_id null", async () => {
+    await request(server()).post(path).set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
+    expect(ctx.repo.saveScan.mock.calls[0]![0]).toMatchObject({ businessId: BIZ, createdBy: USER, clientId: null });
+  });
+
+  it("a partner app's quick scan is checked and stored with its client_id", async () => {
+    await ctx.nest.get(VisionService).recogniseShelf(BIZ, USER, JPEG, CLIENT);
+    expect(ctx.usage.limitCheck).toHaveBeenCalledWith(BIZ, CLIENT);
+    expect(ctx.repo.saveScan.mock.calls[0]![0]).toMatchObject({ businessId: BIZ, clientId: CLIENT });
+  });
+
+  it("a partner app's stock-take run and its scan carry its client_id", async () => {
+    await ctx.nest.get(VisionService).startStocktake(BIZ, USER, JPEG, CLIENT);
+    expect(ctx.usage.limitCheck).toHaveBeenCalledWith(BIZ, CLIENT);
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", null, CLIENT);
+    await waitForFinish();
+    expect(ctx.repo.saveScan.mock.calls[0]![0]).toMatchObject({ clientId: CLIENT });
   });
 });
