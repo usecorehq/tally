@@ -1,18 +1,21 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ["error", "warn", "log"],
   });
 
   const config = app.get(ConfigService);
 
   app.setGlobalPrefix("api");
+  // One reverse proxy (Coolify) in front: req.ip is the caller, for the per-IP throttle on public routes.
+  app.set("trust proxy", 1);
 
   // Auth is a Bearer header (Supabase access_token carried in the NextAuth
   // session), never cookies — keep CORS credential-free.
