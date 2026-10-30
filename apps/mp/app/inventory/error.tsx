@@ -24,7 +24,7 @@ export default function InventoryError({ error, retry }: { error: unknown; retry
           <p className="text-[13px] leading-5 text-gray-500">Something went wrong on our side. Try again in a moment.</p>
           <div className="mt-6 flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-center">
             <Button asChild variant="quiet" size="lg">
-              <Link href="/">Your businesses</Link>
+              <Link href="/stocktake">Take new stock</Link>
             </Button>
             <Button size="lg" onClick={() => retry()}>
               <SolarIcon name="Refresh" iconStyle="Outline" size={18} />

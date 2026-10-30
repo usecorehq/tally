@@ -29,8 +29,9 @@ proxy.ts                         redirects to /login without a session, keeping 
 app/loading.tsx                  the Tally mark while a fresh load waits for a page's own skeleton
 app/login/page.tsx               email + password server action
 app/api/auth/[...nextauth]/      NextAuth route handlers
-app/_components/                 AppShell (V2 frame: sidebar nav, stock-take recents on /stocktake pages, white inset panel), TallyMark
-app/(home)/page.tsx              home (route group, so its loading.tsx covers home only): the user's businesses (name → inventory, Stock-take action)
+app/_components/                 AppShell (V2 frame: sidebar nav, business switcher in the top bar, stock-take recents on /stocktake pages, white inset panel), TallyMark
+lib/businesses.ts                the user's businesses and the current one: ?business=, then the tally-business cookie, then the first
+app/(home)/page.tsx              home: onboarding when there's no business yet, else the current business's inventory
 app/inventory/                   inventory (?business=<id>): scan card, search, Items / Units / Low stock tiles, stock list
 app/onboarding/                  first-time setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish; home once a business exists
   [businessId]/items/            starter items for a business that already exists
@@ -48,7 +49,7 @@ app/stocktake/                   new stock-take: business + photo, then the run 
   photo-store.ts                 a local copy of the shelf photo per session in IndexedDB, so it shows at once (the API keeps the stored one)
   urls.ts                        session, history and new stock-take URLs
   image.ts                       browser-side resize (2560 px JPEG) and per-product thumbnails
-  stocktake-flow.tsx             business + photo picker, live agent trace
+  stocktake-flow.tsx             photo picker for the current business, live agent trace
   review-table.tsx               one row per undecided detection: count, candidate, store status, action; then the outcome
   product-picker.tsx             the line's product sheet: suggestions with match strength, other sizes, catalogue search, new item
 app/embed/stocktake/             the stock-take as an iframe for partner apps: client lookup result from proxy.ts, postMessage protocol v1, theme, in-frame navigation

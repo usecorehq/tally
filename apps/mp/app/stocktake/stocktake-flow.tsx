@@ -38,7 +38,7 @@ export type Phase = { name: "pick" } | { name: "working"; mode: "agent" | "quick
 export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: Business[]; initialBusinessId: string }) {
   const { checkPhoto, quickScan, startStocktake } = useStocktakeApi();
   const nav = useStocktakeNav();
-  const [businessId, setBusinessId] = useState(initialBusinessId);
+  const businessId = initialBusinessId;
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [phase, setPhase] = useState<Phase>({ name: "pick" });
   const [error, setError] = useState<string | null>(null);
@@ -128,9 +128,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
 
   return (
     <PickView
-      businesses={businesses}
       businessId={businessId}
-      onBusiness={setBusinessId}
       error={error}
       preparing={preparing}
       photo={photo}
@@ -146,9 +144,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
 
 /** Choose the business and the photo, then the kind of run. Presentational, so /design can render it with fixtures. */
 export function PickView({
-  businesses,
   businessId,
-  onBusiness,
   error,
   preparing,
   photo,
@@ -159,9 +155,7 @@ export function PickView({
   onQuick,
   historyHref,
 }: {
-  businesses: Business[];
   businessId: string;
-  onBusiness: (id: string) => void;
   error: string | null;
   preparing: boolean;
   photo: Photo | null;
@@ -184,18 +178,6 @@ export function PickView({
       />
 
       <div className="space-y-5">
-        {businesses.length > 1 && (
-          <div className="max-w-sm">
-            <FieldLabel htmlFor="business">Business</FieldLabel>
-            <NativeSelect id="business" value={businessId} onChange={(e) => onBusiness(e.target.value)}>
-              {businesses.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
-        )}
 
         {/* Without a photo the error is about the file; with one it's about the run, so it sits by the buttons. */}
         {!photo && <FormMessage message={error} />}

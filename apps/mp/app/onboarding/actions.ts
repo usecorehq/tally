@@ -1,6 +1,8 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { BUSINESS_COOKIE, BUSINESS_COOKIE_MAX_AGE } from "@/lib/business-cookie";
 import type { SubtypeTemplates } from "@tally/catalog-client";
 import { api, errorMessage } from "@/lib/api";
 import { toRows, type StarterItemInput, type StarterResult, type TemplateRow } from "./_lib/starter";
@@ -52,6 +54,8 @@ export async function finishSetup(input: FinishInput): Promise<FinishResult> {
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
+    // The new business is the one the app opens on next.
+    (await cookies()).set(BUSINESS_COOKIE, businessId, { path: "/", maxAge: BUSINESS_COOKIE_MAX_AGE, sameSite: "lax" });
   }
 
   if (input.items.length === 0) redirect("/");

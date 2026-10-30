@@ -303,6 +303,8 @@ export const visionScans = tally.table(
     samMs: integer("sam_ms").notNull(),
     matchMs: integer("match_ms").notNull(),
     createdBy: uuid("created_by").notNull(),
+    // The partner app that ran it; null = Tally's own apps.
+    clientId: uuid("client_id"),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     // The merchant dropped it unconfirmed; kept read-only for audit.
     discardedAt: timestamp("discarded_at", { withTimezone: true }),
@@ -312,6 +314,8 @@ export const visionScans = tally.table(
   },
   (t) => [
     unique("vision_scans_business_id_key").on(t.businessId, t.id),
+    // Clients are suspended, never deleted, so history keeps its app.
+    foreignKey({ name: "vision_scans_client_fk", columns: [t.clientId], foreignColumns: [oauthClients.id] }).onDelete("restrict"),
     check("vision_scans_status", sql`status in ('open', 'confirmed', 'discarded', 'superseded')`),
     check("vision_scans_confirmed_consistent", sql`(status = 'confirmed') = (confirmed_at is not null)`),
     check("vision_scans_discarded_consistent", sql`(status = 'discarded') = (discarded_at is not null)`),
@@ -435,11 +439,14 @@ export const visionAgentRuns = tally.table(
     // Why the run ended early (budget, model error); never a key or upstream body.
     error: text("error"),
     startedBy: uuid("started_by").notNull(),
+    // The partner app that ran it; null = Tally's own apps.
+    clientId: uuid("client_id"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t) => [
     unique("vision_agent_runs_business_id_key").on(t.businessId, t.id),
+    foreignKey({ name: "vision_agent_runs_client_fk", columns: [t.clientId], foreignColumns: [oauthClients.id] }).onDelete("restrict"),
     foreignKey({
       name: "vision_agent_runs_scan_fk",
       columns: [t.businessId, t.scanId],
@@ -514,6 +521,169 @@ export const inventoryItemReadings = tally.table(
   ],
 );
 
+// ─── OAuth clients (Connect Tally) ───────────────────────────────────────
+// Partner apps act on one business after its merchant consents; only sha256 hashes of secrets, codes and tokens are kept.
+
+const SHA256_HEX = "^[0-9a-f]{64}$";
+const OAUTH_SCOPES = "array['stocktake:write','stocktake:read','inventory:read']::text[]";
+
+/** A partner app, registered by the CTO with apps/api/scripts/oauth-client-create.mjs. Suspended, never deleted. */
+export const oauthClients = tally.table(
+  "oauth_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: text("client_id").notNull(),
+    name: text("name").notNull(),
+    logoUrl: text("logo_url"),
+    // sha256 of the full secret; the prefix (8 chars after tcs_) recognises a key without storing it.
+    secretHash: text("secret_hash").notNull(),
+    secretPrefix: text("secret_prefix").notNull(),
+    redirectUris: text("redirect_uris").array().notNull(),
+    // The embedded stock-take's frame-ancestors.
+    allowedOrigins: text("allowed_origins").array().notNull().default(sql`'{}'`),
+    allowedScopes: text("allowed_scopes").array().notNull(),
+    status: text("status").notNull().default("active"),
+    // An abuse cap per client, separate from the merchant's plan limit.
+    dailyStocktakeCap: integer("daily_stocktake_cap").notNull().default(200),
+    maxConcurrentRuns: integer("max_concurrent_runs").notNull().default(3),
+    theme: jsonb("theme").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("oauth_clients_client_id_key").on(t.clientId),
+    check("oauth_clients_client_id_format", sql`client_id ~ '^tc_[a-z0-9]{24}$'`),
+    check("oauth_clients_name_length", sql`char_length(name) between 1 and 80`),
+    check("oauth_clients_logo_url_https", sql`logo_url is null or logo_url ~ '^https://'`),
+    check("oauth_clients_secret_hash_format", sql.raw(`secret_hash ~ '${SHA256_HEX}'`)),
+    check("oauth_clients_secret_prefix_length", sql`char_length(secret_prefix) = 8`),
+    check("oauth_clients_redirect_uris_count", sql`cardinality(redirect_uris) between 1 and 10`),
+    check(
+      "oauth_clients_allowed_scopes",
+      sql.raw(`cardinality(allowed_scopes) >= 1 and allowed_scopes <@ ${OAUTH_SCOPES}`),
+    ),
+    check("oauth_clients_status", sql`status in ('active', 'suspended')`),
+    check("oauth_clients_limits_positive", sql`daily_stocktake_cap > 0 and max_concurrent_runs > 0`),
+  ],
+);
+
+/** A single-use authorization code (PKCE S256), valid for 60 s. */
+export const oauthCodes = tally.table(
+  "oauth_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    codeHash: text("code_hash").notNull(),
+    clientId: uuid("client_id").notNull(),
+    // FK to auth.users(id) is added in the custom SQL migration (cross-schema).
+    userId: uuid("user_id").notNull(),
+    businessId: uuid("business_id").notNull(),
+    scopes: text("scopes").array().notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    codeChallengeMethod: text("code_challenge_method").notNull().default("S256"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("oauth_codes_code_hash_key").on(t.codeHash),
+    foreignKey({ name: "oauth_codes_client_fk", columns: [t.clientId], foreignColumns: [oauthClients.id] }).onDelete("cascade"),
+    foreignKey({ name: "oauth_codes_business_fk", columns: [t.businessId], foreignColumns: [businesses.id] }).onDelete("cascade"),
+    check("oauth_codes_code_hash_format", sql.raw(`code_hash ~ '${SHA256_HEX}'`)),
+    check("oauth_codes_scopes_count", sql`cardinality(scopes) >= 1`),
+    check("oauth_codes_code_challenge_length", sql`char_length(code_challenge) between 43 and 128`),
+    check("oauth_codes_code_challenge_method", sql`code_challenge_method = 'S256'`),
+    // Expired codes are cleaned up by age.
+    index("oauth_codes_expires_idx").on(t.expiresAt),
+  ],
+);
+
+/** A merchant's consent: one active grant per client per business, with a rotating refresh token. */
+export const oauthGrants = tally.table(
+  "oauth_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id").notNull(),
+    // FK to auth.users(id) is added in the custom SQL migration (cross-schema).
+    userId: uuid("user_id").notNull(),
+    businessId: uuid("business_id").notNull(),
+    scopes: text("scopes").array().notNull(),
+    refreshTokenHash: text("refresh_token_hash").notNull(),
+    // The token rotated out last; presenting it again is a replay, so the grant is revoked.
+    previousRefreshTokenHash: text("previous_refresh_token_hash"),
+    refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }).notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("oauth_grants_refresh_token_hash_key").on(t.refreshTokenHash),
+    foreignKey({ name: "oauth_grants_client_fk", columns: [t.clientId], foreignColumns: [oauthClients.id] }).onDelete("cascade"),
+    foreignKey({ name: "oauth_grants_business_fk", columns: [t.businessId], foreignColumns: [businesses.id] }).onDelete("cascade"),
+    check("oauth_grants_scopes_count", sql`cardinality(scopes) >= 1`),
+    check("oauth_grants_refresh_token_hash_format", sql.raw(`refresh_token_hash ~ '${SHA256_HEX}'`)),
+    check(
+      "oauth_grants_previous_refresh_token_hash_format",
+      sql.raw(`previous_refresh_token_hash is null or previous_refresh_token_hash ~ '${SHA256_HEX}'`),
+    ),
+    uniqueIndex("oauth_grants_active_client_business_key")
+      .on(t.clientId, t.businessId)
+      .where(sql`revoked_at is null`),
+    index("oauth_grants_business_active_idx").on(t.businessId).where(sql`revoked_at is null`),
+    index("oauth_grants_user_idx").on(t.userId),
+    index("oauth_grants_previous_refresh_token_idx").on(t.previousRefreshTokenHash),
+  ],
+);
+
+// ─── Plans (usage limits; subscriptions are simulated) ───────────────────
+// Every stock-take counts against the business's plan, whichever app started it. A business with no subscription is on 'free'.
+
+/** A plan's limits. Rows are seeded and changed by migrations or an admin, never by the API. */
+export const plans = tally.table(
+  "plans",
+  {
+    code: text("code").primaryKey(),
+    name: text("name").notNull(),
+    // Display only, never revenue: subscribing is simulated and creates no payments.
+    priceKoboMonthly: integer("price_kobo_monthly").notNull().default(0),
+    dailyStocktakeLimit: integer("daily_stocktake_limit").notNull(),
+    maxConcurrentRuns: integer("max_concurrent_runs").notNull(),
+    sort: integer("sort").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check("plans_code", sql`code in ('free', 'pro')`),
+    check("plans_name_length", sql`char_length(name) between 1 and 40`),
+    check("plans_price_nonneg", sql`price_kobo_monthly >= 0`),
+    check("plans_limits_positive", sql`daily_stocktake_limit > 0 and max_concurrent_runs > 0`),
+  ],
+);
+
+/** A business's current plan; one row per business. */
+export const businessSubscriptions = tally.table(
+  "business_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    planCode: text("plan_code").notNull(),
+    status: text("status").notNull().default("active"),
+    simulated: boolean("simulated").notNull().default(true),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("business_subscriptions_business_id_key").on(t.businessId),
+    foreignKey({ name: "business_subscriptions_business_fk", columns: [t.businessId], foreignColumns: [businesses.id] }).onDelete("cascade"),
+    foreignKey({ name: "business_subscriptions_plan_fk", columns: [t.planCode], foreignColumns: [plans.code] }).onDelete("restrict"),
+    check("business_subscriptions_status", sql`status in ('active', 'cancelled')`),
+  ],
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────
 
 export type Business = typeof businesses.$inferSelect;
@@ -540,3 +710,13 @@ export type VisionAgentRun = typeof visionAgentRuns.$inferSelect;
 export type NewVisionAgentRun = typeof visionAgentRuns.$inferInsert;
 export type VisionAgentStep = typeof visionAgentSteps.$inferSelect;
 export type NewVisionAgentStep = typeof visionAgentSteps.$inferInsert;
+export type OauthClient = typeof oauthClients.$inferSelect;
+export type NewOauthClient = typeof oauthClients.$inferInsert;
+export type OauthCode = typeof oauthCodes.$inferSelect;
+export type NewOauthCode = typeof oauthCodes.$inferInsert;
+export type OauthGrant = typeof oauthGrants.$inferSelect;
+export type NewOauthGrant = typeof oauthGrants.$inferInsert;
+export type Plan = typeof plans.$inferSelect;
+export type NewPlan = typeof plans.$inferInsert;
+export type BusinessSubscription = typeof businessSubscriptions.$inferSelect;
+export type NewBusinessSubscription = typeof businessSubscriptions.$inferInsert;

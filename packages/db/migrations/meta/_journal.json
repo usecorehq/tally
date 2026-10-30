@@ -71,6 +71,34 @@
       "when": 1793304132891,
       "tag": "0009_add_catalog_resolutions",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793397783723,
+      "tag": "0010_add_oauth_clients",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793397787795,
+      "tag": "0011_add_oauth_auth_user_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793398805919,
+      "tag": "0012_add_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793398806320,
+      "tag": "0013_seed_placeholder_plans",
+      "breakpoints": true
     }
   ]
 }

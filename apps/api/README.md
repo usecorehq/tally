@@ -26,6 +26,7 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 | `SUPABASE_JWT_SECRET` | yes | HS256 secret for verifying user tokens |
 | `SUPABASE_DB_URL` | yes | Postgres URL for Drizzle (`tally` schema). Deployed: use the Supabase **transaction pooler, port 6543**. The session pooler (5432) has 15 client slots shared with the other Qorelly apps, and a full pool made stock-take runs hang. `pnpm db:migrate` may keep using 5432 |
 | `DB_POOL_MAX` | no | Connections this process may hold. Default `5`; keep it small (shared pooler) |
+| `TALLY_CLIENT_JWT_SECRET` | production | Signs Connect Tally access and embed tokens (HS256, at least 32 chars); server-only, never the Supabase secret. Unset outside production → `POST /api/clients/v1/oauth/token` returns 503 |
 | `QORE_CATALOG_API_KEY` | yes | Sent as `x-api-key`; server-only |
 | `QORE_CATALOG_BASE_URL` | no | Default `http://localhost:3100` |
 | `META_MODEL_API_KEY` | no | Meta Model API bearer key (Muse Spark); server-only. Unset → vision routes return 503 |
@@ -99,6 +100,23 @@ node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs <runId or scanI
 node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs --business "Superbox"   # its latest run
 ```
 
+## Connect Tally clients
+
+Partner apps that use Connect Tally are registered by the CTO with `scripts/oauth-client-create.mjs`. It writes a `tally.oauth_clients` row and prints the `client_id` and `client_secret` once. Only the secret's sha256 and its first 8 characters after `tcs_` are stored, so a lost secret means a new client. Clients are suspended, never deleted.
+
+```bash
+pnpm --filter @tally/db build
+node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --name "Partner App" \
+  --redirect-uri https://partner.example/callback --origin https://partner.example
+node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --suspend <client_id>
+```
+
+- `--redirect-uri` (1–10, https, no `#fragment`) and `--origin` (https origins with no path; the iframe's `frame-ancestors`) can be repeated.
+- `--scope` can be repeated: `stocktake:write`, `stocktake:read`, `inventory:read`. Default: all three.
+- `--cap` (daily stock-takes, default 200) and `--concurrent` (runs at once, default 3) are abuse caps per client. When left out, the database defaults apply.
+
+The OAuth endpoints (consent data, codes, token, revoke, grants) live under `/api/clients/v1`; see [docs/architecture/auth.md](../../docs/architecture/auth.md#connect-tally).
+
 ## Layout
 
 ```
@@ -111,6 +129,7 @@ src/
   drizzle/drizzle.module.ts   TALLY_DB provider from @tally/db
   modules/businesses/         businesses, membership, inventory, onboarding starter inventory
   modules/catalog/            CatalogService wrapping @tally/catalog-client
+  modules/clients/            Connect Tally OAuth: consent data, codes, token (PKCE, refresh rotation), revoke, grants
   modules/vision/             Camera recognition: shelf scan (Muse Spark, SAM 3.1, catalogue), confirm, identify, crops
   modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
   modules/vision/benchmark-score.ts  Scoring for scripts/vision-benchmark.mjs (not used by routes)
