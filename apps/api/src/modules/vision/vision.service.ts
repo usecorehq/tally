@@ -14,6 +14,7 @@ import type { ImageSampleContext, MatchResult } from "@tally/catalog-client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
+import { UsageService } from "../usage/usage.service";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
 import { bestBox, cropKey, cropSize, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, shelfPhotoKey, storablePhoto } from "./crops";
 import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
@@ -231,6 +232,7 @@ export class VisionService implements OnApplicationBootstrap {
     private readonly catalog: CatalogService,
     private readonly repo: VisionRepository,
     private readonly media: R2Storage,
+    private readonly usage: UsageService,
   ) {
     const apiKey = config.get<string>("meta.apiKey");
     this.meta = apiKey ? new MetaModelClient(config.getOrThrow<string>("meta.baseUrl"), apiKey) : null;
@@ -241,15 +243,18 @@ export class VisionService implements OnApplicationBootstrap {
    * Shelf photo → products (Spark) → unit counts (SAM) and catalogue candidates in parallel → in-stock flags.
    * The scan and detections are stored for confirm; the image is not (only its sha256).
    */
-  async recogniseShelf(businessId: string, userId: string, image: Buffer): Promise<ShelfScanResult> {
+  async recogniseShelf(businessId: string, userId: string, image: Buffer, clientId: string | null = null): Promise<ShelfScanResult> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
     const type = sniffImageType(image);
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
+    // Membership first, so a non-member gets 403 rather than a limit.
+    await this.businesses.getForMember(businessId, userId);
+    await this.usage.limitCheck(businessId, clientId);
 
     const started = Date.now();
     const a = await this.analyse(businessId, userId, image, type);
     const detections = buildDetections(a.products, a.matches, a.index, a.samBoxes);
-    const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections);
+    const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, clientId, image, a), detections);
     const [cropsStored, photoStored] = await Promise.all([this.storeCrops(scanId, image, detections), this.storePhoto(scanId, image)]);
     return {
       scanId,
@@ -312,7 +317,7 @@ export class VisionService implements OnApplicationBootstrap {
     };
   }
 
-  private scanRow(businessId: string, userId: string, image: Buffer, a: { catalogueAvailable: boolean; timings: { readMs: number; samMs: number; matchMs: number } }) {
+  private scanRow(businessId: string, userId: string, clientId: string | null, image: Buffer, a: { catalogueAvailable: boolean; timings: { readMs: number; samMs: number; matchMs: number } }) {
     return {
       businessId,
       imageSha256: createHash("sha256").update(image).digest("hex"),
@@ -322,6 +327,7 @@ export class VisionService implements OnApplicationBootstrap {
       catalogueAvailable: a.catalogueAvailable,
       ...a.timings,
       createdBy: userId,
+      clientId,
     };
   }
 
@@ -383,21 +389,23 @@ export class VisionService implements OnApplicationBootstrap {
    * Starts a stock-take and returns a run id at once; the work runs in the background, polled via getStocktake.
    * The quick scan runs first as the agent's starting checklist and as the fallback.
    */
-  async startStocktake(businessId: string, userId: string, image: Buffer): Promise<{ runId: string; status: "running" }> {
+  async startStocktake(businessId: string, userId: string, image: Buffer, clientId: string | null = null): Promise<{ runId: string; status: "running" }> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
     const type = sniffImageType(image);
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
     await this.businesses.getForMember(businessId, userId);
-    return this.launch(businessId, userId, image, type, null);
+    await this.usage.limitCheck(businessId, clientId);
+    return this.launch(businessId, userId, clientId, image, type, null);
   }
 
   /**
    * Rerun a stored stock-take: a new agent run on the photo kept in R2, grouped under the photo's first scan.
    * 409 when no photo was kept, or when a run of this photo has already moved stock.
    */
-  async rerun(businessId: string, userId: string, scanId: string): Promise<{ runId: string; status: "running"; rerunOf: string }> {
+  async rerun(businessId: string, userId: string, scanId: string, clientId: string | null = null): Promise<{ runId: string; status: "running"; rerunOf: string }> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
     await this.businesses.getForMember(businessId, userId);
+    await this.usage.limitCheck(businessId, clientId);
     const { root, scanIds } = await this.repo.group(businessId, scanId);
     if (await this.repo.groupSettled(scanIds)) {
       throw new ConflictException("A run of this photo is already confirmed. Take new stock to count again.");
@@ -405,13 +413,20 @@ export class VisionService implements OnApplicationBootstrap {
     const image = this.media.enabled ? await this.media.get(shelfPhotoKey(scanId)).catch(() => null) : null;
     const type = image ? sniffImageType(Buffer.from(image)) : null;
     if (!image || !type) throw new ConflictException("This stock-take's photo wasn't kept, so it can't be rerun. Take new stock instead.");
-    const { runId } = await this.launch(businessId, userId, Buffer.from(image), type, root);
+    const { runId } = await this.launch(businessId, userId, clientId, Buffer.from(image), type, root);
     return { runId, status: "running", rerunOf: root };
   }
 
-  private async launch(businessId: string, userId: string, image: Buffer, type: ImageType, rerunOf: string | null): Promise<{ runId: string; status: "running" }> {
-    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL, rerunOf);
-    void this.runStocktake(runId, businessId, userId, image, type, rerunOf).catch(async (err: unknown) => {
+  private async launch(
+    businessId: string,
+    userId: string,
+    clientId: string | null,
+    image: Buffer,
+    type: ImageType,
+    rerunOf: string | null,
+  ): Promise<{ runId: string; status: "running" }> {
+    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL, rerunOf, clientId);
+    void this.runStocktake(runId, businessId, userId, image, type, rerunOf, clientId).catch(async (err: unknown) => {
       this.logger.error(`Stock-take ${runId} crashed: ${(err as Error).message}`);
       await this.finish(runId, { status: "failed", error: `Stock-take crashed: ${(err as Error).message}` });
     });
@@ -452,7 +467,15 @@ export class VisionService implements OnApplicationBootstrap {
   /** Finished results in the quick-scan shape (with candidate names and prices), kept an hour for polling. */
   private readonly stocktakeResults = new TtlCache<ShelfScanResult>(60 * 60 * 1000);
 
-  private async runStocktake(runId: string, businessId: string, userId: string, image: Buffer, type: ImageType, rerunOf: string | null = null): Promise<void> {
+  private async runStocktake(
+    runId: string,
+    businessId: string,
+    userId: string,
+    image: Buffer,
+    type: ImageType,
+    rerunOf: string | null = null,
+    clientId: string | null = null,
+  ): Promise<void> {
     const step = (s: AgentStep | { turn: number; kind: "baseline"; summary: string; ms?: number }) =>
       this.repo.addStep(businessId, runId, s).catch(() => undefined);
     const started = Date.now();
@@ -503,7 +526,7 @@ export class VisionService implements OnApplicationBootstrap {
 
     let scanId: string;
     try {
-      scanId = await withDeadline(this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections), limits.writeMs, "Saving the scan timed out");
+      scanId = await withDeadline(this.repo.saveScan(this.scanRow(businessId, userId, clientId, image, a), detections), limits.writeMs, "Saving the scan timed out");
     } catch (err) {
       await this.finish(runId, { status: "failed", error: `Could not save the result: ${(err as Error).message}` });
       return;

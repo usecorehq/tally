@@ -67,7 +67,7 @@ Partner apps ("clients") act on one business after its merchant consents, throug
 
 ## Plans and subscriptions
 
-Every stock-take and quick scan counts against the business's plan, whichever app started it (Tally's own apps or a Connect Tally client). The tables exist; the usage endpoints, the limit checks and the plan page are planned.
+Every stock-take and quick scan counts against the business's plan, whichever app started it (Tally's own apps or a Connect Tally client). The limit checks and usage endpoints are built: see [usage limits](stocktake-agent.md#usage-limits). The plan page is planned.
 
 | Table | Notes |
 |---|---|

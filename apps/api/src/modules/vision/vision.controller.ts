@@ -26,6 +26,9 @@ export const MAX_IDENTIFY_IMAGE_BYTES = 1024 * 1024;
 
 type UploadedImage = { buffer: Buffer; size: number };
 
+// Set for partner-app principals (Connect Tally); null for Tally's own apps.
+const clientIdOf = (user: AuthenticatedUser) => (user as { clientId?: string }).clientId ?? null;
+
 @ApiTags("vision")
 @ApiBearerAuth("bearer")
 @UseFilters(VisionExceptionFilter)
@@ -77,7 +80,7 @@ export class VisionController {
     file: UploadedImage | undefined,
   ) {
     if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
-    return this.vision.recogniseShelf(businessId, user.sub, file.buffer);
+    return this.vision.recogniseShelf(businessId, user.sub, file.buffer, clientIdOf(user));
   }
 
   @Post("stocktakes")
@@ -102,7 +105,7 @@ export class VisionController {
     file: UploadedImage | undefined,
   ) {
     if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
-    return this.vision.startStocktake(businessId, user.sub, file.buffer);
+    return this.vision.startStocktake(businessId, user.sub, file.buffer, clientIdOf(user));
   }
 
   @Get("stocktakes")
@@ -256,7 +259,7 @@ export class VisionController {
   })
   @ApiOkResponse({ schema: { example: { runId: "7c21…", status: "running", rerunOf: "9a41…" } } })
   rerun(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
-    return this.vision.rerun(businessId, user.sub, scanId);
+    return this.vision.rerun(businessId, user.sub, scanId, clientIdOf(user));
   }
 
   @Post("shelf-scans/:scanId/discard")

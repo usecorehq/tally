@@ -8,6 +8,7 @@ import { BusinessesModule } from "./modules/businesses/businesses.module";
 import { MediaModule } from "./modules/media/media.module";
 import { VisionModule } from "./modules/vision/vision.module";
 import { ClientsModule } from "./modules/clients/clients.module";
+import { UsageModule } from "./modules/usage/usage.module";
 import { DrizzleModule } from "./drizzle/drizzle.module";
 import { AuthGuard } from "./common/guards/auth.guard";
 import { GrantStatusService } from "./common/guards/grant-status.service";
@@ -34,6 +35,7 @@ import configuration from "./config/configuration";
     MediaModule,
     VisionModule,
     ClientsModule,
+    UsageModule,
   ],
   providers: [
     // Global auth: every route requires a Supabase user JWT, or a Connect Tally token on @Scopes routes,
