@@ -130,6 +130,7 @@ export function RecentsList({
                     {e.status === "running" && <span aria-label="Running" className="mt-1.5 size-2 shrink-0 animate-pulse rounded-full bg-primary" />}
                     {e.status === "review" && (e.lines ?? 0) > 0 && <span aria-label="Ready to review" className="mt-1.5 size-2 shrink-0 rounded-full bg-amber-500" />}
                     {e.status === "failed" && <span aria-label="Failed" className="mt-1.5 size-2 shrink-0 rounded-full bg-red-500" />}
+                    {e.status === "confirmed" && <span aria-label="Confirmed" className="mt-1.5 size-2 shrink-0 rounded-full bg-emerald-500" />}
                   </Link>
                 </li>
               );
