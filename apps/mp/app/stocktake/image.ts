@@ -1,24 +1,32 @@
 import type { CSSProperties } from "react";
 import type { Box } from "./types";
 
-// Big enough that most packs on a full shelf crop to 160+ px (Qore Catalog's minimum);
-// ~1-2 MB as JPEG, under the API's 4 MB limit.
-const LONG_EDGE = 2560;
+// Phones shoot ~4000 px: keep that, so packs 40–100 px wide in a 1024 px copy crop past Qore Catalog's 96 px minimum.
+// The API's limit is 4 MB, so a busy photo steps down in quality, then size, but never below 2560 px.
+const LONG_EDGES = [4032, 3200, 2560];
+const QUALITIES = [0.85, 0.75, 0.65];
 const MAX_BYTES = 4 * 1024 * 1024;
 
-/** Scale a photo to at most a 2560 px long edge and re-encode it as JPEG, as the API expects (EXIF rotation applied). */
+/** Keep a photo at up to a 4032 px long edge and re-encode it as JPEG under 4 MB, as the API expects (EXIF rotation applied). */
 export async function resizeForScan(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-  const scale = Math.min(1, LONG_EDGE / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-
-  for (const quality of [0.8, 0.65, 0.5]) {
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-    if (blob && blob.size <= MAX_BYTES) return blob;
+  try {
+    const long = Math.max(bitmap.width, bitmap.height);
+    // A photo already under an edge is tried at its own size once, then at the smaller edges.
+    const sides = [...new Set(LONG_EDGES.map((edge) => Math.min(edge, long)))];
+    for (const [i, side] of sides.entries()) {
+      const scale = side / long;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      for (const quality of i === sides.length - 1 ? [...QUALITIES, 0.5] : QUALITIES) {
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+        if (blob && blob.size <= MAX_BYTES) return blob;
+      }
+    }
+  } finally {
+    bitmap.close();
   }
   throw new Error("This photo is too large even after resizing.");
 }

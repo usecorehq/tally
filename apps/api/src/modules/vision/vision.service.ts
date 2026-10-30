@@ -16,7 +16,7 @@ import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
 import { UsageService } from "../usage/usage.service";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
-import { bestBox, cropKey, cropSize, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, shelfPhotoKey, storablePhoto } from "./crops";
+import { bestBox, boxPixels, cropKey, cropSize, cutCrops, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, modelCopy, PAD, shelfPhotoKey, storablePhoto } from "./crops";
 import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
@@ -115,8 +115,11 @@ export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
     skipped: number;
     failed: number;
     skippedBy: { noProduct: number; noCrop: number; tooSmall: number };
-    /** qid null: a new item's crop, pending until a curator creates, links or dismisses it. */
-    samples: { ref: string; qid: string | null; sampleId: string | null; status: string }[];
+    /**
+     * qid null: a new item's crop, pending until a curator creates, links or dismisses it. cropWidth × cropHeight is
+     * the product's own size in the full-resolution photo, before the context margin (null when the photo wasn't kept).
+     */
+    samples: { ref: string; qid: string | null; sampleId: string | null; status: string; cropWidth: number | null; cropHeight: number | null }[];
   };
 };
 
@@ -252,7 +255,9 @@ export class VisionService implements OnApplicationBootstrap {
     await this.usage.limitCheck(businessId, clientId);
 
     const started = Date.now();
-    const a = await this.analyse(businessId, userId, image, type);
+    // Models read a copy capped at 2560 px; crops and the stored photo come from the full-resolution image.
+    const forModels = await modelCopy(image, type);
+    const a = await this.analyse(businessId, userId, forModels.image, forModels.type);
     const detections = buildDetections(a.products, a.matches, a.index, a.samBoxes);
     const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, clientId, image, a), detections);
     const [cropsStored, photoStored] = await Promise.all([this.storeCrops(scanId, image, detections), this.storePhoto(scanId, image)]);
@@ -481,10 +486,12 @@ export class VisionService implements OnApplicationBootstrap {
     const started = Date.now();
 
     const limits = STOCKTAKE_DEADLINES;
+    // Models read a copy capped at 2560 px; zooms, crops and the stored photo use the full-resolution image.
+    const forModels = await modelCopy(image, type);
 
     let a: Awaited<ReturnType<VisionService["analyse"]>>;
     try {
-      a = await withDeadline(this.analyse(businessId, userId, image, type), limits.firstPassMs, `First pass took longer than ${limits.firstPassMs / 1000} s`);
+      a = await withDeadline(this.analyse(businessId, userId, forModels.image, forModels.type), limits.firstPassMs, `First pass took longer than ${limits.firstPassMs / 1000} s`);
     } catch (err) {
       await this.finish(runId, { status: "failed", error: `First pass failed: ${(err as Error).message}` });
       return;
@@ -498,7 +505,7 @@ export class VisionService implements OnApplicationBootstrap {
         return (res.items[0]?.candidates ?? []).filter((c) => plausible(reading, c));
       },
       countUnits: async (look, line) => {
-        const res = await this.meta!.respond(samRequest(image, type, look), SAM_TIMEOUT_MS);
+        const res = await this.meta!.respond(samRequest(forModels.image, forModels.type, look), SAM_TIMEOUT_MS);
         const products = session.lines.map((l, i) => (i === line ? { ...l.product, look } : l.product));
         return assignInstances(products, new Map([[look, parseSamInstances(res.text)]])).get(line) ?? [];
       },
@@ -513,7 +520,7 @@ export class VisionService implements OnApplicationBootstrap {
     try {
       const left = Math.max(0, limits.runMs - (Date.now() - started));
       const outcome = await withDeadline(
-        runStocktakeAgent({ client: this.meta!, session, photo: `data:${type};base64,${image.toString("base64")}`, onStep: step }),
+        runStocktakeAgent({ client: this.meta!, session, photo: `data:${forModels.type};base64,${forModels.image.toString("base64")}`, onStep: step }),
         left,
         "Run deadline reached",
       );
@@ -587,7 +594,10 @@ export class VisionService implements OnApplicationBootstrap {
     if (!this.media.enabled || detections.length === 0) return 0;
     try {
       const boxes = detections.map((d) => bestBox(d.boxes));
-      const crops = await makeCrops(image, boxes, { minSide: MIN_STORED_CROP_SIDE });
+      // Cut from the full-resolution photo (same pixels as the stored one), never padded or enlarged to pass a minimum.
+      const { source, crops: cut } = await cutCrops(image, boxes, { minSide: MIN_STORED_CROP_SIDE });
+      const crops = cut.map((c) => c?.crop ?? null);
+      const catalogueSized = cut.filter((c) => c && Math.min(c.boxWidth, c.boxHeight) >= MIN_CROP_SIDE).length;
       const results = await Promise.allSettled(
         crops.map((crop, position) => (crop ? this.media.put(cropKey(scanId, position), crop, "image/webp").then(() => 1) : 0)),
       );
@@ -596,7 +606,8 @@ export class VisionService implements OnApplicationBootstrap {
       // A product under 48 px in the photo gets no crop, so it can never become a catalogue picture.
       const tooSmall = crops.filter((c, i) => !c && boxes[i]).length;
       this.logger.log(
-        `Scan ${scanId}: ${stored} of ${detections.length} crops stored` +
+        `Scan ${scanId}: ${stored} of ${detections.length} crops stored from a ${source.width}×${source.height} photo, ` +
+          `${catalogueSized} at ${MIN_CROP_SIDE}+ px before the margin` +
           (tooSmall ? `, ${tooSmall} too small to store (< ${MIN_STORED_CROP_SIDE} px)` : "") +
           (crops.length - tooSmall - stored - failed > 0 ? `, ${crops.length - tooSmall - stored - failed} without a box` : ""),
       );
@@ -963,8 +974,15 @@ export class VisionService implements OnApplicationBootstrap {
         });
         if (!crop) return skip(line, "noCrop", "no stored crop (box too small to store, or the scan predates R2)");
         const size = await cropSize(crop);
-        if (Math.min(size.width, size.height) < MIN_CROP_SIDE) {
-          return skip(line, "tooSmall", `crop ${size.width}×${size.height} is under Qore Catalog's ${MIN_CROP_SIDE} px minimum`);
+        const photo = await photoSize(line.scanId);
+        // The product's own size before the context margin: a small product padded past 96 px is still too small.
+        const box = bestBox(line.sample.boxes);
+        const own = box && photo ? boxPixels(box, photo.width, photo.height) : null;
+        // Without the photo, the stored crop less its margin (an underestimate at the photo's edge, never an overestimate).
+        const ownShort = own ? Math.min(own.width, own.height) : Math.floor(Math.min(size.width, size.height) / (1 + 2 * PAD));
+        if (ownShort < MIN_CROP_SIDE || Math.min(size.width, size.height) < MIN_CROP_SIDE) {
+          const before = own ? `${own.width}×${own.height} before the margin, ` : "";
+          return skip(line, "tooSmall", `crop ${before}${size.width}×${size.height} stored, is under Qore Catalog's ${MIN_CROP_SIDE} px minimum`);
         }
         const ref = feedbackRef(line.scanId, line.position);
         try {
@@ -974,11 +992,16 @@ export class VisionService implements OnApplicationBootstrap {
             ...(qid && { qid }),
             view: "on_shelf",
             feedbackClientRef: ref,
-            sample: sampleContext(line, await photoSize(line.scanId)),
+            sample: sampleContext(line, photo),
           });
           images.uploaded++;
-          images.samples.push({ ref, qid, sampleId: res.sampleId ?? null, status: res.status });
-          this.logger.log(`Crop ${ref} sent: sample ${res.sampleId ?? "none"} (${res.status})`);
+          images.samples.push({ ref, qid, sampleId: res.sampleId ?? null, status: res.status, cropWidth: own?.width ?? null, cropHeight: own?.height ?? null });
+          this.logger.log(
+            `Crop ${ref} sent: sample ${res.sampleId ?? "none"} (${res.status}), ` +
+              (own ? `${own.width}×${own.height} before the margin, ` : "") +
+              `${size.width}×${size.height} stored` +
+              (photo ? ` from a ${photo.width}×${photo.height} photo` : ""),
+          );
         } catch (err) {
           images.failed++;
           // CatalogError's message carries the status and Qore Catalog's reason, with the key redacted.
@@ -1051,10 +1074,11 @@ export function sampleContext(
 ): ImageSampleContext {
   const box = bestBox(line.sample.boxes);
   const px = (v: number, side: number) => Math.round((v / 1000) * side);
+  const wh = (size: { width: number; height: number }) => ({ w: size.width, h: size.height });
   return {
     ...(box &&
       photo && {
-        box: { x: px(box.x1, photo.width), y: px(box.y1, photo.height), w: px(box.x2 - box.x1, photo.width), h: px(box.y2 - box.y1, photo.height) },
+        box: { x: px(box.x1, photo.width), y: px(box.y1, photo.height), ...wh(boxPixels(box, photo.width, photo.height)) },
         sourceWidth: photo.width,
         sourceHeight: photo.height,
       }),
