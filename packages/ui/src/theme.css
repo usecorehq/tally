@@ -14,11 +14,13 @@
   --color-surface: #ffffff;
   --color-hairline: #000000;
 
-  --color-primary: #7856ff;
-  --color-primary-foreground: #ffffff;
-  --color-primary-hover: #6b4de6;
-  --color-primary-light: #f0ecff;
-  --color-primary-dark: #5a3fd9;
+  /* Sunflower is a fill only. Brand text, lines and rings on a light surface use primary-ink. */
+  --color-primary: #f9d644;
+  --color-primary-foreground: #171717;
+  --color-primary-hover: #f0c925;
+  --color-primary-light: #fef6d1;
+  --color-primary-dark: #c9a800;
+  --color-primary-ink: #7a5a00;
 
   --color-secondary: hsl(0 0% 96.1%);
   --color-secondary-foreground: hsl(0 0% 9%);
@@ -124,6 +126,7 @@
   --tone-violet-ink: rgb(196 181 253);
   /* The pale brand tint (chips, selected rows) becomes a deep wash of it. */
   --color-primary-light: color-mix(in srgb, var(--color-primary) 24%, rgb(31 31 34));
+  --color-primary-ink: #f9d644;
 
   --color-red-50: rgb(239 68 68 / 0.14);
   --color-red-100: rgb(239 68 68 / 0.14);

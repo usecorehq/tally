@@ -75,7 +75,7 @@ export function RecentsList({
           newActive ? "bg-surface text-gray-900 ring-1 ring-hairline/[0.06]" : "text-gray-600 hover:bg-gray-200/60 hover:text-gray-900",
         )}
       >
-        <SolarIcon name="Add-Circle" iconStyle={newActive ? "Fill" : "Outline"} size={20} className={newActive ? "text-primary" : undefined} />
+        <SolarIcon name="Add-Circle" iconStyle={newActive ? "Fill" : "Outline"} size={20} className={newActive ? "text-primary-ink" : undefined} />
         Take new stock
       </Link>
 
@@ -127,7 +127,7 @@ export function RecentsList({
                       </span>
                     </span>
                     {/* Only the states that need the merchant get a mark. */}
-                    {e.status === "running" && <span aria-label="Running" className="mt-1.5 size-2 shrink-0 animate-pulse rounded-full bg-primary" />}
+                    {e.status === "running" && <span aria-label="Running" className="mt-1.5 size-2 shrink-0 animate-pulse rounded-full bg-primary-ink" />}
                     {e.status === "review" && (e.lines ?? 0) > 0 && <span aria-label="Ready to review" className="mt-1.5 size-2 shrink-0 rounded-full bg-amber-500" />}
                     {e.status === "failed" && <span aria-label="Failed" className="mt-1.5 size-2 shrink-0 rounded-full bg-red-500" />}
                     {e.status === "confirmed" && <span aria-label="Confirmed" className="mt-1.5 size-2 shrink-0 rounded-full bg-emerald-500" />}

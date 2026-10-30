@@ -484,7 +484,7 @@ function Row({
       <div
         className={cn(
           "h-14 w-14 overflow-hidden rounded-[10px] bg-gray-100",
-          selected ? "ring-2 ring-primary" : "ring-1 ring-hairline/[0.05]",
+          selected ? "ring-2 ring-primary-ink" : "ring-1 ring-hairline/[0.05]",
           skipped && "opacity-50",
         )}
       >
