@@ -19,6 +19,7 @@ Why we made the choices we made. Read these before changing something load-beari
 - **[Barcode scan](architecture/barcode-scan.md)** — Scan to find an item in the merchant's inventory; link unknown barcodes once. One item per barcode, UPC-A = EAN-13.
 - **[Vision recognition](architecture/vision-recognition.md)** — Shelf photo → inventory (Muse Spark reads, SAM 3.1 counts, Qore Catalog matches, the merchant confirms) and identify one product, with the API contract for the mobile app and the web stock-take page in apps/mp. Crops in R2 and an on-device model are *planned*.
 - **[Stock-take agent](architecture/stocktake-agent.md)** — Muse Spark with tools (zoom, catalogue search, SAM count, store check) working through a shelf photo in the background until every line is settled; quick scan as first pass and fallback; the merchant confirms.
+- **[Embedded stock-take](architecture/embed.md)** — The stock-take as an iframe on a connected partner's site: one UI on two data layers, postMessage protocol v1, `EMBED_HOST` gating and `frame-ancestors`.
 - **[Vision schema](architecture/vision-schema.md)** — How scans, detections, readings and stock-take runs relate; which links are foreign keys and which are values (Qore IDs, R2 crop keys, stock movement keys); who writes each row.
 - **[Q Vision](architecture/qvision-distillation.md)**: moved to Qore Catalog.
 

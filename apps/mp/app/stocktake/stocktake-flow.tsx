@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Button,
   FieldLabel,
@@ -20,12 +19,11 @@ import {
   cn,
   type SolarIconName,
 } from "@tally/ui";
-import { checkPhoto, quickScan, startStocktake } from "./actions";
+import { useStocktakeApi, useStocktakeNav } from "./api-context";
 import { checkCopy, localCheck, resizeForScan } from "./image";
 import { PhotoCheckPanel, type CheckState } from "./photo-check";
 import { PICK_SUBTITLE, PICK_TITLE } from "./copy";
 import { runKey, savePhoto, scanKey } from "./photo-store";
-import { historyHref, sessionHref } from "./urls";
 import type { AgentStep } from "./types";
 
 export type Business = { id: string; name: string };
@@ -38,7 +36,8 @@ export type Phase = { name: "pick" } | { name: "working"; mode: "agent" | "quick
 
 /** A new stock-take: business, photo, then the kind of run. Each run continues at its own URL. */
 export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: Business[]; initialBusinessId: string }) {
-  const router = useRouter();
+  const { checkPhoto, quickScan, startStocktake } = useStocktakeApi();
+  const nav = useStocktakeNav();
   const businessId = initialBusinessId;
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [phase, setPhase] = useState<Phase>({ name: "pick" });
@@ -64,7 +63,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
     return () => {
       alive = false;
     };
-  }, [photo, businessId]);
+  }, [photo, businessId, checkPhoto]);
 
   useEffect(() => () => {
     if (photo) URL.revokeObjectURL(photo.url);
@@ -106,7 +105,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
       return;
     }
     await savePhoto(scanKey(res.data.scanId), kept());
-    router.push(sessionHref(businessId, res.data.scanId));
+    nav.openSession(businessId, res.data.scanId);
   }
 
   async function runAgent() {
@@ -120,7 +119,7 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
     }
     // The run continues on the server; its own URL polls it and survives a refresh.
     await savePhoto(runKey(started.data.runId), kept());
-    router.push(sessionHref(businessId, started.data.runId));
+    nav.openSession(businessId, started.data.runId);
   }
 
   if (phase.name === "working") {
@@ -136,9 +135,9 @@ export function StocktakeFlow({ businesses, initialBusinessId }: { businesses: B
       check={check}
       fileRef={fileRef}
       onFile={onFile}
-      onAgent={runAgent}
+      onAgent={nav.agent ? runAgent : null}
       onQuick={runQuick}
-      historyHref={historyHref(businessId)}
+      historyHref={nav.historyHref(businessId)}
     />
   );
 }
@@ -164,9 +163,10 @@ export function PickView({
   check?: CheckState | null;
   fileRef: React.RefObject<HTMLInputElement | null>;
   onFile: (file: File | undefined) => void;
-  onAgent: () => void;
+  /** null hides the agent run (the embed without `stocktake:read`). */
+  onAgent: (() => void) | null;
   onQuick: () => void;
-  historyHref: string;
+  historyHref: string | null;
 }) {
   return (
     <div className="q-rise max-w-[760px]">
@@ -174,7 +174,7 @@ export function PickView({
         title={PICK_TITLE}
         subtitle={PICK_SUBTITLE}
         className="[&_h1]:whitespace-normal"
-        actions={<HistoryButton href={historyHref} />}
+        actions={historyHref && <HistoryButton href={historyHref} />}
       />
 
       <div className="space-y-5">
@@ -224,17 +224,20 @@ export function PickView({
             <FormMessage message={error} />
             {/* One primary, last: on the right on desktop, on top on phones. */}
             <div className="flex flex-col-reverse gap-3 sm:flex-row">
-              <Button size="xl" variant="soft" onClick={onQuick}>
+              <Button size="xl" variant={onAgent ? "soft" : "primary"} onClick={onQuick}>
                 Quick scan
               </Button>
-              <Button size="xl" onClick={onAgent}>
-                <SolarIcon name="Stars" iconStyle="Bold" size={18} />
-                Start stock-take
-              </Button>
+              {onAgent && (
+                <Button size="xl" onClick={onAgent}>
+                  <SolarIcon name="Stars" iconStyle="Bold" size={18} />
+                  Start stock-take
+                </Button>
+              )}
             </div>
             <Notice icon="Clock-Circle">
-              Stock-take takes about a minute: an agent zooms into unclear labels and searches the catalogue again. Quick scan
-              takes 15–30 seconds.
+              {onAgent
+                ? "Stock-take takes about a minute: an agent zooms into unclear labels and searches the catalogue again. Quick scan takes 15–30 seconds."
+                : "Quick scan takes 15–30 seconds."}
             </Notice>
           </div>
         ) : (
