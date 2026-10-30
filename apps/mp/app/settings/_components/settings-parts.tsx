@@ -3,9 +3,8 @@
 import { useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Button, NativeSelect, PageHeader, SolarIcon, Tray, TraySheet, cn, type SolarIconName } from "@tally/ui";
+import { Button, PageHeader, SolarIcon, Tray, TraySheet, cn, type SolarIconName } from "@tally/ui";
 import { FOCUS, SEGMENT_THUMB, SEGMENT_TRACK } from "../../_components/segment";
-import type { SettingsBusiness } from "../_lib/types";
 
 export const TABS: { href: string; label: string; icon: SolarIconName }[] = [
   { href: "/settings/integrations", label: "Integrations", icon: "Widget-5" },
@@ -13,51 +12,18 @@ export const TABS: { href: string; label: string; icon: SolarIconName }[] = [
   { href: "/settings/plan", label: "Plan", icon: "Stars" },
 ];
 
-/** "Settings", the business picker (as Inventory has it) and the three tabs, which keep ?business=. */
-export function SettingsHeader({
-  businesses,
-  businessId,
-  active,
-}: {
-  businesses: SettingsBusiness[];
-  businessId: string | null;
-  /** The tab to mark current; defaults to the URL (/design previews pass it). */
-  active?: string;
-}) {
-  const router = useRouter();
+/** "Settings" and its three tabs; the business comes from the top-bar switcher. */
+export function SettingsHeader({ active }: { active?: string } = {}) {
   const pathname = usePathname();
   const current = active ?? pathname;
-  const business = businesses.find((b) => b.id === businessId);
-  const q = businessId && businesses.length > 1 ? `?business=${businessId}` : "";
   return (
     <>
-      <PageHeader
-        eyebrow={businesses.length > 1 ? undefined : business?.name}
-        title="Settings"
-        actions={
-          businesses.length > 1 ? (
-            <div className="w-full sm:w-64">
-              <NativeSelect
-                aria-label="Business"
-                className="h-11 sm:h-10"
-                value={businessId ?? ""}
-                onChange={(e) => router.push(`${pathname}?business=${e.target.value}`)}
-              >
-                {businesses.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-          ) : undefined
-        }
-      />
+      <PageHeader title="Settings" />
       <nav aria-label="Settings" className={cn("mb-6 flex w-full sm:w-fit", SEGMENT_TRACK)}>
         {TABS.map((t) => {
           const on = current === t.href;
           return (
-            <Link key={t.href} href={`${t.href}${q}`} aria-current={on ? "page" : undefined} className={cn("group flex h-11 min-w-0 flex-1 p-1 sm:flex-none", FOCUS)}>
+            <Link key={t.href} href={t.href} aria-current={on ? "page" : undefined} className={cn("group flex h-11 min-w-0 flex-1 p-1 sm:flex-none", FOCUS)}>
               <span
                 className={cn(
                   "flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-colors",

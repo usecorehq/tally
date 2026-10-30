@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tally-embed playground</title>
+    <style>
+      body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #f4f4f5; color: #18181b; }
+      main { max-width: 960px; margin: 0 auto; padding: 16px; }
+      .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+      button { font: inherit; padding: 8px 14px; border-radius: 999px; border: 1px solid #d4d4d8; background: #fff; cursor: pointer; }
+      #inline { background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; overflow: hidden; }
+      pre { background: #18181b; color: #e4e4e7; padding: 12px; border-radius: 8px; max-height: 200px; overflow: auto; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>tally-embed playground</h1>
+      <p>Mounts against a mock embed page on another origin that speaks protocol v1.</p>
+      <div class="bar">
+        <button id="mount-inline">Mount inline</button>
+        <button id="open-modal">Open modal</button>
+        <button id="theme">Toggle theme</button>
+        <button id="destroy">Destroy</button>
+      </div>
+      <div id="inline"></div>
+      <h2>Callbacks</h2>
+      <pre id="log"></pre>
+    </main>
+    <script src="/dist/tally-embed.min.js"></script>
+    <script>
+      const embedOrigin = `${location.protocol}//${location.hostname}:${Number(location.port) + 1}`;
+      const log = (label, value) => {
+        const el = document.getElementById("log");
+        el.textContent = `${label} ${JSON.stringify(value)}\n` + el.textContent;
+      };
+      let issued = 0;
+      let controller = null;
+      let dark = false;
+      const options = (mode) => ({
+        container: "#inline",
+        clientId: "tc_playground000000000000000",
+        embedOrigin,
+        mode,
+        theme: { primary: "#0f766e", primaryInk: "#0f766e", primaryForeground: "#ffffff" },
+        getSessionToken: async () => `playground-token-${++issued}`,
+        onEvent: (e) => log("onEvent", e),
+        onError: (e) => log("onError", e),
+        onClose: () => log("onClose", {}),
+      });
+      const reset = () => {
+        controller?.destroy();
+        controller = null;
+      };
+      document.getElementById("mount-inline").onclick = () => {
+        reset();
+        controller = TallyEmbed.mount(options("inline"));
+      };
+      document.getElementById("open-modal").onclick = () => {
+        reset();
+        controller = TallyEmbed.mount(options("modal"));
+        controller.open();
+      };
+      document.getElementById("theme").onclick = () => {
+        dark = !dark;
+        controller?.setTheme({ primary: dark ? "#7c3aed" : "#0f766e", colorScheme: dark ? "dark" : "light" });
+      };
+      document.getElementById("destroy").onclick = reset;
+    </script>
+  </body>
+</html>

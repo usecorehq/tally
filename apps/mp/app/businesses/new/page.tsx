@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { BusinessVertical } from "@tally/catalog-client";
 import { api, errorMessage } from "@/lib/api";
+import { BUSINESS_COOKIE, BUSINESS_COOKIE_MAX_AGE } from "@/lib/business-cookie";
 import { finishSetup, loadStarterRows, type FinishInput, type FinishResult } from "../../onboarding/actions";
 import { SetupLoadFailed, SetupWizard } from "../../onboarding/_components/setup-wizard";
 import { safeReturnTo } from "../../oauth/_lib/authorize";
@@ -24,11 +26,13 @@ export default async function NewBusinessPage({ searchParams }: { searchParams: 
     } else if (!input.businessId) {
       const name = input.name.trim();
       if (!name || !input.subtypeCode) return { ok: false, error: "Enter your business name and type." };
+      let id: string;
       try {
-        await api<{ id: string }>("/businesses", { method: "POST", json: { name, subtypeCode: input.subtypeCode } });
+        ({ id } = await api<{ id: string }>("/businesses", { method: "POST", json: { name, subtypeCode: input.subtypeCode } }));
       } catch (err) {
         return { ok: false, error: errorMessage(err) };
       }
+      (await cookies()).set(BUSINESS_COOKIE, id, { path: "/", maxAge: BUSINESS_COOKIE_MAX_AGE, sameSite: "lax" });
     }
     redirect(target);
   }

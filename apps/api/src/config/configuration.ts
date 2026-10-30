@@ -18,6 +18,11 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
       dbPoolMax: env.DB_POOL_MAX ? parseInt(env.DB_POOL_MAX, 10) : undefined,
     },
 
+    clients: {
+      /** Signs Connect Tally client and embed tokens; never the Supabase secret. Server-only. */
+      jwtSecret: env.TALLY_CLIENT_JWT_SECRET,
+    },
+
     catalog: {
       /** Qore Catalog API — the product catalogue Tally reads and sends feedback to. */
       baseUrl: env.QORE_CATALOG_BASE_URL ?? "http://localhost:3100",

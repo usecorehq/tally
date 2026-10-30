@@ -20,7 +20,7 @@ export function SettingsPreview({ variant }: { variant: Variant }) {
   const tab = variant.split("-")[0]!;
   const staff = variant.endsWith("-staff");
   const business = staff ? BUSINESSES[1]! : BUSINESSES[0]!;
-  const header = <SettingsHeader businesses={BUSINESSES} businessId={business.id} active={TABS.find((t) => t.href.endsWith(tab))?.href} />;
+  const header = <SettingsHeader active={TABS.find((t) => t.href.endsWith(tab))?.href} />;
 
   if (variant === "limit-reached") {
     return (

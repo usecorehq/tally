@@ -1,23 +1,16 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { api } from "@/lib/api";
+import { listBusinesses, pickBusiness } from "@/lib/businesses";
 import type { SettingsBusiness } from "./types";
 
-/**
- * The user's businesses and the one in ?business= (else the first), as the stock-take pages pick it.
- * null when the read failed; no businesses → onboarding.
- */
-export async function loadSettingsBusinesses(
-  requested: string | undefined,
-): Promise<{ businesses: SettingsBusiness[]; current: SettingsBusiness } | null> {
-  let businesses: SettingsBusiness[];
-  try {
-    businesses = (await api<SettingsBusiness[]>("/businesses")).map(({ id, name, role }) => ({ id, name, role }));
-  } catch {
-    return null;
-  }
-  if (businesses.length === 0) redirect("/onboarding");
-  return { businesses, current: businesses.find((b) => b.id === requested) ?? businesses[0]! };
+/** The current business, as the top-bar switcher picks it; null when the read failed. No businesses → onboarding. */
+export async function loadCurrentBusiness(requested: string | undefined): Promise<SettingsBusiness | null> {
+  const list = await listBusinesses();
+  if (!list) return null;
+  if (list.length === 0) redirect("/onboarding");
+  const { id, name, role } = (await pickBusiness(list, requested))!;
+  return { id, name, role };
 }
 
 /** Reads that may fail on their own: null is shown as failed with "–" figures, never as empty. */
