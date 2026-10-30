@@ -1,7 +1,10 @@
 "use client";
 
-import { PageHeader, Pill, SheetTable, SolarIcon, Tray, TrayFooter, TraySheet, TrayTile, type PillTone } from "@tally/ui";
+import { useEffect, useState } from "react";
+import { Button, Dialog, DialogContent, DialogTrigger, PageHeader, Pill, SheetTable, SolarIcon, TrayTile, type PillTone } from "@tally/ui";
 import { formatDateTime, formatTime, plural } from "./format";
+import { largestBox, remoteThumb } from "./image";
+import { ThumbImage, type Thumb } from "./thumb";
 import type { Detection, LineDecision, ScanView } from "./types";
 
 const DECISION: Record<LineDecision["action"], { label: string; tone: PillTone }> = {
@@ -61,6 +64,7 @@ export function ConfirmedView({
     ["Restored", count("restore")],
     ["Skipped", count("skip")],
   ];
+  const thumbs = usePhotoThumbs(photoUrl, scan.detections);
   return (
     <div className="q-rise max-w-[880px]">
       <PageHeader
@@ -77,16 +81,20 @@ export function ConfirmedView({
         ))}
       </div>
 
+      {/* The photo stays one click away: the lines are what a confirmed stock-take is read for. */}
       {photoUrl && (
-        <Tray className="mt-6 w-fit max-w-full">
-          <TraySheet className="p-1">
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="sm" className="mt-4 -ml-2">
+              <SolarIcon name="Gallery-Add" iconStyle="Outline" size={16} />
+              View shelf photo
+            </Button>
+          </DialogTrigger>
+          <DialogContent title="Shelf photo" description="The photo this stock-take was counted from." className="max-w-3xl" sheetClassName="p-1">
             {/* eslint-disable-next-line @next/next/no-img-element -- a short-lived R2 link or a local object URL */}
-            <img src={photoUrl} alt="Shelf photo for this stock-take" className="block max-h-[480px] w-auto max-w-full rounded-[10px]" />
-          </TraySheet>
-          <TrayFooter>
-            <span>Shelf photo</span>
-          </TrayFooter>
-        </Tray>
+            <img src={photoUrl} alt="Shelf photo for this stock-take" className="block max-h-[75dvh] w-auto max-w-full rounded-[10px]" />
+          </DialogContent>
+        </Dialog>
       )}
 
       <SheetTable className="mt-6" title="Lines" count={scan.detections.length} footer="An added line becomes a restock when the item already existed.">
@@ -94,10 +102,7 @@ export function ConfirmedView({
           {scan.detections.map((d) => (
             <li key={d.id} className="grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 px-4 py-3.5 sm:grid-cols-[3rem_minmax(0,1fr)_auto] sm:items-center">
               <div className="row-span-2 h-12 w-12 overflow-hidden rounded-[10px] bg-gray-100 ring-1 ring-hairline/[0.05] sm:row-span-1">
-                {d.cropUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element -- a short-lived R2 link
-                  <img src={d.cropUrl} alt="" className="h-full w-full object-cover" onError={(e) => (e.currentTarget.style.display = "none")} />
-                )}
+                <ThumbImage thumb={thumbs[d.id] ?? d.cropUrl ?? undefined} />
               </div>
               <div className="min-w-0">
                 <p className="break-words text-sm font-medium text-gray-900">{reading(d)}</p>
@@ -135,4 +140,30 @@ function Outcome({ d }: { d: Detection }) {
       {decision.quantity !== d.count && <span className="tabular-nums"> (counted {d.count})</span>}
     </>
   );
+}
+
+/** Each line's square of the stored photo, so lines too small for a stored crop still get a thumbnail. */
+function usePhotoThumbs(photoUrl: string | null, detections: Detection[]): Record<string, Thumb> {
+  const [thumbs, setThumbs] = useState<Record<string, Thumb>>({});
+  useEffect(() => {
+    if (!photoUrl) return;
+    let alive = true;
+    const img = new Image();
+    img.onload = () => {
+      if (!alive) return;
+      setThumbs(
+        Object.fromEntries(
+          detections.flatMap((d) => {
+            const box = largestBox(d.boxes);
+            return box ? [[d.id, remoteThumb(photoUrl, box, img.naturalWidth, img.naturalHeight)]] : [];
+          }),
+        ),
+      );
+    };
+    img.src = photoUrl;
+    return () => {
+      alive = false;
+    };
+  }, [photoUrl, detections]);
+  return thumbs;
 }
