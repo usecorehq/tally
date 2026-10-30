@@ -34,6 +34,7 @@ Identify calls (identify one product) write nothing until the merchant confirms,
 | `vision_agent_runs.business_id` | `businesses` | many → one | cascade | The shop the stock-take is for |
 | `vision_agent_runs (business_id, scan_id)` | `vision_scans` | zero or one → zero or one | no action | The run's result. Null while running and for a failed run; set on `done` and on `fallback` (the quick scan) |
 | `vision_agent_runs (business_id, rerun_of_scan_id)` | `vision_scans` | many → zero or one | no action | **Rerun of:** the group's root, the first scan of the photo (never a rerun's own scan). Null for a new stock-take. Indexed for history |
+| `vision_scans.client_id`, `vision_agent_runs.client_id` | `oauth_clients` | many → zero or one | restrict | The partner app that ran it through [Connect Tally](database.md#oauth-clients-connect-tally). Null = Tally's own apps. Clients are suspended, never deleted |
 
 ### Groups: one photo, several runs
 
@@ -51,7 +52,7 @@ A photo's first scan (a quick scan or an agent run's) is the **root**. Each reru
 | `<scan_id>:<position>` | The detection, as Qore Catalog's feedback `clientRef` | Sent to `/v1/feedback` and `/v1/images` so retries dedupe on the catalogue side |
 | `tally/crops/<scan_id>/<position>.webp` | The detection's crop in R2 | Object storage; the key is derived, not stored. See [product crops](vision-recognition.md#product-crops) |
 | `tally/scans/<scan_id>.jpg` | The scan's shelf photo in R2 | Object storage, kept for good as the audit record; the key is derived from the scan id. `vision_scans.image_sha256` is the hash of the uploaded bytes |
-| `created_by`, `started_by`, `decided_by` | `auth.users` | Audit columns only. Membership is checked by the API on every call; only `businesses` and `business_members` carry the cross-schema key to `auth.users` |
+| `created_by`, `started_by`, `decided_by` | `auth.users` | Audit columns only. Membership is checked by the API on every call; only `businesses`, `business_members`, `oauth_codes` and `oauth_grants` carry the cross-schema key to `auth.users` |
 
 ## Tenancy: every child carries `business_id`
 

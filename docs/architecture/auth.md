@@ -28,6 +28,10 @@ Ported from bookmi. Every route requires a valid Supabase user JWT unless the co
 - `audience: authenticated` is enforced and `role` must not be `anon` or `service_role`, so API keys can never act as users.
 - `@CurrentUser()` exposes `{ sub, email, role, session_id }`; `sub` is the `auth.users` id.
 
+## Connect Tally (planned)
+
+Partner apps will get a merchant's consent through OAuth 2.0 (authorization code + PKCE `S256`) and then call Tally's API for that one business, or embed Tally's stock-take in an iframe. The database tables are built (`oauth_clients`, `oauth_codes`, `oauth_grants`; see [Database](database.md#oauth-clients-connect-tally)), and clients are registered with `apps/api/scripts/oauth-client-create.mjs`. The OAuth endpoints, the consent screen, access tokens and the API guard for them are planned.
+
 ## Not built yet
 
 - Signup on mp. Mobile signs up with `supabase.auth.signUp` against the shared project, exactly as Qorelly does: `full_name`, E.164 `phone` and `role: owner` in user metadata, which Qorelly's `handle_new_user` trigger turns into its profile row. Tally writes nothing outside the `tally` schema (no profile upsert). Email confirmation is on, so the app asks for the emailed code; an already-registered email (a stand-in user with no identities) is reported, not sent a code.

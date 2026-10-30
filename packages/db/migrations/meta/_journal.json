@@ -71,6 +71,20 @@
       "when": 1793304132891,
       "tag": "0009_add_catalog_resolutions",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793397783723,
+      "tag": "0010_add_oauth_clients",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793397787795,
+      "tag": "0011_add_oauth_auth_user_fks",
+      "breakpoints": true
     }
   ]
 }
