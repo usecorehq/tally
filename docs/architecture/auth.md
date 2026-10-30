@@ -1,6 +1,5 @@
 # Auth
 
-> Diagrams: [web sequence](../diagrams/images/auth-web-sequence.svg) · [mobile sequence](../diagrams/images/auth-mobile-sequence.svg)
 
 Tally has no user table of its own. Identity is the shared Qorelly Supabase `auth.users`: a merchant signs into Tally with the same email and password they use for Qorelly, and every tally row that belongs to a person references `auth.users(id)`.
 

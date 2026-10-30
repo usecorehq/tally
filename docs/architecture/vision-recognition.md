@@ -1,6 +1,6 @@
 # Vision recognition
 
-> Diagrams: [quick scan](../diagrams/quick-scan.webp), [identify one product](../diagrams/identify-one-product.webp), [stock-take history](../diagrams/stock-take-history.webp).
+> Diagrams: [quick scan](../diagrams/6.quick-scan.webp), [identify one product](../diagrams/5.identify-one-product.webp), [stock-take history](../diagrams/4.stock-take-history.webp).
 >
 > **Built:** shelf-scan recognition (Muse Spark reads the photo, SAM 3.1 counts the units, Qore Catalog matches), the check against the merchant's own inventory, storing each scan, confirm → inventory + feedback, identify one product (tier 1), product crops (R2) sent to Qore Catalog as pictures, and stock-take history (every scan reopenable at its own URL in apps/mp). **Planned:** an on-device model. Planned endpoint shapes may change before they ship.
 
