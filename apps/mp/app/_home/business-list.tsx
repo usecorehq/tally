@@ -64,7 +64,7 @@ export function BusinessList({ businesses }: { businesses: BusinessSummary[] | n
                   {/* The whole row opens the business's inventory; the stock-take button sits above the stretched link. */}
                   <Link
                     href={`/inventory?business=${b.id}`}
-                    className="line-clamp-2 break-words rounded-sm text-[15px] font-medium text-gray-900 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary"
+                    className="line-clamp-2 break-words rounded-sm text-[15px] font-medium text-gray-900 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary-ink"
                   >
                     {b.name}
                   </Link>

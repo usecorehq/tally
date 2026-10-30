@@ -34,7 +34,7 @@ export function OnboardingShell({
         <div className="mx-auto flex h-16 max-w-[680px] items-center gap-3 px-4 sm:px-6">
           <TallyMark className="h-8 w-8" />
           <span
-            className="shrink-0 rounded-full bg-primary-light px-3 py-1.5 text-xs font-semibold text-primary"
+            className="shrink-0 rounded-full bg-primary-light px-3 py-1.5 text-xs font-semibold text-primary-ink"
             role="progressbar"
             aria-valuemin={1}
             aria-valuemax={ONBOARDING_STEPS.length}
@@ -101,7 +101,7 @@ export function StepHeading({ title, subtitle }: { title: string; subtitle: stri
 export function SavingScreen({ message }: { message: string }) {
   return (
     <div className="q-fade-in flex min-h-dvh flex-col items-center justify-center gap-4 bg-surface px-6 text-center">
-      <QorellyLoader className="h-8 w-8 text-primary" />
+      <QorellyLoader className="h-8 w-8 text-primary-ink" />
       <div>
         <p className="text-[15px] font-medium text-gray-900">{message}</p>
         <p className="mt-1 text-[13px] text-gray-500">This takes a few seconds. Keep this page open.</p>
