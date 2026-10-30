@@ -20,7 +20,7 @@ import {
   TrayTile,
   cn,
 } from "@tally/ui";
-import { confirmScan } from "./actions";
+import { useStocktakeApi, useStocktakeNav } from "./api-context";
 import { STOCKTAKE_CHANGED } from "./recents";
 import { describeCells, MIN_UNREAD_CELLS, unreadCells } from "./coverage";
 import { cropThumbs, largestBox, remoteThumb } from "./image";
@@ -155,6 +155,7 @@ export function ReviewTable({
   /** Starting UI state; only /design sets it, to show the invalid, failed and selected states. */
   initial?: { attempted?: boolean; error?: string; selected?: string };
 }) {
+  const { confirmScan } = useStocktakeApi();
   // Lines the agent flagged for a closer look come first; lines confirmed earlier (a partial confirm) stay as they are.
   const rows = useMemo(
     () => result.detections.filter((d) => !d.decision).sort((a, b) => Number(Boolean(b.review)) - Number(Boolean(a.review))),
@@ -645,6 +646,7 @@ export function Outcome({
   rows: Detection[];
   onRestart: () => void;
 }) {
+  const { done } = useStocktakeNav();
   const byId = new Map(rows.map((d) => [d.id, d]));
   const stats: [string, number][] = [
     ["Added", result.created],
@@ -701,9 +703,15 @@ export function Outcome({
       </div>
 
       <div className="mt-8 flex flex-col-reverse justify-center gap-3 sm:flex-row">
-        <Button size="xl" variant="quiet" asChild>
-          <Link href="/">Done</Link>
-        </Button>
+        {"href" in done ? (
+          <Button size="xl" variant="quiet" asChild>
+            <Link href={done.href}>Done</Link>
+          </Button>
+        ) : (
+          <Button size="xl" variant="quiet" onClick={done.onClick}>
+            Done
+          </Button>
+        )}
         <Button size="xl" onClick={onRestart}>
           <SolarIcon name="Gallery-Add" iconStyle="Bold" size={18} />
           Scan another shelf
