@@ -38,7 +38,7 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 
 `postman/tally-api.postman_collection.json`: 21 requests (auth, health, catalog, businesses & inventory, vision).
 
-- Import it, then set `baseUrl` (local `http://localhost:4100`, staging `https://tally-api.qorecatalogue.com`), `supabaseAnonKey`, and a **test account's** `email` / `password` as secret variables in your own Postman. Never commit or share real credentials.
+- Import it, then set `baseUrl` (local `http://localhost:4100`, staging `https://tally-api.qorecatalogue.com`), `supabaseUrl` (Supabase project URL), `supabaseAnonKey`, and a **test account's** `email` / `password` as secret variables in your own Postman. Never commit or share real credentials.
 - Run **Auth → Sign in** first. It stores a Supabase access token used as `Authorization: Bearer`; tokens expire after about an hour.
 - Requests save the ids they create (`businessId`, `itemId`, `scanId`, `runId`, the identify reading) for the next steps. Photo requests take a file in the `image` field.
 
