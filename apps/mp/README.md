@@ -24,6 +24,7 @@ pnpm --filter @tally/mp dev            # http://localhost:3001
 ```
 auth.ts                          createTallyAuth() from @tally/auth → handlers, auth, signIn, signOut
 proxy.ts                         redirects to /login without a session (/design is open outside production)
+app/loading.tsx                  the Tally mark while a fresh load waits for a page's own skeleton
 app/login/page.tsx               email + password server action
 app/api/auth/[...nextauth]/      NextAuth route handlers
 app/_components/                 AppShell (V2 frame: sidebar nav, stock-take recents on /stocktake pages, white inset panel), TallyMark
