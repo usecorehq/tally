@@ -8,6 +8,7 @@ Visual companion to [`docs/architecture/`](../architecture/). Diagrams are image
 |---|---|
 | [`1.process-reengineering.webp`](1.process-reengineering.webp) | Stock-taking before and after Tally: the manual count by owner, staff, notebook and inventory app, versus one photo per shelf, the stock-take agent and the merchant's yes. |
 | [`2.stock-take-agent-highlevel.webp`](2.stock-take-agent-highlevel.webp) | How the stock-take agent counts a shelf: first pass (Muse Spark, SAM 3.1, Qore Catalog, store check), the tool loop, merchant review, confirm, and the catalogue learning. |
+| [`7.use-cases.webp`](7.use-cases.webp) | Three ways merchants use Tally: embedded in a partner's app (Connect Tally, OAuth with PKCE, iframe; planned), standalone on Tally (built), and inside Qorelly Inventory (planned), all on one API, agent, Qore Catalog and Qorelly account. |
 
 **Legend** (SVGs): solid blue = built; dashed blue outline = planned; grey = external system; dark blue = person.
 
