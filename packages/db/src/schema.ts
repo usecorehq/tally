@@ -636,6 +636,54 @@ export const oauthGrants = tally.table(
   ],
 );
 
+// ─── Plans (usage limits; subscriptions are simulated) ───────────────────
+// Every stock-take counts against the business's plan, whichever app started it. A business with no subscription is on 'free'.
+
+/** A plan's limits. Rows are seeded and changed by migrations or an admin, never by the API. */
+export const plans = tally.table(
+  "plans",
+  {
+    code: text("code").primaryKey(),
+    name: text("name").notNull(),
+    // Display only, never revenue: subscribing is simulated and creates no payments.
+    priceKoboMonthly: integer("price_kobo_monthly").notNull().default(0),
+    dailyStocktakeLimit: integer("daily_stocktake_limit").notNull(),
+    maxConcurrentRuns: integer("max_concurrent_runs").notNull(),
+    sort: integer("sort").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check("plans_code", sql`code in ('free', 'pro')`),
+    check("plans_name_length", sql`char_length(name) between 1 and 40`),
+    check("plans_price_nonneg", sql`price_kobo_monthly >= 0`),
+    check("plans_limits_positive", sql`daily_stocktake_limit > 0 and max_concurrent_runs > 0`),
+  ],
+);
+
+/** A business's current plan; one row per business. */
+export const businessSubscriptions = tally.table(
+  "business_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull(),
+    planCode: text("plan_code").notNull(),
+    status: text("status").notNull().default("active"),
+    simulated: boolean("simulated").notNull().default(true),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("business_subscriptions_business_id_key").on(t.businessId),
+    foreignKey({ name: "business_subscriptions_business_fk", columns: [t.businessId], foreignColumns: [businesses.id] }).onDelete("cascade"),
+    foreignKey({ name: "business_subscriptions_plan_fk", columns: [t.planCode], foreignColumns: [plans.code] }).onDelete("restrict"),
+    check("business_subscriptions_status", sql`status in ('active', 'cancelled')`),
+  ],
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────
 
 export type Business = typeof businesses.$inferSelect;
@@ -668,3 +716,7 @@ export type OauthCode = typeof oauthCodes.$inferSelect;
 export type NewOauthCode = typeof oauthCodes.$inferInsert;
 export type OauthGrant = typeof oauthGrants.$inferSelect;
 export type NewOauthGrant = typeof oauthGrants.$inferInsert;
+export type Plan = typeof plans.$inferSelect;
+export type NewPlan = typeof plans.$inferInsert;
+export type BusinessSubscription = typeof businessSubscriptions.$inferSelect;
+export type NewBusinessSubscription = typeof businessSubscriptions.$inferInsert;

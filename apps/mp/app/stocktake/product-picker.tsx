@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, FormMessage, Pill, QorellyLoader, SearchWell, SolarIcon, cn } from "@tally/ui";
-import { catalogueProduct, searchCatalogue } from "./actions";
+import { useStocktakeApi } from "./api-context";
 import type { Candidate, CatalogImage, CatalogProduct, CatalogProductDetail, Detection, MatchStrength } from "./types";
 import { ThumbImage, type Thumb } from "./thumb";
 
@@ -54,6 +54,7 @@ export function ProductPicker({
   thumb: Thumb | undefined;
   onPick: (pick: Pick) => void;
 }) {
+  const { catalogueProduct, searchCatalogue } = useStocktakeApi();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<CatalogProduct[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -72,7 +73,7 @@ export function ProductPicker({
     return () => {
       live = false;
     };
-  }, [open, currentQid]);
+  }, [open, currentQid, catalogueProduct]);
 
   // Debounced catalogue search; only the latest answer counts.
   useEffect(() => {
@@ -92,7 +93,7 @@ export function ProductPicker({
       else setError(res.error);
     }, 300);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, searchCatalogue]);
 
   function close(next: boolean) {
     if (!next) {

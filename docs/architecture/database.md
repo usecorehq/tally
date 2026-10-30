@@ -10,7 +10,7 @@ Tally stores its data in the **`tally` schema of the shared Qorelly Supabase Pos
 |---|---|
 | Drizzle schema | `packages/db/src/schema.ts` — `export const tally = pgSchema("tally")` |
 | Client | `packages/db/src/client.ts` — `buildTallyDb(url, { max?, connectTimeout? })` on `postgres.js`; `prepare: false` on the Supabase pooler; at most 5 connections (`DB_POOL_MAX`), idle ones closed after 20 s, 10 s connect timeout. See [Connection pooling](#connection-pooling) |
-| Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business, `0010` OAuth clients, `0011` their `auth.users` keys (custom SQL, `drizzle-kit generate --custom`) |
+| Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business, `0010` OAuth clients, `0011` their `auth.users` keys (custom SQL, `drizzle-kit generate --custom`), `0012` plans and subscriptions, `0013` the placeholder plans (custom SQL) |
 | Config | `packages/db/drizzle.config.ts`, reads `SUPABASE_DB_URL` from the root `.env`, falling back to `apps/api/.env` |
 | API access | `DrizzleModule` provides the client as `TALLY_DB` |
 
@@ -32,6 +32,8 @@ One store per business, Naira only, no VAT. Money is `numeric(12,2)`; Drizzle re
 | `oauth_clients` | A partner app registered for [Connect Tally](#oauth-clients-connect-tally): `client_id`, secret hash, redirect URIs, iframe origins, scopes, status, per-client caps |
 | `oauth_codes` | A single-use authorization code (PKCE `S256`), valid for 60 s |
 | `oauth_grants` | A merchant's consent for one client on one business, with its rotating refresh token hash |
+| `plans` | A [plan](#plans-and-subscriptions)'s stock-take limits and display price: `free` or `pro` |
+| `business_subscriptions` | A business's current plan (simulated); no row means `free` |
 
 `sales`, `sale_items`, `sale_payments` and their functions came with the initial schema and are unused; Tally doesn't record sales. Removing them needs a migration (planned decision).
 
@@ -49,7 +51,7 @@ Child tables carry `business_id` and use composite foreign keys (`(business_id, 
 
 ## OAuth clients (Connect Tally)
 
-Partner apps ("clients") act on one business after its merchant consents, through an OAuth 2.0 authorization-code + PKCE flow. The tables exist; the endpoints that use them are planned (see [Auth](auth.md#connect-tally-planned)).
+Partner apps ("clients") act on one business after its merchant consents, through an OAuth 2.0 authorization-code + PKCE flow. The OAuth endpoints that use them are in `apps/api/src/modules/clients/` (see [Auth](auth.md#connect-tally)).
 
 | Table | Notes |
 |---|---|
@@ -62,6 +64,19 @@ Partner apps ("clients") act on one business after its merchant consents, throug
 - **Only hashes are stored.** Client secrets, authorization codes and refresh tokens are kept as sha256 hex (checked by the database); the plain value is shown once and never written. `secret_prefix` (8 characters after `tcs_`) identifies a key without revealing it. `tcs_` secrets are also blocked by the secrets check.
 - **`user_id` → `auth.users` is custom SQL.** `oauth_codes.user_id` and `oauth_grants.user_id` reference `auth.users(id)` `ON DELETE CASCADE`. The key crosses schemas, which Drizzle can't declare with `schemaFilter: ["tally"]`, so `0011` adds it by hand, as `0002` does for `businesses` and `business_members`.
 - Everything else cascades from `businesses` and `oauth_clients`.
+
+## Plans and subscriptions
+
+Every stock-take and quick scan counts against the business's plan, whichever app started it (Tally's own apps or a Connect Tally client). The tables exist; the usage endpoints, the limit checks and the plan page are planned.
+
+| Table | Notes |
+|---|---|
+| `plans` | Keyed by `code` (`free` or `pro`): `name`, `price_kobo_monthly` (display only), `daily_stocktake_limit`, `max_concurrent_runs`, `sort`, `active`. Seeded by `0013` with placeholders: Free is ₦0, 5 stock-takes a day, 1 at a time; Pro is ₦15,000 a month, 100 a day, 3 at a time. Change them with a new migration or an admin update, never by editing `0013` |
+| `business_subscriptions` | At most one row per business (`business_id` unique, cascades from `businesses`): `plan_code` (→ `plans.code`, `ON DELETE RESTRICT`), `status` (`active` or `cancelled`), `simulated`, `started_at`, `current_period_end` |
+
+- **No row means Free.** A business without a `business_subscriptions` row is on the `free` plan.
+- **Subscribing is simulated.** `simulated` defaults to true and no payment is taken.
+- **Plan prices are never revenue.** Under the money rule, revenue and reporting read only paid amounts; nothing creates payments, invoices or revenue figures from `price_kobo_monthly`.
 
 ## Connection pooling
 

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mock embed</title>
+    <style>
+      :root { --color-primary: #18181b; --color-primary-foreground: #fff; --radius: 12px; }
+      body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #fff; color: #18181b; }
+      body.dark { background: #18181b; color: #fafafa; }
+      .wrap { padding: 20px; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+      button { font: inherit; padding: 8px 14px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; }
+      .shelf { height: 140px; border-radius: var(--radius); background: repeating-linear-gradient(90deg, #e4e4e7 0 40px, #d4d4d8 40px 80px); }
+      code { word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h2>Mock stock-take</h2>
+      <p>Instance <code id="instance"></code>, mode <code id="mode"></code>. Token: <code id="token">waiting for init…</code></p>
+      <div class="shelf"></div>
+      <div class="row">
+        <button data-event="stocktake.confirmed">Confirm stock-take</button>
+        <button data-event="limit.reached">Limit reached</button>
+        <button id="refresh">Request token</button>
+        <button id="error">Send error</button>
+        <button id="grow">Grow (resize)</button>
+        <button id="close">Close</button>
+      </div>
+    </div>
+    <script>
+      const q = new URLSearchParams(location.search);
+      const instance = q.get("instance");
+      const parentOrigin = q.get("parent_origin");
+      document.getElementById("instance").textContent = instance;
+      document.getElementById("mode").textContent = q.get("mode");
+      const send = (type, payload = {}) =>
+        parent.postMessage({ source: "tally-embed", v: 1, instance, type, payload }, parentOrigin);
+      const applyTheme = (t = {}) => {
+        const s = document.documentElement.style;
+        if (t.primary) s.setProperty("--color-primary", t.primary);
+        if (t.primaryForeground) s.setProperty("--color-primary-foreground", t.primaryForeground);
+        if (typeof t.radius === "number") s.setProperty("--radius", `${t.radius}px`);
+        document.body.classList.toggle("dark", t.colorScheme === "dark");
+      };
+      const showToken = (t) => (document.getElementById("token").textContent = t);
+      const reportHeight = () => send("resize", { height: document.body.getBoundingClientRect().height });
+      addEventListener("message", (e) => {
+        const d = e.data;
+        if (e.origin !== parentOrigin || e.source !== parent) return;
+        if (!d || d.source !== "tally-embed" || d.v !== 1 || d.instance !== instance) return;
+        if (d.type === "init") { showToken(d.payload.token); applyTheme(d.payload.theme); }
+        if (d.type === "token") showToken(d.payload.token);
+        if (d.type === "theme") applyTheme(d.payload.theme);
+      });
+      document.querySelectorAll("[data-event]").forEach((b) => {
+        b.onclick = () => {
+          const name = b.dataset.event;
+          send("event", name === "limit.reached" ? { name, data: { code: "plan_limit" } }
+            : { name, data: { scanId: "scan_1", runId: "run_1", created: 2, restocked: 5, restored: 0, skipped: 1 } });
+        };
+      });
+      document.getElementById("refresh").onclick = () => send("token_request");
+      document.getElementById("error").onclick = () => send("error", { code: "network", message: "Offline" });
+      document.getElementById("grow").onclick = () => {
+        document.querySelector(".shelf").style.height = "320px";
+      };
+      document.getElementById("close").onclick = () => send("close");
+      if (q.get("mode") === "inline") new ResizeObserver(reportHeight).observe(document.body);
+      send("ready");
+    </script>
+  </body>
+</html>
