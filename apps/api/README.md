@@ -99,6 +99,21 @@ node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs <runId or scanI
 node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs --business "Superbox"   # its latest run
 ```
 
+## Connect Tally clients
+
+Partner apps that use Connect Tally are registered by the CTO with `scripts/oauth-client-create.mjs`. It writes a `tally.oauth_clients` row and prints the `client_id` and `client_secret` once. Only the secret's sha256 and its first 8 characters after `tcs_` are stored, so a lost secret means a new client. Clients are suspended, never deleted.
+
+```bash
+pnpm --filter @tally/db build
+node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --name "Partner App" \
+  --redirect-uri https://partner.example/callback --origin https://partner.example
+node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --suspend <client_id>
+```
+
+- `--redirect-uri` (1–10, https, no `#fragment`) and `--origin` (https origins with no path; the iframe's `frame-ancestors`) can be repeated.
+- `--scope` can be repeated: `stocktake:write`, `stocktake:read`, `inventory:read`. Default: all three.
+- `--cap` (daily stock-takes, default 200) and `--concurrent` (runs at once, default 3) are abuse caps per client. When left out, the database defaults apply.
+
 ## Layout
 
 ```
