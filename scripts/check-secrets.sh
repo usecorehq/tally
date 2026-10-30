@@ -9,10 +9,11 @@ PATTERNS=(
   'sb_secret_[A-Za-z0-9_-]{10,}'               # Supabase secret keys
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'         # PEM private keys
   'AKIA[0-9A-Z]{16}'                           # AWS access key ids
+  'tcs_[A-Za-z0-9_-]{43}'                      # Connect Tally client secrets
 )
 REGEX="$(IFS='|'; echo "${PATTERNS[*]}")"
 
-redact() { sed -E "s/(qcat_(live|test)_|sb_secret_)[A-Za-z0-9_-]+/\1<redacted>/g; s/AKIA[0-9A-Z]{16}/AKIA<redacted>/g"; }
+redact() { sed -E "s/(qcat_(live|test)_|sb_secret_)[A-Za-z0-9_-]+/\1<redacted>/g; s/AKIA[0-9A-Z]{16}/AKIA<redacted>/g; s/tcs_[A-Za-z0-9_-]{43}/tcs_<redacted>/g"; }
 
 # Scan unified-diff text: report added lines that match, with file + new line number.
 scan_diff() {

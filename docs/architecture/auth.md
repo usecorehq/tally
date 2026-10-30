@@ -28,6 +28,10 @@ Ported from bookmi. Every route requires a valid Supabase user JWT unless the co
 - `audience: authenticated` is enforced and `role` must not be `anon` or `service_role`, so API keys can never act as users.
 - `@CurrentUser()` exposes `{ sub, email, role, session_id }`; `sub` is the `auth.users` id.
 
+## Connect Tally (planned)
+
+Partner apps will get a merchant's consent through OAuth 2.0 (authorization code + PKCE `S256`) and then call Tally's API for that one business, or embed Tally's stock-take in an iframe. The database tables are built (`oauth_clients`, `oauth_codes`, `oauth_grants`; see [Database](database.md#oauth-clients-connect-tally)), and clients are registered with `apps/api/scripts/oauth-client-create.mjs`. The OAuth endpoints, access tokens and the API guard for them are planned; the merchant screens are below.
+
 ## Connect Tally (merchant side)
 
 Partner apps ask a merchant for access with OAuth 2.0 (authorization code + PKCE). mp owns the screens; apps/api owns the codes, grants and tokens (the `/clients/v1/*` endpoints are planned and land separately, so these screens show their failed state until then).
