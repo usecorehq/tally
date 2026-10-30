@@ -20,6 +20,7 @@ const readable = (code: string) => {
 function switchHref(pathname: string, id: string): string {
   if (pathname.startsWith("/stocktake/history")) return pathname === "/stocktake/history" ? historyHref(id) : newHref(id);
   if (pathname.startsWith("/stocktake")) return newHref(id);
+  if (pathname.startsWith("/settings")) return `${pathname}?business=${encodeURIComponent(id)}`;
   return `/inventory?business=${encodeURIComponent(id)}`;
 }
 

@@ -8,6 +8,7 @@ import { FOCUS, SEGMENT_THUMB, SEGMENT_TRACK } from "./segment";
 export const NAV: { href: string; label: string; icon: SolarIconName }[] = [
   { href: "/inventory", label: "Inventory", icon: "Box" },
   { href: "/stocktake", label: "Stock-take", icon: "Gallery-Add" },
+  { href: "/settings", label: "Settings", icon: "Settings" },
 ];
 
 const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
