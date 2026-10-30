@@ -6,13 +6,11 @@ import { SolarIcon, cn, type SolarIconName } from "@tally/ui";
 import { FOCUS, SEGMENT_THUMB, SEGMENT_TRACK } from "./segment";
 
 export const NAV: { href: string; label: string; icon: SolarIconName }[] = [
-  { href: "/", label: "Businesses", icon: "Shop" },
   { href: "/inventory", label: "Inventory", icon: "Box" },
   { href: "/stocktake", label: "Stock-take", icon: "Gallery-Add" },
 ];
 
-const isActive = (pathname: string, href: string) =>
-  href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
 /** Sidebar nav (Qorelly DashboardLayout under V2): idle grey text, the active item a sheet with a Fill glyph. */
 export function SidebarNav() {

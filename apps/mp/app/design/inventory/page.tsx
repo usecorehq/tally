@@ -27,14 +27,9 @@ const ITEMS: InventoryItem[] = [
   item("Peak Full Cream Milk Powder 400g", "4200.00", "3.000", "5.000"),
 ];
 
-const BUSINESSES = [
-  { id: "b1", name: "Superbox" },
-  { id: "b2", name: "Mama Nkechi Supermarket" },
-];
-
 /**
- * /design/inventory?state=loaded|empty|failed|loading|single|error: fixture previews, not served in production.
- * `single` is a one-business merchant (no picker); `error` is the route's error boundary.
+ * /design/inventory?state=loaded|empty|failed|loading|error: fixture previews, not served in production.
+ * `error` is the route's error boundary.
  */
 export default async function InventoryPreview({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
   if (process.env.NODE_ENV === "production") notFound();
@@ -46,7 +41,7 @@ export default async function InventoryPreview({ searchParams }: { searchParams:
       {state === "loading" ? (
         <InventorySkeleton />
       ) : (
-        <InventoryView businesses={state === "single" ? BUSINESSES.slice(0, 1) : BUSINESSES} businessId="b1" items={items} />
+        <InventoryView businessId="b1" items={items} />
       )}
     </AppShell>
   );
