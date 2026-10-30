@@ -1,6 +1,6 @@
 # Vision schema
 
-> Diagram: [vision tables (ERD)](../diagrams/images/vision-schema-erd.svg). Part of [vision recognition](vision-recognition.md) and the [stock-take agent](stocktake-agent.md). The whole schema: [database](database.md).
+> Part of [vision recognition](vision-recognition.md) and the [stock-take agent](stocktake-agent.md). The whole schema: [database](database.md).
 
 How the camera tables in the `tally` schema relate, who writes each row, and which links are foreign keys versus plain values. Migrations `0004_add_vision_scans`, `0005_add_vision_decisions`, `0006_add_stocktake_agent`, `0007_add_detection_review`, `0008_add_stocktake_rerun_discard` and `0009_add_catalog_resolutions`; source of truth is `packages/db/src/schema.ts`.
 
