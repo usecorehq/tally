@@ -46,9 +46,7 @@ export function IntegrationsView({
   const monthTotal = usage?.month.stocktakes ?? null;
   const share = (client: Grant["client"]) => {
     if (!usage) return "–";
-    // by_source names a client by id; the name is a fallback should that id be the internal one.
-    const row = usage.by_source.find((s) => s.client_id === client.client_id) ?? usage.by_source.find((s) => s.client_id && s.name === client.name);
-    const n = row?.stocktakes ?? 0;
+    const n = usage.by_source.find((s) => s.client_id === client.client_id)?.stocktakes ?? 0;
     if (!monthTotal) return "0 this month";
     return `${n.toLocaleString("en-NG")} · ${Math.round((n / monthTotal) * 100)}%`;
   };

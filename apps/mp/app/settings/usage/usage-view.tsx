@@ -5,7 +5,7 @@ import { SectionFailed } from "../_components/settings-parts";
 import { formatBucket, formatCount } from "../_lib/format";
 import type { Usage } from "../_lib/types";
 
-/** Today's stock-takes against the plan's daily limit. Amber near the limit, red at it: colour only for meaning. */
+/** Today's stock-takes and quick scans against the plan's daily limit, which counts both. Amber near it, red at it. */
 function Meter({ used, limit }: { used: number | null; limit: number | null }) {
   const ratio = used != null && limit ? Math.min(used / limit, 1) : 0;
   const tone = ratio >= 1 ? "bg-red-500" : ratio >= 0.8 ? "bg-amber-500" : "bg-primary";
@@ -22,7 +22,7 @@ function Meter({ used, limit }: { used: number | null; limit: number | null }) {
       </div>
       <div
         role="meter"
-        aria-label="Stock-takes today"
+        aria-label="Stock-takes and quick scans today"
         aria-valuemin={0}
         aria-valuemax={limit ?? 0}
         aria-valuenow={used ?? 0}
@@ -99,8 +99,9 @@ export function UsageView({ usage }: { usage: Usage | null }) {
           ) : undefined
         }
       >
-        <Meter used={usage?.today.stocktakes ?? null} limit={usage?.plan.daily_stocktake_limit ?? null} />
+        <Meter used={usage ? usage.today.stocktakes + usage.today.scans : null} limit={usage?.plan.daily_stocktake_limit ?? null} />
         <p className="mt-3 text-sm text-gray-500">
+          {formatCount(usage?.today.stocktakes)} {usage?.today.stocktakes === 1 ? "stock-take" : "stock-takes"} and{" "}
           {formatCount(usage?.today.scans)} {usage?.today.scans === 1 ? "quick scan" : "quick scans"} today · up to{" "}
           {formatCount(usage?.plan.max_concurrent_runs)} running at once
         </p>

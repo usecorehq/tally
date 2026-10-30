@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { ApiError, api, errorMessage } from "@/lib/api";
-import { authorizePath, clientRedirect, parseAuthorizeParams, type AuthorizeInfo } from "../_lib/authorize";
+import { PKCE_CHALLENGE, authorizePath, clientRedirect, parseAuthorizeParams, type AuthorizeInfo } from "../_lib/authorize";
 import { ConsentError, ConsentFlow, ConsentLoadFailed } from "./consent-screens";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
   // From here the client and its redirect_uri are known good, so errors go back to the app.
   if (oauthError) redirect(clientRedirect(p.redirectUri, { error: oauthError }, p.state));
   if (p.responseType !== "code") redirect(clientRedirect(p.redirectUri, { error: "unsupported_response_type" }, p.state));
-  if (!p.codeChallenge || p.codeChallengeMethod !== "S256") {
+  if (!PKCE_CHALLENGE.test(p.codeChallenge) || p.codeChallengeMethod !== "S256") {
     redirect(clientRedirect(p.redirectUri, { error: "invalid_request", error_description: "PKCE with S256 is required" }, p.state));
   }
   if (!info) return <ConsentLoadFailed display={p.display} />;

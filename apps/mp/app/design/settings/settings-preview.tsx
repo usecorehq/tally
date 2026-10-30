@@ -63,9 +63,9 @@ export function SettingsPreview({ variant }: { variant: Variant }) {
       variant === "usage-empty"
         ? USAGE_EMPTY
         : variant === "usage-near-limit"
-          ? { ...USAGE, today: { stocktakes: 4, scans: 2 } }
+          ? { ...USAGE, today: { stocktakes: 3, scans: 1 } }
           : variant === "usage-at-limit"
-            ? { ...USAGE, today: { stocktakes: 5, scans: 3 } }
+            ? { ...USAGE, today: { stocktakes: 3, scans: 2 } }
             : USAGE;
     return (
       <>

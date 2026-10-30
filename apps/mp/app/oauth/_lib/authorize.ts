@@ -2,6 +2,9 @@ import type { SolarIconName } from "@tally/ui";
 
 export const AUTHORIZE_PATH = "/oauth/authorize";
 
+/** RFC 7636 S256: 32 bytes base64url, as the API checks it when Allow posts the code. */
+export const PKCE_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+
 /** The query a partner app sends to /oauth/authorize (contracts §7). */
 export type AuthorizeParams = {
   responseType: string;
