@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo Shop</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header><strong>Demo Shop</strong><span>Partner app example for Connect Tally</span></header>
+    <main>
+      <section class="card">
+        <h2>Tally</h2>
+        <p id="status">Checking…</p>
+        <div class="row" id="disconnected" hidden>
+          <button data-connect="redirect">Connect Tally</button>
+          <button data-connect="popup" class="secondary">Connect Tally (popup)</button>
+        </div>
+        <div class="row" id="connected" hidden>
+          <button id="run">Run stock-take</button>
+          <button id="disconnect" class="secondary">Disconnect</button>
+        </div>
+      </section>
+      <p class="banner" id="banner" hidden></p>
+      <section id="embed"></section>
+      <section class="card" id="result" hidden>
+        <h2>Confirmed lines</h2>
+        <table>
+          <thead><tr><th>Item</th><th>Action</th><th>Quantity</th></tr></thead>
+          <tbody id="lines"></tbody>
+        </table>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
