@@ -14,7 +14,7 @@ A port of Qorelly's `/setup` wizard, with business types read from Qore Catalog 
 2. **Details**: the business name, under a summary card of the chosen type.
 3. **Starter items**: the sub-type's template (it needs no business), then a review. "Start fresh" skips it.
 
-Nothing is saved until **Finish setup** or **Skip & finish**: one server action creates the business, then applies the starter items, so going back never leaves a half-made business. If the business is created but the starter request fails, the wizard keeps the merchant's choices and a retry resends only the items. `/onboarding/<id>/items` does the starter step for a business that already exists. `/onboarding` is first-time setup only and sends a merchant who already has a business home; **Add a business** opens the same wizard at `/businesses/new`, with a close button back to the list.
+Nothing is saved until **Finish setup** or **Skip & finish**: one server action creates the business, then applies the starter items, so going back never leaves a half-made business. If the business is created but the starter request fails, the wizard keeps the merchant's choices and a retry resends only the items. `/onboarding/<id>/items` does the starter step for a business that already exists. `/onboarding` is first-time setup only and sends a merchant who already has a business home; **Add business** in the business switcher opens the same wizard at `/businesses/new`, with a close button; the new business becomes the current one.
 
 ## Mobile
 

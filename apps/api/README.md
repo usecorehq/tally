@@ -26,6 +26,7 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 | `SUPABASE_JWT_SECRET` | yes | HS256 secret for verifying user tokens |
 | `SUPABASE_DB_URL` | yes | Postgres URL for Drizzle (`tally` schema). Deployed: use the Supabase **transaction pooler, port 6543**. The session pooler (5432) has 15 client slots shared with the other Qorelly apps, and a full pool made stock-take runs hang. `pnpm db:migrate` may keep using 5432 |
 | `DB_POOL_MAX` | no | Connections this process may hold. Default `5`; keep it small (shared pooler) |
+| `TALLY_CLIENT_JWT_SECRET` | production | Signs Connect Tally access and embed tokens (HS256, at least 32 chars); server-only, never the Supabase secret. Unset outside production → `POST /api/clients/v1/oauth/token` returns 503 |
 | `QORE_CATALOG_API_KEY` | yes | Sent as `x-api-key`; server-only |
 | `QORE_CATALOG_BASE_URL` | no | Default `http://localhost:3100` |
 | `META_MODEL_API_KEY` | no | Meta Model API bearer key (Muse Spark); server-only. Unset → vision routes return 503 |
@@ -114,6 +115,8 @@ node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --suspend
 - `--scope` can be repeated: `stocktake:write`, `stocktake:read`, `inventory:read`. Default: all three.
 - `--cap` (daily stock-takes, default 200) and `--concurrent` (runs at once, default 3) are abuse caps per client. When left out, the database defaults apply.
 
+The OAuth endpoints (consent data, codes, token, revoke, grants) live under `/api/clients/v1`; see [docs/architecture/auth.md](../../docs/architecture/auth.md#connect-tally).
+
 ## Usage and plans
 
 Stock-takes and quick scans count against the business's plan; over a limit the vision routes answer 429 with `Retry-After`. Rules and response shapes: [usage limits](../../docs/architecture/stocktake-agent.md#usage-limits).
@@ -134,6 +137,7 @@ src/
   drizzle/drizzle.module.ts   TALLY_DB provider from @tally/db
   modules/businesses/         businesses, membership, inventory, onboarding starter inventory
   modules/catalog/            CatalogService wrapping @tally/catalog-client
+  modules/clients/            Connect Tally OAuth: consent data, codes, token (PKCE, refresh rotation), revoke, grants
   modules/vision/             Camera recognition: shelf scan (Muse Spark, SAM 3.1, catalogue), confirm, identify, crops
   modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
   modules/vision/benchmark-score.ts  Scoring for scripts/vision-benchmark.mjs (not used by routes)

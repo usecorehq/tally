@@ -1,0 +1,37 @@
+{
+  "name": "@qorelly/tally-embed",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Embed Tally's stock-take in a partner app and connect it with OAuth.",
+  "license": "UNLICENSED",
+  "sideEffects": false,
+  "files": ["dist"],
+  "main": "./dist/tally-embed.cjs.js",
+  "module": "./dist/tally-embed.esm.js",
+  "types": "./dist/tally-embed.d.ts",
+  "unpkg": "./dist/tally-embed.min.js",
+  "jsdelivr": "./dist/tally-embed.min.js",
+  "exports": {
+    ".": {
+      "types": "./dist/tally-embed.d.ts",
+      "import": "./dist/tally-embed.esm.js",
+      "require": "./dist/tally-embed.cjs.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "playground": "node playground/serve.mjs"
+  },
+  "devDependencies": {
+    "@tally/tsconfig": "workspace:*",
+    "@types/node": "^26.6.5",
+    "jsdom": "^30.1.3",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}
