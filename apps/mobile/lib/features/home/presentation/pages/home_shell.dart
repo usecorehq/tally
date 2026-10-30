@@ -36,7 +36,7 @@ class _HomeShellState extends State<HomeShell> {
         index: _index,
         children: [
           InventoryPage(business: widget.selected),
-          const ScansPage(),
+          ScansPage(business: widget.selected, active: _index == 1),
           SettingsPage(user: widget.user, businesses: widget.businesses, selected: widget.selected),
         ],
       ),

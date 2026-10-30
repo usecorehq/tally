@@ -5,12 +5,17 @@ import 'package:equatable/equatable.dart';
 
 import '../../../../core/error/failures.dart';
 import '../../../../core/usecase/usecase.dart';
+import '../entities/photo_check.dart';
 import '../entities/shelf_scan.dart';
+import '../entities/stocktake_history.dart';
 import '../repositories/stocktake_repository.dart';
 import '../scan_review.dart';
 
 /// The API's limit for a shelf photo.
 const kMaxShelfPhotoBytes = 4 * 1024 * 1024;
+
+/// The API's limit for a photo check (send a ~1024 px copy).
+const kMaxCheckPhotoBytes = 1024 * 1024;
 
 class ShelfPhoto extends Equatable {
   const ShelfPhoto({required this.bytes, required this.mimeType});
@@ -76,13 +81,20 @@ class RunParams extends Equatable {
 }
 
 /// Every line goes up — skipped ones too — so the catalogue hears each decision.
+/// Only called once every line passed [ScanProblems].
 class ConfirmScan implements UseCase<ScanConfirmResult, ConfirmScanParams> {
   const ConfirmScan(this._repository);
   final StocktakeRepository _repository;
 
   @override
-  Future<Either<Failure, ScanConfirmResult>> call(ConfirmScanParams p) =>
-      _repository.confirm(p.businessId, p.scanId, [for (final d in p.detections) toDecision(d, p.choices[d.id]!)]);
+  Future<Either<Failure, ScanConfirmResult>> call(ConfirmScanParams p) async {
+    if (p.detections.any((d) => ScanProblems.of(p.choices[d.id]!).any)) {
+      return const Left(
+        ServerFailure('Every line needs an action, a count and, when adding, a product, name and price.'),
+      );
+    }
+    return _repository.confirm(p.businessId, p.scanId, [for (final d in p.detections) toDecision(d, p.choices[d.id]!)]);
+  }
 }
 
 class ConfirmScanParams extends Equatable {
@@ -99,4 +111,84 @@ class ConfirmScanParams extends Equatable {
 
   @override
   List<Object?> get props => [businessId, scanId, detections, choices];
+}
+
+class HistoryParams extends Equatable {
+  const HistoryParams({required this.businessId, this.limit = 50});
+  final String businessId;
+
+  /// 1–100.
+  final int limit;
+
+  @override
+  List<Object?> get props => [businessId, limit];
+}
+
+/// GET …/vision/stocktakes: newest first, reruns nested under their root.
+class GetStocktakeHistory implements UseCase<List<HistoryEntry>, HistoryParams> {
+  const GetStocktakeHistory(this._repository);
+  final StocktakeRepository _repository;
+
+  @override
+  Future<Either<Failure, List<HistoryEntry>>> call(HistoryParams p) =>
+      _repository.history(p.businessId, limit: p.limit.clamp(1, 100));
+}
+
+class ScanParams extends Equatable {
+  const ScanParams({required this.businessId, required this.scanId});
+  final String businessId;
+  final String scanId;
+
+  @override
+  List<Object?> get props => [businessId, scanId];
+}
+
+/// A stored scan, reopened (status, photo and each line's decision).
+class GetScan implements UseCase<ShelfScan, ScanParams> {
+  const GetScan(this._repository);
+  final StocktakeRepository _repository;
+
+  @override
+  Future<Either<Failure, ShelfScan>> call(ScanParams p) => _repository.getScan(p.businessId, p.scanId);
+}
+
+/// A new agent run on the stored photo; poll it with [GetStocktake]. 409 → ConflictFailure.
+class RerunScan implements UseCase<ScanRerun, ScanParams> {
+  const RerunScan(this._repository);
+  final StocktakeRepository _repository;
+
+  @override
+  Future<Either<Failure, ScanRerun>> call(ScanParams p) => _repository.rerun(p.businessId, p.scanId);
+}
+
+/// Read-only from now on, kept for audit. Idempotent; 409 → ConflictFailure.
+class DiscardScan implements UseCase<DateTime?, ScanParams> {
+  const DiscardScan(this._repository);
+  final StocktakeRepository _repository;
+
+  @override
+  Future<Either<Failure, DateTime?>> call(ScanParams p) => _repository.discard(p.businessId, p.scanId);
+}
+
+/// Advice before a scan, never a block.
+class CheckPhoto implements UseCase<PhotoCheck, ScanPhotoParams> {
+  const CheckPhoto(this._repository);
+  final StocktakeRepository _repository;
+
+  @override
+  Future<Either<Failure, PhotoCheck>> call(ScanPhotoParams p) async {
+    if (p.photo.bytes.length > kMaxCheckPhotoBytes) {
+      return const Left(ServerFailure('That photo is too large (1 MB max). Try a smaller one.'));
+    }
+    return _repository.checkPhoto(p.businessId, p.photo.bytes, p.photo.mimeType);
+  }
+}
+
+/// A presigned photo or crop link (`photoUrl`, `cropUrl`) as bytes. 404 → NotFoundFailure.
+class DownloadPhoto implements UseCase<Uint8List, String> {
+  const DownloadPhoto(this._repository);
+  final StocktakeRepository _repository;
+
+  @override
+  Future<Either<Failure, Uint8List>> call(String url) => _repository.downloadPhoto(url);
 }

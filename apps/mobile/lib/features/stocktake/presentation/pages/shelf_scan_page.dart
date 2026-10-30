@@ -11,9 +11,12 @@ import '../../../../core/design/v15_widgets.dart';
 import '../../../../injection_container.dart';
 import '../../../business/domain/entities/business.dart';
 import '../../domain/entities/shelf_scan.dart';
+import '../../domain/photo_quality.dart';
 import '../../domain/scan_review.dart';
 import '../../domain/usecases/stocktake_usecases.dart';
+import '../cubit/photo_check_cubit.dart';
 import '../cubit/shelf_scan_cubit.dart';
+import '../widgets/photo_check_panel.dart';
 import '../widgets/scan_photo.dart';
 import 'scan_review_view.dart';
 
@@ -26,9 +29,21 @@ class ShelfScanPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => sl<ShelfScanCubit>(param1: business.id),
-      child: _ShelfScanView(business: business),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(create: (_) => sl<ShelfScanCubit>(param1: business.id)),
+        BlocProvider(create: (_) => sl<PhotoCheckCubit>(param1: business.id)),
+      ],
+      // Each new photo is checked once, so a failed or cancelled run doesn't check it again.
+      child: BlocListener<ShelfScanCubit, ShelfScanState>(
+        listenWhen: (a, b) => !identical(a.photo, b.photo),
+        listener: (context, state) {
+          final check = context.read<PhotoCheckCubit>();
+          final photo = state.photo;
+          photo == null ? check.reset() : check.check(photo);
+        },
+        child: _ShelfScanView(business: business),
+      ),
     );
   }
 }
@@ -92,7 +107,7 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// S2: take a photo, or pick one. image_picker scales it to the API's ~1600 px long edge.
+/// S2: take a photo, or pick one. image_picker scales it to a 2560 px long edge, as mp, so small products keep a usable crop.
 class _Capture extends StatefulWidget {
   const _Capture({this.error});
   final String? error;
@@ -113,8 +128,8 @@ class _CaptureState extends State<_Capture> {
     try {
       final file = await ImagePicker().pickImage(
         source: source,
-        maxWidth: 1600,
-        maxHeight: 1600,
+        maxWidth: 2560,
+        maxHeight: 2560,
         imageQuality: 80,
         requestFullMetadata: false,
       );
@@ -279,11 +294,31 @@ class _Ready extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
               if (error != null) ...[AuthMessage(error!), const SizedBox(height: 16)],
-              ClipRRect(
-                borderRadius: BorderRadius.circular(V15.sheetRadius),
-                child: DecodedPhoto(
-                  bytes: photo.bytes,
-                  builder: (_, image) => ScanPhotoView(image: image),
+              DecodedPhoto(
+                bytes: photo.bytes,
+                builder: (_, image) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(V15.sheetRadius),
+                      child: ScanPhotoView(image: image),
+                    ),
+                    // Advice only: the scan buttons below never wait on it.
+                    BlocBuilder<PhotoCheckCubit, PhotoCheckState>(
+                      builder: (context, check) => Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: PhotoCheckPanel(state: check, onRetake: cubit.retake),
+                      ),
+                    ),
+                    if ((image.width > image.height ? image.width : image.height) < kSmallPhotoEdge) ...[
+                      const SizedBox(height: 12),
+                      const V15Notice(
+                        title: kSmallPhotoWarning,
+                        icon: IconsOutline.danger_circle,
+                        tone: V15NoticeTone.warn,
+                      ),
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
@@ -451,7 +486,7 @@ class _WorkingState extends State<_Working> {
   }
 }
 
-/// The agent's steps so far, newest accented.
+/// The agent's steps so far, newest first and accented.
 class _Trace extends StatelessWidget {
   const _Trace({required this.steps});
   final List<AgentStep> steps;
@@ -459,6 +494,7 @@ class _Trace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = V15.of(context);
+    final steps = this.steps.reversed.toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -473,10 +509,7 @@ class _Trace extends StatelessWidget {
                       margin: const EdgeInsets.only(top: 5),
                       width: 10,
                       height: 10,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: i == steps.length - 1 ? c.primary : c.gray300,
-                      ),
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: i == 0 ? c.primary : c.gray300),
                     ),
                     if (i < steps.length - 1) Expanded(child: Container(width: 1, color: c.gray200)),
                   ],

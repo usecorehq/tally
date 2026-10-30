@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../domain/entities/catalogue_product.dart';
 import '../../domain/entities/shelf_scan.dart';
 import '../../domain/scan_review.dart';
 import '../../domain/usecases/stocktake_usecases.dart';
@@ -23,6 +24,21 @@ class ScanReviewCubit extends Cubit<ScanReviewState> {
 
   void choose(String id, String choice) => _update(id, (c) => chooseProduct(_row(id), c, choice));
 
+  /// A product found outside the line's suggestions (search, another size): its name, and its typical
+  /// price when it has one (else the merchant's own stays), as mp's picker.
+  void chooseCatalogueProduct(String id, CatalogueProductDetail p) {
+    final c = state.choices[id]!;
+    emit(
+      state.copyWith(
+        choices: {
+          ...state.choices,
+          id: c.copyWith(choice: p.qid, name: p.name, price: p.priceMedian?.toString()),
+        },
+        picks: {...state.picks, id: p.toCandidate()},
+      ),
+    );
+  }
+
   void setName(String id, String name) => _update(id, (c) => c.copyWith(name: name));
 
   void setPrice(String id, String price) => _update(id, (c) => c.copyWith(price: price));
@@ -32,9 +48,8 @@ class ScanReviewCubit extends Cubit<ScanReviewState> {
   /// The list, or one line at a time.
   void setMode(ReviewMode mode) => emit(state.copyWith(mode: mode));
 
-  /// One by one: is the current line ready to accept? Flags it when not (the
-  /// card shows what's missing and stays). An earlier skip counts as its
-  /// default action again.
+  /// One by one: is the current line ready to accept? Flags it when not (the card shows what's missing and
+  /// stays). An earlier skip goes back to the line's starting action, which may still need choosing.
   bool canAcceptCurrent() {
     final d = state.current;
     if (d == null) return false;
@@ -65,10 +80,7 @@ class ScanReviewCubit extends Cubit<ScanReviewState> {
     if (d == null) return;
     emit(
       state.copyWith(
-        choices: {
-          ...state.choices,
-          d.id: state.choices[d.id]!.copyWith(action: ScanAction.skip),
-        },
+        choices: {...state.choices, d.id: state.choices[d.id]!.withAction(ScanAction.skip)},
         flagged: {...state.flagged}..remove(d.id),
         cursor: state.cursor + 1,
       ),
@@ -86,7 +98,7 @@ class ScanReviewCubit extends Cubit<ScanReviewState> {
 
   ScanChoice _accepted(ScanDetection d) {
     final c = state.choices[d.id]!;
-    return c.action == ScanAction.skip ? c.copyWith(action: actionsFor(d).first) : c;
+    return c.action == ScanAction.skip ? c.withAction(initialAction(d)) : c;
   }
 
   /// Qorelly rule: Confirm stays enabled; pressing it flags what's missing.
@@ -129,16 +141,23 @@ class ScanReviewState extends Equatable {
     required this.scan,
     required this.rows,
     required this.choices,
+    this.decidedEarlier = 0,
     this.selected,
     this.attempted = false,
     this.submitting = false,
     this.error,
     this.result,
+    this.picks = const {},
   });
 
   factory ScanReviewState.of(ShelfScan scan) {
     final rows = reviewOrder(scan.detections);
-    return ScanReviewState(scan: scan, rows: rows, choices: {for (final d in rows) d.id: ScanChoice.initial(d)});
+    return ScanReviewState(
+      scan: scan,
+      rows: rows,
+      choices: {for (final d in rows) d.id: ScanChoice.initial(d)},
+      decidedEarlier: countDecidedEarlier(scan.detections),
+    );
   }
 
   final ShelfScan scan;
@@ -153,9 +172,12 @@ class ScanReviewState extends Equatable {
 
   ScanDetection? get current => cursor < rows.length ? rows[cursor] : null;
 
-  /// Lines in review order (agent-flagged first).
+  /// Undecided lines in review order (agent-flagged first).
   final List<ScanDetection> rows;
   final Map<String, ScanChoice> choices;
+
+  /// Lines confirmed earlier, not shown again.
+  final int decidedEarlier;
 
   /// The line highlighted on the photo.
   final String? selected;
@@ -165,6 +187,16 @@ class ScanReviewState extends Equatable {
 
   /// Set once confirmed: the page shows the outcome.
   final ScanConfirmResult? result;
+
+  /// Per line, a product picked from the catalogue outside its suggestions.
+  final Map<String, ScanCandidate> picks;
+
+  /// The line's picked product: one of its suggestions, or one picked from the catalogue.
+  ScanCandidate? pickedProduct(ScanDetection d) {
+    final c = choices[d.id];
+    if (c == null) return null;
+    return pickedCandidate(d, c) ?? (picks[d.id]?.qid == c.choice ? picks[d.id] : null);
+  }
 
   List<String> get invalidIds => [
     for (final d in rows)
@@ -176,10 +208,13 @@ class ScanReviewState extends Equatable {
     for (final a in ScanAction.values) a: rows.where((d) => choices[d.id]!.action == a).length,
   };
 
-  /// Units going into stock (skips excluded).
+  /// Lines with no action yet ("N to choose").
+  int get toChoose => rows.where((d) => choices[d.id]!.action == null).length;
+
+  /// Units going into stock (skips and undecided lines excluded).
   int get units => rows.fold(0, (sum, d) {
     final c = choices[d.id]!;
-    return c.action == ScanAction.skip ? sum : sum + (int.tryParse(c.quantity.trim()) ?? 0);
+    return c.action == null || c.action == ScanAction.skip ? sum : sum + (int.tryParse(c.quantity.trim()) ?? 0);
   });
 
   ScanReviewState copyWith({
@@ -194,6 +229,7 @@ class ScanReviewState extends Equatable {
     String? error,
     bool clearError = false,
     ScanConfirmResult? result,
+    Map<String, ScanCandidate>? picks,
   }) => ScanReviewState(
     mode: mode ?? this.mode,
     cursor: cursor ?? this.cursor,
@@ -201,11 +237,13 @@ class ScanReviewState extends Equatable {
     scan: scan,
     rows: rows,
     choices: choices ?? this.choices,
+    decidedEarlier: decidedEarlier,
     selected: clearSelected ? null : (selected ?? this.selected),
     attempted: attempted ?? this.attempted,
     submitting: submitting ?? this.submitting,
     error: clearError ? null : (error ?? this.error),
     result: result ?? this.result,
+    picks: picks ?? this.picks,
   );
 
   @override
@@ -213,6 +251,7 @@ class ScanReviewState extends Equatable {
     scan,
     rows,
     choices,
+    decidedEarlier,
     mode,
     cursor,
     flagged,
@@ -221,5 +260,6 @@ class ScanReviewState extends Equatable {
     submitting,
     error,
     result,
+    picks,
   ];
 }

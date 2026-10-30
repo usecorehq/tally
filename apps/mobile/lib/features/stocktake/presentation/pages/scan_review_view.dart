@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -7,6 +5,7 @@ import '../../../../core/design/auth_parts.dart';
 import '../../../../core/design/v15_widgets.dart';
 import '../../../../injection_container.dart';
 import '../../../business/domain/entities/business.dart';
+import '../../domain/coverage.dart';
 import '../../domain/entities/shelf_scan.dart';
 import '../../domain/scan_review.dart';
 import '../../domain/usecases/stocktake_usecases.dart';
@@ -15,34 +14,64 @@ import '../widgets/review_cards.dart';
 import '../widgets/review_parts.dart';
 import '../widgets/scan_photo.dart';
 
-/// S4 review → confirm → outcome, for one scan. Nothing is stocked until
-/// Confirm; counts and matches are suggestions until then.
+/// S4 review → confirm → outcome, for one scan. Nothing is stocked until Confirm; counts and matches are
+/// suggestions until then. The photo is the one just taken ([photo]) or, reopened, the stored `scan.photoUrl`.
 class ScanReviewView extends StatelessWidget {
   const ScanReviewView({
     super.key,
     required this.business,
-    required this.photo,
+    this.photo,
     required this.scan,
     required this.fallback,
     required this.onRetake,
+    this.loadPhoto,
+    this.onBack,
+    this.headerActions = const [],
+    this.banner,
   });
   final Business business;
-  final ShelfPhoto photo;
+  final ShelfPhoto? photo;
   final ShelfScan scan;
   final bool fallback;
   final VoidCallback onRetake;
 
+  /// Defaults to the DownloadPhoto use case.
+  final PhotoBytesLoader? loadPhoto;
+
+  /// Reopened from history: back just closes (no "take a new photo?" prompt).
+  final VoidCallback? onBack;
+
+  /// Extra keys in the review header (history's Rerun / Discard); gone on the outcome.
+  final List<Widget> headerActions;
+
+  /// A line under the header, e.g. a rerun or discard error.
+  final Widget? banner;
+
   @override
   Widget build(BuildContext context) {
+    final load = loadPhoto ?? sl<DownloadPhoto>().call;
+    final photo = this.photo;
+    Widget body(ReviewImage image) => BlocBuilder<ScanReviewCubit, ScanReviewState>(
+      builder: (context, state) => state.result == null
+          ? _Review(
+              business: business,
+              photo: image,
+              state: state,
+              fallback: fallback,
+              onRetake: onRetake,
+              onBack: onBack,
+              headerActions: headerActions,
+              banner: banner,
+            )
+          : _Outcome(business: business, state: state, onRetake: onRetake),
+    );
     return BlocProvider(
       create: (_) => sl<ScanReviewCubit>(param1: business.id, param2: scan),
-      child: DecodedPhoto(
-        bytes: photo.bytes,
-        builder: (context, image) => BlocBuilder<ScanReviewCubit, ScanReviewState>(
-          builder: (context, state) => state.result == null
-              ? _Review(business: business, image: image, state: state, fallback: fallback, onRetake: onRetake)
-              : _Outcome(business: business, state: state, onRetake: onRetake),
-        ),
+      child: PhotoDownloads(
+        load: load,
+        child: photo != null
+            ? DecodedPhoto(bytes: photo.bytes, builder: (_, image) => body(ReviewImage(image)))
+            : RemotePhoto(url: scan.photoUrl, load: load, builder: (_, image) => body(image)),
       ),
     );
   }
@@ -51,16 +80,22 @@ class ScanReviewView extends StatelessWidget {
 class _Review extends StatelessWidget {
   const _Review({
     required this.business,
-    required this.image,
+    required this.photo,
     required this.state,
     required this.fallback,
     required this.onRetake,
+    this.onBack,
+    this.headerActions = const [],
+    this.banner,
   });
   final Business business;
-  final ui.Image image;
+  final ReviewImage photo;
   final ScanReviewState state;
   final bool fallback;
   final VoidCallback onRetake;
+  final VoidCallback? onBack;
+  final List<Widget> headerActions;
+  final Widget? banner;
 
   Future<void> _retake(BuildContext context) async {
     final c = V15.of(context);
@@ -89,13 +124,29 @@ class _Review extends StatelessWidget {
     final rows = state.rows;
     final invalid = state.invalidIds.length;
     final counts = state.counts;
-    final stocking = rows.length - counts[ScanAction.skip]!;
+    final stocking = rows.length - counts[ScanAction.skip]! - state.toChoose;
+    final image = photo.image;
+    // Only judged with a photo to shade; the undecided lines' boxes, as mp.
+    final coverage = image == null ? null : coverageWarning(rows);
+    // Only the actions in use, so the bar reads "3 restock · 2 add" rather than a row of zeros.
+    final summary = [
+      for (final a in ScanAction.values)
+        if (counts[a]! > 0) '${counts[a]} ${a.name}',
+    ].join(' · ');
     final confirm = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '${counts[ScanAction.restock]} restock · ${counts[ScanAction.restore]} restore · '
-          '${counts[ScanAction.add]} add · ${counts[ScanAction.skip]} skip',
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: summary),
+              if (state.toChoose > 0)
+                TextSpan(
+                  text: '${summary.isEmpty ? '' : ' · '}${state.toChoose} to choose',
+                  style: TextStyle(color: c.amberFg),
+                ),
+            ],
+          ),
           style: V15.text(13, FontWeight.w400, c.gray500, tabular: true),
         ),
         const SizedBox(height: 8),
@@ -119,14 +170,20 @@ class _Review extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
               child: Row(
                 children: [
-                  V15IconButton(IconsOutline.alt_arrow_left, tooltip: 'New photo', onPressed: () => _retake(context)),
+                  V15IconButton(
+                    IconsOutline.alt_arrow_left,
+                    tooltip: onBack == null ? 'New photo' : 'Back',
+                    onPressed: onBack ?? () => _retake(context),
+                  ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text('Check what we found', style: V15.sectionTitle.copyWith(color: c.gray900)),
                   ),
+                  ...headerActions,
                 ],
               ),
             ),
+            if (banner != null) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: banner),
             if (rows.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -152,26 +209,58 @@ class _Review extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                   ],
+                  if (!state.scan.candidateDetails) ...[
+                    const AuthMessage(
+                      "Some product names and prices couldn't be loaded from the catalogue. Check those lines, or come back later.",
+                      tone: AuthTone.brand,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (coverage != null) ...[
+                    V15Notice(title: coverage, icon: IconsOutline.danger_circle, tone: V15NoticeTone.warn),
+                    const SizedBox(height: 12),
+                  ],
+                  if (state.decidedEarlier > 0 || (image == null && !photo.loading && rows.isNotEmpty)) ...[
+                    AuthMessage(
+                      [
+                        if (state.decidedEarlier > 0)
+                          '${state.decidedEarlier} line${state.decidedEarlier == 1 ? ' was' : 's were'} confirmed earlier '
+                              "and ${state.decidedEarlier == 1 ? "isn't" : "aren't"} shown.",
+                        if (image == null && !photo.loading && rows.isNotEmpty)
+                          'No shelf photo was kept for this stock-take; each line shows its own crop.',
+                      ].join(' '),
+                      tone: AuthTone.brand,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (state.attempted && invalid > 0) ...[
-                    AuthMessage('$invalid line${invalid == 1 ? ' needs' : 's need'} a count, name or price.'),
+                    AuthMessage(
+                      '$invalid line${invalid == 1 ? ' needs' : 's need'} an action, product, count, name or price.',
+                    ),
                     const SizedBox(height: 12),
                   ],
                   if (state.error != null) ...[AuthMessage(state.error!), const SizedBox(height: 12)],
                   if (state.mode == ReviewMode.cards && rows.isNotEmpty)
-                    ReviewCards(image: image, state: state)
+                    ReviewCards(photo: photo, state: state)
                   else ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(V15.sheetRadius),
-                      child: ScanPhotoView(
-                        image: image,
-                        detections: rows,
-                        selected: state.selected,
-                        onSelect: (id) => cubit.select(id == state.selected ? null : id),
+                    if (image != null) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(V15.sheetRadius),
+                        child: ScanPhotoView(
+                          image: image,
+                          detections: rows,
+                          selected: state.selected,
+                          onSelect: (id) => cubit.select(id == state.selected ? null : id),
+                          unread: coverage == null ? const [] : unreadCells(rows),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text('Tap an outline to find its line.', style: V15.caption),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 6),
+                      Text('Tap an outline to find its line.', style: V15.caption),
+                      const SizedBox(height: 16),
+                    ] else if (photo.loading) ...[
+                      const PhotoSkeleton(),
+                      const SizedBox(height: 16),
+                    ],
                     if (rows.isEmpty)
                       const AuthMessage(
                         "We didn't find any products in this photo. Try a closer photo with the labels facing the camera.",
@@ -185,7 +274,7 @@ class _Review extends StatelessWidget {
                               key: ValueKey(d.id),
                               d: d,
                               choice: state.choices[d.id]!,
-                              image: image,
+                              photo: photo,
                               selected: d.id == state.selected,
                               showProblems: state.attempted,
                             ),
@@ -215,13 +304,13 @@ class _Line extends StatefulWidget {
     super.key,
     required this.d,
     required this.choice,
-    required this.image,
+    required this.photo,
     required this.selected,
     required this.showProblems,
   });
   final ScanDetection d;
   final ScanChoice choice;
-  final ui.Image image;
+  final ReviewImage photo;
   final bool selected;
   final bool showProblems;
 
@@ -267,7 +356,12 @@ class _LineState extends State<_Line> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ScanThumb(image: widget.image, box: d.largestBox),
+                ScanThumb(
+                  image: widget.photo.image,
+                  box: d.largestBox,
+                  cropUrl: d.cropUrl,
+                  loading: widget.photo.loading,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -290,7 +384,7 @@ class _LineState extends State<_Line> {
             ),
           ),
           const SizedBox(height: 12),
-          LineEditor(d: d, choice: widget.choice, showProblems: widget.showProblems),
+          LineEditor(d: d, choice: widget.choice, showProblems: widget.showProblems, photo: widget.photo),
         ],
       ),
     );

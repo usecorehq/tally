@@ -29,15 +29,29 @@ import 'features/inventory/domain/repositories/inventory_repository.dart';
 import 'features/inventory/domain/usecases/inventory_usecases.dart';
 import 'features/inventory/presentation/cubit/inventory_list_cubit.dart';
 import 'features/inventory/presentation/cubit/scan_cubit.dart';
+import 'features/stocktake/data/datasources/catalogue_remote_data_source.dart';
+import 'features/stocktake/data/datasources/photo_tools_impl.dart';
 import 'features/stocktake/data/datasources/stocktake_remote_data_source.dart';
+import 'features/stocktake/data/datasources/stored_photo_data_source.dart';
+import 'features/stocktake/data/repositories/catalogue_repository_impl.dart';
 import 'features/stocktake/data/repositories/stocktake_repository_impl.dart';
 import 'features/stocktake/domain/entities/shelf_scan.dart';
+import 'features/stocktake/domain/repositories/catalogue_repository.dart';
+import 'features/stocktake/domain/repositories/photo_tools.dart';
 import 'features/stocktake/domain/repositories/stocktake_repository.dart';
+import 'features/stocktake/domain/usecases/catalogue_usecases.dart';
 import 'features/stocktake/domain/usecases/stocktake_usecases.dart';
+import 'features/stocktake/presentation/cubit/photo_check_cubit.dart';
+import 'features/stocktake/presentation/cubit/product_picker_cubit.dart';
 import 'features/stocktake/presentation/cubit/scan_review_cubit.dart';
 import 'features/stocktake/presentation/cubit/shelf_scan_cubit.dart';
+import 'features/stocktake/presentation/history/cubit/history_cubit.dart';
+import 'features/stocktake/presentation/history/cubit/session_cubit.dart';
 
 final sl = GetIt.instance;
+
+/// The Dio without the API's auth interceptor: `sl<Dio>(instanceName: kPlainDio)`.
+const kPlainDio = 'plain';
 
 /// Register order: external → data sources → repositories → use cases → blocs.
 /// Blocs/cubits are factories (fresh per page); everything else is a lazy singleton.
@@ -46,6 +60,11 @@ Future<void> initDependencies() async {
   await Supabase.initialize(url: Env.supabaseUrl, publishableKey: Env.supabasePublishableKey);
   sl.registerLazySingleton<SupabaseClient>(() => Supabase.instance.client);
   sl.registerLazySingleton<Dio>(() => buildApiClient(baseUrl: Env.apiBaseUrl, supabase: sl()));
+  // Presigned R2 links: no Bearer header.
+  sl.registerLazySingleton<Dio>(
+    () => Dio(BaseOptions(connectTimeout: const Duration(seconds: 10), receiveTimeout: const Duration(seconds: 30))),
+    instanceName: kPlainDio,
+  );
 
   // Auth
   sl
@@ -103,16 +122,51 @@ Future<void> initDependencies() async {
   // Photo-to-inventory (ShelfScanCubit is per business, ScanReviewCubit per scan)
   sl
     ..registerLazySingleton<StocktakeRemoteDataSource>(() => StocktakeRemoteDataSourceImpl(sl()))
-    ..registerLazySingleton<StocktakeRepository>(() => StocktakeRepositoryImpl(sl()))
+    ..registerLazySingleton<StoredPhotoDataSource>(() => StoredPhotoDataSourceImpl(sl(instanceName: kPlainDio)))
+    ..registerLazySingleton<StocktakeRepository>(() => StocktakeRepositoryImpl(sl(), sl()))
     ..registerLazySingleton(() => QuickScan(sl()))
     ..registerLazySingleton(() => StartStocktake(sl()))
     ..registerLazySingleton(() => GetStocktake(sl()))
     ..registerLazySingleton(() => ConfirmScan(sl()))
+    ..registerLazySingleton(() => GetStocktakeHistory(sl()))
+    ..registerLazySingleton(() => GetScan(sl()))
+    ..registerLazySingleton(() => RerunScan(sl()))
+    ..registerLazySingleton(() => DiscardScan(sl()))
+    ..registerLazySingleton(() => CheckPhoto(sl()))
+    ..registerLazySingleton(() => DownloadPhoto(sl()))
     ..registerFactoryParam<ShelfScanCubit, String, void>(
       (businessId, _) =>
           ShelfScanCubit(businessId: businessId, quickScan: sl(), startStocktake: sl(), getStocktake: sl()),
     )
     ..registerFactoryParam<ScanReviewCubit, String, ShelfScan>(
       (businessId, scan) => ScanReviewCubit(businessId: businessId, scan: scan, confirm: sl()),
+    );
+
+  // Stock-take capture and review extras (PhotoCheckCubit per business; ProductPickerCubit per picker sheet)
+  sl
+    ..registerLazySingleton<PhotoTools>(() => const PhotoToolsImpl())
+    ..registerLazySingleton<CatalogueRemoteDataSource>(() => CatalogueRemoteDataSourceImpl(sl()))
+    ..registerLazySingleton<CatalogueRepository>(() => CatalogueRepositoryImpl(sl()))
+    ..registerLazySingleton(() => SearchCatalogue(sl()))
+    ..registerLazySingleton(() => GetCatalogueProduct(sl()))
+    ..registerFactoryParam<PhotoCheckCubit, String, void>(
+      (businessId, _) => PhotoCheckCubit(businessId: businessId, checkPhoto: sl(), tools: sl()),
+    )
+    ..registerFactory(() => ProductPickerCubit(search: sl(), product: sl()));
+
+  // Stock-take history (HistoryCubit per business; SessionCubit per session: param1 businessId, param2 run or scan id)
+  sl
+    ..registerFactoryParam<HistoryCubit, String, void>(
+      (businessId, _) => HistoryCubit(businessId: businessId, getHistory: sl(), discardScan: sl()),
+    )
+    ..registerFactoryParam<SessionCubit, String, String>(
+      (businessId, id) => SessionCubit(
+        businessId: businessId,
+        id: id,
+        getStocktake: sl(),
+        getScan: sl(),
+        rerunScan: sl(),
+        discardScan: sl(),
+      ),
     );
 }

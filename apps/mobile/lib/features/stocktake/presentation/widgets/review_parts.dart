@@ -4,9 +4,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/design/v15_widgets.dart';
 import '../../../../core/utils/naira.dart';
+import '../../domain/entities/catalogue_product.dart';
 import '../../domain/entities/shelf_scan.dart';
 import '../../domain/scan_review.dart';
 import '../cubit/scan_review_cubit.dart';
+import 'product_picker.dart';
+import 'scan_photo.dart';
 
 // Shared by the review's list and one-by-one views: what a line says about
 // itself (LineBadges) and how it's decided (LineEditor), on one cubit.
@@ -49,11 +52,21 @@ class LineBadges extends StatelessWidget {
 /// price. [actions] defaults to every action for the line; the one-by-one card
 /// passes them without Skip (that's its own button).
 class LineEditor extends StatefulWidget {
-  const LineEditor({super.key, required this.d, required this.choice, required this.showProblems, this.actions});
+  const LineEditor({
+    super.key,
+    required this.d,
+    required this.choice,
+    required this.showProblems,
+    this.actions,
+    this.photo,
+  });
   final ScanDetection d;
   final ScanChoice choice;
   final bool showProblems;
   final List<ScanAction>? actions;
+
+  /// For the picker's crop of this line.
+  final ReviewImage? photo;
 
   @override
   State<LineEditor> createState() => _LineEditorState();
@@ -103,7 +116,7 @@ class _LineEditorState extends State<LineEditor> {
     final choice = widget.choice;
     final skipped = choice.action == ScanAction.skip;
     final problems = widget.showProblems ? ScanProblems.of(choice) : const ScanProblems();
-    final picked = d.candidates.where((x) => x.qid == choice.choice).firstOrNull;
+    final picked = context.select<ScanReviewCubit, ScanCandidate?>((cu) => cu.state.pickedProduct(d));
     final actions = widget.actions ?? actionsFor(d);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -124,16 +137,35 @@ class _LineEditorState extends State<LineEditor> {
               ],
             ),
           ),
-        if (!skipped) ...[
+        if (choice.action == null)
+          Text(chooseActionHint(d), style: V15.text(13, FontWeight.w500, widget.showProblems ? c.redFg : c.amberFg))
+        else if (!skipped) ...[
           CountStepper(
             controller: _quantity,
             invalid: problems.quantity,
             onChanged: (v) => cubit.setQuantity(d.id, v),
             onStep: _step,
           ),
+          if (storeItemLocked(d, choice)) ...[const SizedBox(height: 8), StoreItemRow(name: storeItemName(d))],
           if (productEditable(d, choice)) ...[
             const SizedBox(height: 8),
-            ProductKey(d: d, choice: choice, onChoose: (qid) => cubit.choose(d.id, qid)),
+            ProductKey(
+              d: d,
+              choice: choice,
+              picked: picked,
+              photo: widget.photo,
+              invalid: problems.product,
+              onChoose: (qid) => cubit.choose(d.id, qid),
+              onCatalogue: (p) => cubit.chooseCatalogueProduct(d.id, p),
+            ),
+            if (asksIsThisYourItem(d, choice))
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: V15Pill('Is this your item? Check it, or pick another.', tone: V15PillTone.amber),
+                ),
+              ),
             if (picked?.priceMedian != null)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -174,6 +206,31 @@ class _LineEditorState extends State<LineEditor> {
           ],
         ],
       ],
+    );
+  }
+}
+
+/// Restock or restore of a matched item: the store's own item, as plain text (nothing to pick).
+class StoreItemRow extends StatelessWidget {
+  const StoreItemRow({super.key, required this.name});
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = V15.of(context);
+    return Semantics(
+      label: 'Store item: $name',
+      excludeSemantics: true,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Row(
+          children: [
+            Icon(IconsOutline.box, size: 16, color: c.gray400),
+            const SizedBox(width: 8),
+            Expanded(child: Text(name, style: V15.text(15, FontWeight.w400, c.gray700))),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -313,18 +370,42 @@ class ReviewField extends StatelessWidget {
   }
 }
 
-/// S5: the product for a line — the catalogue's plausible matches, or a new item.
+/// S5: the product for a line — its suggestions, other sizes, a catalogue search, or a new item.
 class ProductKey extends StatelessWidget {
-  const ProductKey({super.key, required this.d, required this.choice, required this.onChoose});
+  const ProductKey({
+    super.key,
+    required this.d,
+    required this.choice,
+    required this.onChoose,
+    required this.onCatalogue,
+    this.picked,
+    this.photo,
+    this.invalid = false,
+  });
   final ScanDetection d;
   final ScanChoice choice;
+
+  /// A suggestion's Qore ID, or [ScanChoice.newItem].
   final ValueChanged<String> onChoose;
+
+  /// A product fetched by Qore ID (another size, a search hit).
+  final ValueChanged<CatalogueProductDetail> onCatalogue;
+
+  /// The picked product, a suggestion or one picked from the catalogue.
+  final ScanCandidate? picked;
+  final ReviewImage? photo;
+  final bool invalid;
 
   @override
   Widget build(BuildContext context) {
     final c = V15.of(context);
-    final picked = d.candidates.where((x) => x.qid == choice.choice).firstOrNull;
-    final label = picked?.label ?? (d.candidates.isEmpty ? 'New item (not in catalogue)' : 'None of these: new item');
+    final none = choice.choice == null;
+    final label = switch (choice.choice) {
+      ScanChoice.newItem => 'New item (not in catalogue)',
+      null when choice.action == ScanAction.add => 'Choose a product or “New item”',
+      null => 'Link a catalogue product (optional)',
+      final qid => picked?.label ?? qid,
+    };
     return Semantics(
       button: true,
       label: 'Product: $label',
@@ -338,7 +419,7 @@ class ProductKey extends StatelessWidget {
           decoration: BoxDecoration(
             color: c.gray50,
             borderRadius: BorderRadius.circular(V15.sheetRadius),
-            border: Border.all(color: c.gray200),
+            border: Border.all(color: invalid ? c.redFg : c.gray200),
           ),
           child: Row(
             children: [
@@ -347,7 +428,7 @@ class ProductKey extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: V15.text(15, FontWeight.w400, c.gray900),
+                  style: V15.text(15, FontWeight.w400, none ? c.gray500 : c.gray900),
                 ),
               ),
               Icon(IconsOutline.alt_arrow_right, size: 16, color: c.gray400),
@@ -359,58 +440,21 @@ class ProductKey extends StatelessWidget {
   }
 
   Future<void> _pick(BuildContext context) async {
-    final c = V15.of(context);
-    final qid = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      backgroundColor: c.surface,
-      builder: (sheet) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: [
-            Text(
-              d.reading.isEmpty ? 'Which product is this?' : d.reading,
-              style: V15.dialogTitle.copyWith(color: c.gray900),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              d.candidates.isEmpty
-                  ? 'Qore Catalog had no plausible match. Add it as your own item.'
-                  : 'Plausible Qore Catalog matches, best first.',
-              style: V15.description.copyWith(color: c.gray500),
-            ),
-            const SizedBox(height: 12),
-            V15Section(
-              rows: [
-                for (final cand in d.candidates)
-                  V15Row(
-                    title: cand.label,
-                    subtitle: [
-                      if (cand.priceMedian != null) 'Typical ${formatNaira('${cand.priceMedian}')}',
-                      if (cand.inventoryItemId != null) 'In your store',
-                    ].join(' · '),
-                    trailing: cand.qid == choice.choice
-                        ? Icon(IconsOutline.check_circle, size: 20, color: c.primary)
-                        : null,
-                    onTap: () => Navigator.of(sheet).pop(cand.qid),
-                  ),
-                V15Row(
-                  leading: const V15IconTile(IconsOutline.add_circle),
-                  title: 'Add as my own item',
-                  subtitle: 'Not in the catalogue',
-                  trailing: choice.choice == ScanChoice.newItem
-                      ? Icon(IconsOutline.check_circle, size: 20, color: c.primary)
-                      : null,
-                  onTap: () => Navigator.of(sheet).pop(ScanChoice.newItem),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+    final photo = this.photo;
+    final result = await showProductPicker(
+      context,
+      d: d,
+      choice: choice,
+      picked: picked,
+      thumb: photo == null
+          ? null
+          : ScanThumb(image: photo.image, box: d.largestBox, cropUrl: d.cropUrl, loading: photo.loading, size: 56),
     );
-    if (qid != null) onChoose(qid);
+    switch (result) {
+      case final String qid:
+        onChoose(qid);
+      case final CatalogueProductDetail p:
+        onCatalogue(p);
+    }
   }
 }

@@ -1,10 +1,90 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:dartz/dartz.dart' show Either;
 import 'package:flutter/material.dart';
 
 import '../../../../core/design/v15_widgets.dart';
+import '../../../../core/error/failures.dart';
+import '../../domain/coverage.dart';
 import '../../domain/entities/shelf_scan.dart';
+
+/// Fetches a presigned photo or crop link (the DownloadPhoto use case).
+typedef PhotoBytesLoader = Future<Either<Failure, Uint8List>> Function(String url);
+
+/// The review's shelf photo: decoded, still [loading], or unavailable (both null and false).
+class ReviewImage {
+  const ReviewImage(this.image, {this.loading = false});
+  const ReviewImage.loading() : image = null, loading = true;
+  const ReviewImage.none() : image = null, loading = false;
+  final ui.Image? image;
+  final bool loading;
+}
+
+/// Hands the stored-photo loader down to crop thumbnails; without one they show the box icon.
+class PhotoDownloads extends InheritedWidget {
+  const PhotoDownloads({super.key, required this.load, required super.child});
+  final PhotoBytesLoader load;
+
+  static PhotoBytesLoader? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PhotoDownloads>()?.load;
+
+  @override
+  bool updateShouldNotify(PhotoDownloads old) => old.load != load;
+}
+
+/// Downloads and decodes a stored photo ([url]); [builder] gets loading first, then the image or none.
+class RemotePhoto extends StatefulWidget {
+  const RemotePhoto({super.key, required this.url, required this.load, required this.builder});
+  final String? url;
+  final PhotoBytesLoader load;
+  final Widget Function(BuildContext context, ReviewImage photo) builder;
+
+  @override
+  State<RemotePhoto> createState() => _RemotePhotoState();
+}
+
+class _RemotePhotoState extends State<RemotePhoto> {
+  ReviewImage _photo = const ReviewImage.loading();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    final url = widget.url;
+    if (url == null) return setState(() => _photo = const ReviewImage.none());
+    final bytes = await widget.load(url);
+    ui.Image? image;
+    try {
+      image = await bytes.fold((_) async => null, (b) => decodeImageFromList(b));
+    } on Exception {
+      image = null;
+    }
+    if (!mounted) return image?.dispose();
+    setState(() => _photo = image == null ? const ReviewImage.none() : ReviewImage(image));
+  }
+
+  @override
+  void dispose() {
+    _photo.image?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _photo);
+}
+
+/// The photo's place while it downloads.
+class PhotoSkeleton extends StatelessWidget {
+  const PhotoSkeleton({super.key, this.height = 240});
+  final double height;
+
+  @override
+  Widget build(BuildContext context) => V15PulseSkeleton(height: height, radius: V15.sheetRadius);
+}
 
 /// Decodes the shelf photo once and hands it to [builder]; a gray block until then.
 class DecodedPhoto extends StatefulWidget {
@@ -49,7 +129,15 @@ class _DecodedPhotoState extends State<DecodedPhoto> {
   @override
   Widget build(BuildContext context) {
     final image = _image;
-    if (image == null) return ColoredBox(color: V15.of(context).gray100, child: const SizedBox.expand());
+    if (image == null) {
+      // In a scroll view there's no height to fill: hold a photo-sized block instead.
+      return LayoutBuilder(
+        builder: (context, box) => ColoredBox(
+          color: V15.of(context).gray100,
+          child: SizedBox(width: double.infinity, height: box.hasBoundedHeight ? double.infinity : 240),
+        ),
+      );
+    }
     return widget.builder(context, image);
   }
 }
@@ -57,11 +145,21 @@ class _DecodedPhotoState extends State<DecodedPhoto> {
 /// The photo with every counted unit outlined (0–1000 grid). The [selected]
 /// line's units are accented; tapping a unit selects its line.
 class ScanPhotoView extends StatelessWidget {
-  const ScanPhotoView({super.key, required this.image, this.detections = const [], this.selected, this.onSelect});
+  const ScanPhotoView({
+    super.key,
+    required this.image,
+    this.detections = const [],
+    this.selected,
+    this.onSelect,
+    this.unread = const [],
+  });
   final ui.Image image;
   final List<ScanDetection> detections;
   final String? selected;
   final ValueChanged<String?>? onSelect;
+
+  /// Parts where nothing was read, shaded so the merchant can check them (see coverage.dart).
+  final List<CoverageCell> unread;
 
   /// The smallest box under the tap, so a unit inside a bigger one still wins.
   String? _hit(Offset p, Size size) {
@@ -94,6 +192,7 @@ class ScanPhotoView extends StatelessWidget {
               selected: selected,
               outline: c.surface,
               accent: c.primary,
+              unread: unread,
             ),
           ),
         ),
@@ -109,12 +208,17 @@ class _PhotoPainter extends CustomPainter {
     required this.selected,
     required this.outline,
     required this.accent,
+    this.unread = const [],
   });
   final ui.Image image;
   final List<ScanDetection> detections;
   final String? selected;
   final Color outline;
   final Color accent;
+  final List<CoverageCell> unread;
+
+  /// mp's amber-300 at 70%.
+  static const _unreadBorder = Color(0xB3FCD34D);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -135,6 +239,21 @@ class _PhotoPainter extends CustomPainter {
       ..strokeWidth = 2.5
       ..color = accent;
     final fill = Paint()..color = accent.withValues(alpha: 0.18);
+    final shade = Paint()..color = Colors.black.withValues(alpha: 0.35);
+    final dash = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = _unreadBorder;
+    for (final cell in unread) {
+      final r = Rect.fromLTRB(
+        cell.x1 / 1000 * size.width,
+        cell.y1 / 1000 * size.height,
+        cell.x2 / 1000 * size.width,
+        cell.y2 / 1000 * size.height,
+      );
+      canvas.drawRect(r, shade);
+      _dashed(canvas, r.deflate(0.5), dash);
+    }
     for (final d in detections) {
       final on = d.id == selected;
       for (final b in d.boxes) {
@@ -145,32 +264,96 @@ class _PhotoPainter extends CustomPainter {
     }
   }
 
+  static void _dashed(Canvas canvas, Rect r, Paint paint) {
+    for (final metric in (Path()..addRect(r)).computeMetrics()) {
+      for (var d = 0.0; d < metric.length; d += 7) {
+        canvas.drawPath(metric.extractPath(d, d + 4), paint);
+      }
+    }
+  }
+
   @override
   bool shouldRepaint(_PhotoPainter old) =>
-      old.image != image || old.detections != detections || old.selected != selected || old.accent != accent;
+      old.image != image ||
+      old.detections != detections ||
+      old.selected != selected ||
+      old.accent != accent ||
+      old.unread != unread;
 }
 
-/// A square thumbnail cut from the photo around a line's largest unit (as mp's cropThumbs).
+/// A square thumbnail cut from the photo around a line's largest unit (as mp's cropThumbs); without the photo,
+/// the stored crop ([cropUrl]), else the box icon. Gray while the photo loads.
 class ScanThumb extends StatelessWidget {
-  const ScanThumb({super.key, required this.image, required this.box, this.size = 48});
-  final ui.Image image;
+  const ScanThumb({
+    super.key,
+    required this.image,
+    required this.box,
+    this.cropUrl,
+    this.loading = false,
+    this.size = 48,
+  });
+  final ui.Image? image;
   final ScanBox? box;
+  final String? cropUrl;
+  final bool loading;
   final double size;
 
   @override
   Widget build(BuildContext context) {
     final c = V15.of(context);
+    final image = this.image;
+    final load = PhotoDownloads.of(context);
+    final icon = Icon(IconsOutline.box, size: size < 64 ? 20 : 32, color: c.gray400);
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
       child: Container(
         width: size,
         height: size,
         color: c.gray100,
-        child: box == null
-            ? Icon(IconsOutline.box, size: 20, color: c.gray400)
-            : CustomPaint(painter: _ThumbPainter(image, box!, c.surface)),
+        child: image != null && box != null
+            ? CustomPaint(painter: _ThumbPainter(image, box!, c.surface))
+            : loading
+            ? null
+            : cropUrl != null && load != null
+            ? _Crop(url: cropUrl!, load: load, fallback: icon)
+            : icon,
       ),
     );
+  }
+}
+
+class _Crop extends StatefulWidget {
+  const _Crop({required this.url, required this.load, required this.fallback});
+  final String url;
+  final PhotoBytesLoader load;
+  final Widget fallback;
+
+  @override
+  State<_Crop> createState() => _CropState();
+}
+
+class _CropState extends State<_Crop> {
+  Uint8List? _bytes;
+  bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.load(widget.url).then((r) {
+      if (!mounted) return;
+      setState(() {
+        _bytes = r.fold((_) => null, (b) => b);
+        _done = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _bytes;
+    if (!_done) return const SizedBox.shrink();
+    if (bytes == null) return widget.fallback;
+    return Image.memory(bytes, fit: BoxFit.cover, errorBuilder: (_, _, _) => widget.fallback);
   }
 }
 

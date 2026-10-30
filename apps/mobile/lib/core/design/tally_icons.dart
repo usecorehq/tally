@@ -38,6 +38,7 @@ class IconsOutline {
   static const IconData check = IconData(0xe025, fontFamily: _light); // check
   static const IconData check_circle = IconData(0xe026, fontFamily: _fill); // check-circle
   static const IconData close_circle = IconData(0xe0b4, fontFamily: _light); // x
+  static const IconData trash = IconData(0xe0a2, fontFamily: _light); // trash
   static const IconData danger_circle = IconData(0xe0b1, fontFamily: _light); // warning-circle
   static const IconData gallery = IconData(0xe055, fontFamily: _light); // image
   static const IconData history = IconData(0xe02d, fontFamily: _light); // clock-counter-clockwise

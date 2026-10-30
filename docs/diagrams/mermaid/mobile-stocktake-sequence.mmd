@@ -5,8 +5,13 @@ sequenceDiagram
     participant S as ShelfScanPage<br/>(ShelfScanCubit)
     participant R as ScanReviewView<br/>(ScanReviewCubit)
     participant A as apps/api vision
+    participant C as apps/api catalog
 
-    M->>S: take or pick a shelf photo (image_picker, 1600 px JPEG)
+    M->>S: take or pick a shelf photo (image_picker, 2560 px JPEG)
+    S-->>M: phone's own checks (dark, blurry, glare on a 320 px copy)
+    S->>A: POST …/vision/photo-check (≤ 1 MB copy)
+    A-->>S: { verdict, issues, instruction, productsVisible, labelsLegible }
+    S-->>M: verdict pill and advice (never blocks the scan)
     alt Start stock-take (agent)
         S->>A: POST …/vision/stocktakes (multipart image)
         A-->>S: 202 { runId }
@@ -21,8 +26,12 @@ sequenceDiagram
         A-->>S: { scanId, detections[] } (~15–30 s)
     end
     S->>R: scan + photo
-    R-->>M: photo with outlines, one line per product
+    R-->>M: photo with outlines and unread parts shaded, one line per product
     M->>R: action, count, product, name and price per line
+    opt product picker: other sizes or a catalogue search
+        R->>C: GET /catalog/products/:qid (variants) · GET /catalog/products?q=&limit=10
+        C-->>R: products, and a picked one is fetched for its name and price
+    end
     Note right of R: nothing is stocked until Confirm
     M->>R: Stock N items, U units
     R->>A: POST …/shelf-scans/:scanId/confirm { decisions[] } (every line, skips too)

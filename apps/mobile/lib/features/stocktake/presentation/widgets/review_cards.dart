@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -10,13 +8,14 @@ import '../cubit/scan_review_cubit.dart';
 import 'review_parts.dart';
 import 'scan_photo.dart';
 
-/// The verb on a card's keep button, after its action.
+/// The verb on a card's keep button, after its action (an earlier skip counts as the starting action).
 String keepLabel(ScanDetection d, ScanChoice c) {
-  final action = c.action == ScanAction.skip ? actionsFor(d).first : c.action;
+  final action = c.action == ScanAction.skip ? initialAction(d) : c.action;
   return switch (action) {
     ScanAction.restock => 'Restock',
     ScanAction.restore => 'Restore',
-    _ => 'Add',
+    ScanAction.add => 'Add',
+    _ => 'Keep',
   };
 }
 
@@ -24,8 +23,8 @@ String keepLabel(ScanDetection d, ScanChoice c) {
 /// (button or swipe left) — then a summary to confirm. Same cubit and
 /// decisions as the list, so switching views keeps every edit.
 class ReviewCards extends StatelessWidget {
-  const ReviewCards({super.key, required this.image, required this.state});
-  final ui.Image image;
+  const ReviewCards({super.key, required this.photo, required this.state});
+  final ReviewImage photo;
   final ScanReviewState state;
 
   @override
@@ -37,14 +36,14 @@ class ReviewCards extends StatelessWidget {
         _Progress(state: state),
         const SizedBox(height: 12),
         if (d == null)
-          _Summary(image: image, state: state)
+          _Summary(photo: photo, state: state)
         else
           _SwipeCard(
             // A new key per card, so a dismissed card never comes back as the next one.
             key: ValueKey('card-${d.id}-${state.cursor}'),
             d: d,
             choice: state.choices[d.id]!,
-            image: image,
+            photo: photo,
             flagged: state.flagged.contains(d.id),
           ),
       ],
@@ -106,10 +105,10 @@ class _Progress extends StatelessWidget {
 }
 
 class _SwipeCard extends StatelessWidget {
-  const _SwipeCard({super.key, required this.d, required this.choice, required this.image, required this.flagged});
+  const _SwipeCard({super.key, required this.d, required this.choice, required this.photo, required this.flagged});
   final ScanDetection d;
   final ScanChoice choice;
-  final ui.Image image;
+  final ReviewImage photo;
   final bool flagged;
 
   @override
@@ -146,7 +145,13 @@ class _SwipeCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(
-                child: ScanThumb(image: image, box: d.largestBox, size: 168),
+                child: ScanThumb(
+                  image: photo.image,
+                  box: d.largestBox,
+                  cropUrl: d.cropUrl,
+                  loading: photo.loading,
+                  size: 168,
+                ),
               ),
               const SizedBox(height: 14),
               Text(
@@ -165,14 +170,18 @@ class _SwipeCard extends StatelessWidget {
               const SizedBox(height: 16),
               Divider(height: 1, color: c.divider),
               const SizedBox(height: 16),
-              if (flagged && ScanProblems.of(choice).any) ...[
-                Text('Add a count, name or price to keep this one.', style: V15.text(13, FontWeight.w500, c.redFg)),
+              if (flagged && ScanProblems.of(choice).any && choice.action != null) ...[
+                Text(
+                  'Add a product, count, name or price to keep this one.',
+                  style: V15.text(13, FontWeight.w500, c.redFg),
+                ),
                 const SizedBox(height: 10),
               ],
               LineEditor(
                 d: d,
                 choice: choice,
                 showProblems: flagged,
+                photo: photo,
                 // Skip is the card's own button.
                 actions: actionsFor(d).where((a) => a != ScanAction.skip).toList(),
               ),
@@ -186,8 +195,8 @@ class _SwipeCard extends StatelessWidget {
 
 /// Every line decided: what goes into stock, each line tappable to revisit.
 class _Summary extends StatelessWidget {
-  const _Summary({required this.image, required this.state});
-  final ui.Image image;
+  const _Summary({required this.photo, required this.state});
+  final ReviewImage photo;
   final ScanReviewState state;
 
   @override
@@ -204,10 +213,18 @@ class _Summary extends StatelessWidget {
               final choice = state.choices[d.id]!;
               final skipped = choice.action == ScanAction.skip;
               return V15Row(
-                leading: ScanThumb(image: image, box: d.largestBox, size: 40),
+                leading: ScanThumb(
+                  image: photo.image,
+                  box: d.largestBox,
+                  cropUrl: d.cropUrl,
+                  loading: photo.loading,
+                  size: 40,
+                ),
                 title: d.reading.isEmpty ? 'Unreadable label' : d.reading,
-                subtitle: invalid.contains(d.id)
-                    ? 'Needs a count, name or price'
+                subtitle: choice.action == null
+                    ? 'To choose'
+                    : invalid.contains(d.id)
+                    ? 'Needs a product, count, name or price'
                     : skipped
                     ? 'Skipped'
                     : '${kScanActionLabels[choice.action]} · ${choice.quantity.trim()} unit${choice.quantity.trim() == '1' ? '' : 's'}',
