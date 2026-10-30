@@ -241,7 +241,7 @@ function Option({
       aria-pressed={selected}
       className={cn(
         "flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors",
-        selected ? "bg-primary-light/60 ring-1 ring-primary" : "hover:bg-gray-50",
+        selected ? "bg-primary-light/60 ring-1 ring-primary-ink" : "hover:bg-gray-50",
       )}
     >
       <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gray-100 text-gray-400 ring-1 ring-hairline/[0.05]">
@@ -273,7 +273,7 @@ function Option({
               {MATCH_PILL[match].label}
             </Pill>
           )}
-          {selected && <SolarIcon name="Check-Circle" iconStyle="Fill" size={18} className="shrink-0 text-primary" />}
+          {selected && <SolarIcon name="Check-Circle" iconStyle="Fill" size={18} className="shrink-0 text-primary-ink" />}
         </>
       )}
     </button>

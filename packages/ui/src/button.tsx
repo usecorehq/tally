@@ -10,8 +10,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-primary text-white hover:bg-primary-hover",
-        default: "bg-primary text-white hover:bg-primary-hover",
+        primary: "bg-primary text-primary-foreground hover:bg-primary-hover",
+        default: "bg-primary text-primary-foreground hover:bg-primary-hover",
         quiet: "bg-surface text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.06] hover:bg-gray-50",
         outline: "bg-surface text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-hairline/[0.06] hover:bg-gray-50",
         soft: "bg-gray-100 text-gray-900 hover:bg-gray-200",
@@ -20,7 +20,7 @@ const buttonVariants = cva(
         dark: "bg-gray-900 text-surface hover:bg-gray-800",
         ghost: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
         destructive: "bg-red-600 text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600",
-        link: "text-primary underline-offset-4 hover:underline active:scale-100",
+        link: "text-primary-ink underline-offset-4 hover:underline active:scale-100",
       },
       size: {
         sm: "h-8 rounded-lg px-3 text-[13px]",

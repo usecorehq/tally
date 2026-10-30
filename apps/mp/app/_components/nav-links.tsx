@@ -32,7 +32,7 @@ export function SidebarNav() {
               on ? "bg-surface text-gray-900 ring-1 ring-hairline/[0.06] dark:ring-hairline/10" : "text-gray-600 hover:bg-gray-200/60 hover:text-gray-900",
             )}
           >
-            <SolarIcon name={item.icon} iconStyle={on ? "Fill" : "Outline"} size={20} className={on ? "text-primary" : undefined} />
+            <SolarIcon name={item.icon} iconStyle={on ? "Fill" : "Outline"} size={20} className={on ? "text-primary-ink" : undefined} />
             {item.label}
           </Link>
         );
@@ -66,7 +66,7 @@ export function MobileNav() {
                 name={item.icon}
                 iconStyle={on ? "Fill" : "Outline"}
                 size={18}
-                className={cn("max-[479px]:hidden", on && "text-primary")}
+                className={cn("max-[479px]:hidden", on && "text-primary-ink")}
               />
               {item.label}
             </span>

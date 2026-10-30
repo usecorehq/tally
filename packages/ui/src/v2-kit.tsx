@@ -76,7 +76,7 @@ export function FilterChip({
       {...props}
       className={cn(
         "flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-4 text-sm font-medium transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.97]",
-        active ? "bg-primary-light text-primary" : "bg-gray-100 text-gray-700 hover:bg-gray-200",
+        active ? "bg-primary-light text-primary-ink" : "bg-gray-100 text-gray-700 hover:bg-gray-200",
         className,
       )}
     >
@@ -85,7 +85,7 @@ export function FilterChip({
         <span
           className={cn(
             "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums",
-            active ? "bg-surface text-primary" : "bg-primary-light text-primary",
+            active ? "bg-surface text-primary-ink" : "bg-primary-light text-primary-ink",
           )}
         >
           {count}
@@ -227,7 +227,7 @@ export function QuantityStepper({
         onClick={() => onChange(Math.min(max, value + 1))}
         className={cn(
           h,
-          "flex items-center justify-center rounded-xl text-primary transition-[background-color,transform] duration-150 hover:bg-primary-light active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent",
+          "flex items-center justify-center rounded-xl text-primary-ink transition-[background-color,transform] duration-150 hover:bg-primary-light active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent",
         )}
       >
         <SolarIcon name="Add-Circle" size={18} />
@@ -246,7 +246,7 @@ export function ChoiceMark({ checked, multiple = false }: { checked: boolean; mu
       className={cn(
         "flex h-5 w-5 shrink-0 items-center justify-center border transition-colors",
         multiple ? "rounded-md" : "rounded-full",
-        checked ? "border-primary bg-primary text-white" : "border-gray-300 bg-surface dark:border-gray-400",
+        checked ? "border-primary bg-primary text-primary-foreground" : "border-gray-300 bg-surface dark:border-gray-400",
       )}
     >
       {checked && (
@@ -288,8 +288,8 @@ export function ChoiceCard({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-3 rounded-[14px] border p-3 text-left transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50",
-        selected ? "border-primary bg-primary-light" : "border-gray-200 bg-surface hover:bg-gray-50",
+        "flex w-full items-center gap-3 rounded-[14px] border p-3 text-left transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-ink/40 disabled:cursor-not-allowed disabled:opacity-50",
+        selected ? "border-primary-ink bg-primary-light" : "border-gray-200 bg-surface hover:bg-gray-50",
         !media && "px-4",
         className,
       )}
@@ -312,7 +312,7 @@ export function IconTile({ icon, active = false, className }: { icon: SolarIconN
       aria-hidden
       className={cn(
         "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors",
-        active ? "bg-primary text-white" : "bg-gray-100 text-gray-700",
+        active ? "bg-primary text-primary-foreground" : "bg-gray-100 text-gray-700",
         className,
       )}
     >
@@ -345,7 +345,7 @@ export function StepHeader({
         {onBack && <IconButton icon="Alt-Arrow-Left" label="Back" tone="ghost" onClick={onBack} className="-ml-2" />}
         {step != null && steps && steps.length > 1 && (
           <>
-            <span className="shrink-0 rounded-full bg-primary-light px-3 py-1.5 text-xs font-semibold text-primary">
+            <span className="shrink-0 rounded-full bg-primary-light px-3 py-1.5 text-xs font-semibold text-primary-ink">
               Step {step} of {steps.length}
             </span>
             <span className="min-w-0 truncate text-xs text-gray-500 max-sm:hidden">{steps.join(" → ")}</span>
@@ -453,7 +453,7 @@ export function Notice({
   const t = {
     gray: ["bg-gray-100 text-gray-600", "text-gray-900"],
     amber: ["bg-amber-50 text-amber-900", "text-amber-700"],
-    brand: ["bg-primary-light text-gray-700", "text-primary"],
+    brand: ["bg-primary-light text-gray-700", "text-primary-ink"],
   }[tone];
   return (
     <div className={cn("flex items-start gap-2.5 rounded-[18px] px-4 py-3 text-sm", t[0], className)}>
