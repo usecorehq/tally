@@ -20,6 +20,12 @@ Muse Spark reads and plans, SAM 3.1 counts, Qore Catalog names and prices. Tally
 
 <img src="docs/diagrams/2.stock-take-agent-highlevel.webp" alt="How the stock-take agent counts a shelf: a first pass (Muse Spark reads, SAM 3.1 counts, Qore Catalog matches), an agent loop with zoom, search, store check and recount tools, merchant review, confirm, and the catalogue learning from each decision" width="100%">
 
+## Three ways merchants use Tally
+
+One stock-take agent and one API, reached three ways: embedded in a partner's app, standalone on Tally, and inside Qorelly. Each way uses the same Qore Catalog, and nothing changes without the merchant's yes. Standalone is built. Partner embedding (Connect Tally with OAuth, the `@qorelly/tally-embed` iframe) and the Qorelly Inventory button are planned.
+
+<img src="docs/diagrams/7.use-cases.webp" alt="Three ways merchants use Tally: embedded in a partner's app through Connect Tally and an iframe, standalone on tally.qorelly.com, and inside Qorelly Inventory, all on one Tally API, stock-take agent, Qore Catalog and Qorelly account" width="100%">
+
 ---
 
 ## Built during the Meta hackathon
