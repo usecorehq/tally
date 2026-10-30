@@ -6,6 +6,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module";
 import { BusinessesModule } from "./modules/businesses/businesses.module";
 import { MediaModule } from "./modules/media/media.module";
 import { VisionModule } from "./modules/vision/vision.module";
+import { UsageModule } from "./modules/usage/usage.module";
 import { DrizzleModule } from "./drizzle/drizzle.module";
 import { SupabaseJwtGuard } from "./common/guards/supabase-jwt.guard";
 import { validateEnv } from "./config/env.validation";
@@ -28,6 +29,7 @@ import configuration from "./config/configuration";
     BusinessesModule,
     MediaModule,
     VisionModule,
+    UsageModule,
   ],
   providers: [
     // Global auth: every route requires a valid Supabase JWT (shared Qorelly

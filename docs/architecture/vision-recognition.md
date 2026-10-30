@@ -104,7 +104,7 @@ Latency comes from tiers. The cheapest tier that answers wins.
 
 ## API
 
-All routes need a Supabase JWT and are for business members only (403 otherwise; membership is checked before any model call).
+All routes need a Supabase JWT and are for business members only (403 otherwise; membership is checked before any model call). Quick scans, stock-takes and reruns count against the business's plan and answer 429 over a limit: see [usage limits](stocktake-agent.md#usage-limits).
 
 ### `POST /api/businesses/:id/vision/shelf-scans` (built)
 

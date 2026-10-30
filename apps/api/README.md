@@ -114,6 +114,14 @@ node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --suspend
 - `--scope` can be repeated: `stocktake:write`, `stocktake:read`, `inventory:read`. Default: all three.
 - `--cap` (daily stock-takes, default 200) and `--concurrent` (runs at once, default 3) are abuse caps per client. When left out, the database defaults apply.
 
+## Usage and plans
+
+Stock-takes and quick scans count against the business's plan; over a limit the vision routes answer 429 with `Retry-After`. Rules and response shapes: [usage limits](../../docs/architecture/stocktake-agent.md#usage-limits).
+
+- `GET /api/plans`: the plans, in display order (prices are display only).
+- `GET /api/businesses/:businessId/usage?days=30`: plan, today, this month, per day and by app (members).
+- `POST /api/businesses/:businessId/subscription` `{ "plan_code": "pro" }`: switch plan, simulated, no payment (owner).
+
 ## Layout
 
 ```
@@ -130,6 +138,7 @@ src/
   modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
   modules/vision/benchmark-score.ts  Scoring for scripts/vision-benchmark.mjs (not used by routes)
   modules/vision/shelf-sweep.ts      Experimental row-by-row shelf read (benchmark only, not used by routes)
+  modules/usage/              Plan limits before every run or scan, usage counts, simulated subscriptions
   modules/media/              R2Storage: Tally's files in Cloudflare R2 (aws4fetch, server-only)
   modules/health/             GET /api/health
 ```

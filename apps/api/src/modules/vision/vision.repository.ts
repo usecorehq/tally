@@ -95,10 +95,10 @@ export class VisionRepository {
 
   // ── Stock-take agent runs ──
 
-  async createRun(businessId: string, startedBy: string, model: string, rerunOfScanId: string | null = null): Promise<string> {
+  async createRun(businessId: string, startedBy: string, model: string, rerunOfScanId: string | null = null, clientId: string | null = null): Promise<string> {
     const [row] = await this.db
       .insert(visionAgentRuns)
-      .values({ businessId, startedBy, model, rerunOfScanId })
+      .values({ businessId, startedBy, model, rerunOfScanId, clientId })
       .returning({ id: visionAgentRuns.id });
     return row!.id;
   }
