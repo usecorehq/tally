@@ -10,7 +10,9 @@ import {
 } from "@nestjs/swagger";
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
-import { AuthorizeInfoQuery, CreateCodeBody, GrantParams, GrantsQuery, RevokeBody, TokenBody } from "./clients.dto";
+import { RateLimit } from "../../common/decorators/rate-limit.decorator";
+import { Scopes } from "../../common/decorators/scopes.decorator";
+import { AuthorizeInfoQuery, CreateCodeBody, EmbedConfigQuery, GrantParams, GrantsQuery, RevokeBody, TokenBody } from "./clients.dto";
 import { ClientsService } from "./clients.service";
 
 @ApiTags("clients")
@@ -44,6 +46,7 @@ export class ClientsController {
   }
 
   @Public()
+  @RateLimit("client")
   @Post("oauth/token")
   @HttpCode(200)
   @Header("Cache-Control", "no-store")
@@ -90,5 +93,36 @@ export class ClientsController {
   @ApiOperation({ summary: "Disconnect an app (owner only). Its refresh token stops working at once." })
   async revokeGrant(@CurrentUser() user: AuthenticatedUser, @Param() { id }: GrantParams) {
     await this.clients.revokeGrant(user.sub, id);
+  }
+
+  @Get("me")
+  @Scopes()
+  @ApiBearerAuth("bearer")
+  @ApiOperation({ summary: "The connected client, business and scopes behind a Connect Tally access token." })
+  @ApiOkResponse({ schema: { example: { client_id: "tc_…", business: { id: "0b6c…", name: "My Shop" }, scopes: ["stocktake:write"] } } })
+  me(@CurrentUser() principal: AuthenticatedUser) {
+    return this.clients.me(principal);
+  }
+
+  @Post("sessions")
+  @HttpCode(200)
+  @Scopes("stocktake:write")
+  @RateLimit("client")
+  @ApiBearerAuth("bearer")
+  @ApiOperation({ summary: "Mint a 900 s embed session token for the iframe (access token with stocktake:write)." })
+  @ApiOkResponse({ schema: { example: { session_token: "eyJ…", expires_at: "2026-11-04T10:15:00.000Z", business_id: "0b6c…" } } })
+  createSession(@CurrentUser() principal: AuthenticatedUser) {
+    return this.clients.createSession(principal);
+  }
+
+  @Public()
+  @RateLimit("ip")
+  @Get("embed-config")
+  @ApiOperation({ summary: "Public, non-secret client settings for the embed page: allowed origins, theme, status." })
+  @ApiOkResponse({
+    schema: { example: { client_id: "tc_…", name: "Partner App", status: "active", allowed_origins: ["https://partner.example"], theme: {} } },
+  })
+  embedConfig(@Query() { client_id }: EmbedConfigQuery) {
+    return this.clients.embedConfig(client_id);
   }
 }

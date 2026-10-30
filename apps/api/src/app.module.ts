@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { HealthModule } from "./modules/health/health.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { BusinessesModule } from "./modules/businesses/businesses.module";
@@ -8,7 +9,9 @@ import { MediaModule } from "./modules/media/media.module";
 import { VisionModule } from "./modules/vision/vision.module";
 import { ClientsModule } from "./modules/clients/clients.module";
 import { DrizzleModule } from "./drizzle/drizzle.module";
-import { SupabaseJwtGuard } from "./common/guards/supabase-jwt.guard";
+import { AuthGuard } from "./common/guards/auth.guard";
+import { GrantStatusService } from "./common/guards/grant-status.service";
+import { AppThrottlerGuard, throttlerOptions } from "./common/guards/throttler";
 import { validateEnv } from "./config/env.validation";
 import configuration from "./config/configuration";
 
@@ -24,6 +27,7 @@ import configuration from "./config/configuration";
       envFilePath: [".env", "../../.env"],
     }),
     DrizzleModule,
+    ThrottlerModule.forRoot(throttlerOptions),
     CatalogModule,
     HealthModule,
     BusinessesModule,
@@ -32,9 +36,11 @@ import configuration from "./config/configuration";
     ClientsModule,
   ],
   providers: [
-    // Global auth: every route requires a valid Supabase JWT (shared Qorelly
-    // auth) unless the controller or handler is decorated with @Public().
-    { provide: APP_GUARD, useClass: SupabaseJwtGuard },
+    // Global auth: every route requires a Supabase user JWT, or a Connect Tally token on @Scopes routes,
+    // unless marked @Public(). Guards run in this order, so the throttler sees the principal.
+    GrantStatusService,
+    { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
 })
 export class AppModule {}
