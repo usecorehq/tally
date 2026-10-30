@@ -15,7 +15,7 @@ const HEADER = "max-sm:flex-row max-sm:items-start max-sm:justify-between";
 function AddBusiness() {
   return (
     <Button asChild variant="quiet" className="max-sm:h-11">
-      <Link href="/onboarding">
+      <Link href="/businesses/new">
         <SolarIcon name="Add-Circle" iconStyle="Outline" size={18} />
         <span className="max-[399px]:hidden">Add a business</span>
         <span className="min-[400px]:hidden">Add</span>
