@@ -527,12 +527,14 @@ export const inventoryItemReadings = tally.table(
 const SHA256_HEX = "^[0-9a-f]{64}$";
 const OAUTH_SCOPES = "array['stocktake:write','stocktake:read','inventory:read']::text[]";
 
-/** A partner app, registered by the CTO with apps/api/scripts/oauth-client-create.mjs. Suspended, never deleted. */
+/** A partner app, self-served by a Qorelly user or registered by the CTO's script. Suspended, never deleted. */
 export const oauthClients = tally.table(
   "oauth_clients",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     clientId: text("client_id").notNull(),
+    // The Qorelly user who manages the app; null = registered by the CTO's script. FK to auth.users in custom SQL.
+    ownerUserId: uuid("owner_user_id"),
     name: text("name").notNull(),
     logoUrl: text("logo_url"),
     // sha256 of the full secret; the prefix (8 chars after tcs_) recognises a key without storing it.
@@ -564,6 +566,7 @@ export const oauthClients = tally.table(
     ),
     check("oauth_clients_status", sql`status in ('active', 'suspended')`),
     check("oauth_clients_limits_positive", sql`daily_stocktake_cap > 0 and max_concurrent_runs > 0`),
+    index("oauth_clients_owner_idx").on(t.ownerUserId),
   ],
 );
 
