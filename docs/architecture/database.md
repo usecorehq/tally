@@ -10,7 +10,7 @@ Tally stores its data in the **`tally` schema of the shared Qorelly Supabase Pos
 |---|---|
 | Drizzle schema | `packages/db/src/schema.ts` — `export const tally = pgSchema("tally")` |
 | Client | `packages/db/src/client.ts` — `buildTallyDb(url, { max?, connectTimeout? })` on `postgres.js`; `prepare: false` on the Supabase pooler; at most 5 connections (`DB_POOL_MAX`), idle ones closed after 20 s, 10 s connect timeout. See [Connection pooling](#connection-pooling) |
-| Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business, `0010` OAuth clients, `0011` their `auth.users` keys (custom SQL, `drizzle-kit generate --custom`), `0012` plans and subscriptions, `0013` the placeholder plans, `0014` Free raised to 50 a day (custom SQL) |
+| Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business, `0010` OAuth clients, `0011` their `auth.users` keys (custom SQL, `drizzle-kit generate --custom`), `0012` plans and subscriptions, `0013` the placeholder plans, `0014` Free raised to 50 a day (custom SQL), `0015` an owner on OAuth clients, `0016` its `auth.users` key (custom SQL) |
 | Config | `packages/db/drizzle.config.ts`, reads `SUPABASE_DB_URL` from the root `.env`, falling back to `apps/api/.env` |
 | API access | `DrizzleModule` provides the client as `TALLY_DB` |
 
@@ -55,7 +55,7 @@ Partner apps ("clients") act on one business after its merchant consents, throug
 
 | Table | Notes |
 |---|---|
-| `oauth_clients` | Registered by the CTO with `apps/api/scripts/oauth-client-create.mjs` ([usage](../../apps/api/README.md#connect-tally-clients)). `client_id` is `tc_` + 24 `[a-z0-9]`. `allowed_scopes` ⊆ `stocktake:write`, `stocktake:read`, `inventory:read`. `allowed_origins` is the embedded stock-take's `frame-ancestors`. `daily_stocktake_cap` (default 200) and `max_concurrent_runs` (default 3) are abuse caps per client, separate from the merchant's plan. `status` is `active` or `suspended`; clients are never deleted |
+| `oauth_clients` | Self-served by a signed-in Qorelly user (`owner_user_id`; the Developers page is planned), or registered by the CTO with `apps/api/scripts/oauth-client-create.mjs` ([usage](../../apps/api/README.md#connect-tally-clients)), where `owner_user_id` is null. `client_id` is `tc_` + 24 `[a-z0-9]`. `allowed_scopes` ⊆ `stocktake:write`, `stocktake:read`, `inventory:read`. `allowed_origins` is the embedded stock-take's `frame-ancestors`. `daily_stocktake_cap` (default 200) and `max_concurrent_runs` (default 3) are abuse caps per client, separate from the merchant's plan. `status` is `active` or `suspended`; clients are never deleted |
 | `oauth_codes` | One row per authorization code: client, user, business, scopes, `redirect_uri`, PKCE challenge (`S256` only), `expires_at`, `used_at`. Indexed on `expires_at` for cleanup |
 | `oauth_grants` | One active grant per `(client_id, business_id)` (unique where `revoked_at is null`). Holds the current and the previous refresh token hash: presenting the previous one again is a replay, so the grant is revoked. `refresh_expires_at`, `last_used_at`, `revoked_at` |
 
@@ -63,6 +63,7 @@ Partner apps ("clients") act on one business after its merchant consents, throug
 
 - **Only hashes are stored.** Client secrets, authorization codes and refresh tokens are kept as sha256 hex (checked by the database); the plain value is shown once and never written. `secret_prefix` (8 characters after `tcs_`) identifies a key without revealing it. `tcs_` secrets are also blocked by the secrets check.
 - **`user_id` → `auth.users` is custom SQL.** `oauth_codes.user_id` and `oauth_grants.user_id` reference `auth.users(id)` `ON DELETE CASCADE`. The key crosses schemas, which Drizzle can't declare with `schemaFilter: ["tally"]`, so `0011` adds it by hand, as `0002` does for `businesses` and `business_members`.
+- **`oauth_clients.owner_user_id` → `auth.users` is custom SQL** (`0016`), `ON DELETE SET NULL`: an app outlives its developer's account for the merchants who connected it, and the CTO manages it from then on.
 - Everything else cascades from `businesses` and `oauth_clients`.
 
 ## Plans and subscriptions

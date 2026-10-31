@@ -1,0 +1,2925 @@
+{
+  "id": "71b59301-d0c4-47b1-9008-76de482f1c13",
+  "prevId": "c796342a-caff-4cba-ba24-c8a65f57d816",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "tally.business_members": {
+      "name": "business_members",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "business_members_user_idx": {
+          "name": "business_members_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "business_members_business_id_businesses_id_fk": {
+          "name": "business_members_business_id_businesses_id_fk",
+          "tableFrom": "business_members",
+          "tableTo": "businesses",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "business_members_business_user_key": {
+          "name": "business_members_business_user_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id",
+            "user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "business_members_role": {
+          "name": "business_members_role",
+          "value": "role in ('owner', 'staff')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.business_subscriptions": {
+      "name": "business_subscriptions",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "plan_code": {
+          "name": "plan_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "simulated": {
+          "name": "simulated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "current_period_end": {
+          "name": "current_period_end",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "business_subscriptions_business_fk": {
+          "name": "business_subscriptions_business_fk",
+          "tableFrom": "business_subscriptions",
+          "tableTo": "businesses",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "business_subscriptions_plan_fk": {
+          "name": "business_subscriptions_plan_fk",
+          "tableFrom": "business_subscriptions",
+          "tableTo": "plans",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "plan_code"
+          ],
+          "columnsTo": [
+            "code"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "business_subscriptions_business_id_key": {
+          "name": "business_subscriptions_business_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "business_subscriptions_status": {
+          "name": "business_subscriptions_status",
+          "value": "status in ('active', 'cancelled')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.businesses": {
+      "name": "businesses",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vertical_code": {
+          "name": "vertical_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subtype_code": {
+          "name": "subtype_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'NGN'"
+        },
+        "sale_counter": {
+          "name": "sale_counter",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "businesses_owner_idx": {
+          "name": "businesses_owner_idx",
+          "columns": [
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "businesses_name_length": {
+          "name": "businesses_name_length",
+          "value": "char_length(name) between 1 and 120"
+        },
+        "businesses_currency_ngn": {
+          "name": "businesses_currency_ngn",
+          "value": "currency = 'NGN'"
+        },
+        "businesses_sale_counter_nonneg": {
+          "name": "businesses_sale_counter_nonneg",
+          "value": "sale_counter >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.inventory_item_readings": {
+      "name": "inventory_item_readings",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reading_key": {
+          "name": "reading_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "inventory_item_readings_item_idx": {
+          "name": "inventory_item_readings_item_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "inventory_item_readings_item_fk": {
+          "name": "inventory_item_readings_item_fk",
+          "tableFrom": "inventory_item_readings",
+          "tableTo": "inventory_items",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "item_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "inventory_item_readings_business_key": {
+          "name": "inventory_item_readings_business_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id",
+            "reading_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "inventory_item_readings_key_length": {
+          "name": "inventory_item_readings_key_length",
+          "value": "char_length(reading_key) between 3 and 400"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.inventory_items": {
+      "name": "inventory_items",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "core_qid": {
+          "name": "core_qid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "variant_label": {
+          "name": "variant_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "size_value": {
+          "name": "size_value",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "size_unit": {
+          "name": "size_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pack_qty": {
+          "name": "pack_qty",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "category_path": {
+          "name": "category_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "barcode": {
+          "name": "barcode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price": {
+          "name": "price",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cost": {
+          "name": "cost",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantity_on_hand": {
+          "name": "quantity_on_hand",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "reorder_point": {
+          "name": "reorder_point",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "inventory_items_business_core_qid_key": {
+          "name": "inventory_items_business_core_qid_key",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "core_qid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "core_qid is not null and archived_at is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "inventory_items_business_name_idx": {
+          "name": "inventory_items_business_name_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "inventory_items_business_barcode_key": {
+          "name": "inventory_items_business_barcode_key",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "barcode",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "barcode is not null and archived_at is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "inventory_items_business_id_businesses_id_fk": {
+          "name": "inventory_items_business_id_businesses_id_fk",
+          "tableFrom": "inventory_items",
+          "tableTo": "businesses",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "inventory_items_business_id_key": {
+          "name": "inventory_items_business_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "inventory_items_core_qid_format": {
+          "name": "inventory_items_core_qid_format",
+          "value": "core_qid is null or core_qid ~ '^QC-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]$'"
+        },
+        "inventory_items_pack_qty_positive": {
+          "name": "inventory_items_pack_qty_positive",
+          "value": "pack_qty > 0"
+        },
+        "inventory_items_price_nonneg": {
+          "name": "inventory_items_price_nonneg",
+          "value": "price >= 0"
+        },
+        "inventory_items_cost_nonneg": {
+          "name": "inventory_items_cost_nonneg",
+          "value": "cost is null or cost >= 0"
+        },
+        "inventory_items_source": {
+          "name": "inventory_items_source",
+          "value": "source in ('template', 'photo', 'manual')"
+        },
+        "inventory_items_name_length": {
+          "name": "inventory_items_name_length",
+          "value": "char_length(name) between 1 and 200"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.oauth_clients": {
+      "name": "oauth_clients",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logo_url": {
+          "name": "logo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "secret_hash": {
+          "name": "secret_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret_prefix": {
+          "name": "secret_prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "redirect_uris": {
+          "name": "redirect_uris",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allowed_origins": {
+          "name": "allowed_origins",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "allowed_scopes": {
+          "name": "allowed_scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "daily_stocktake_cap": {
+          "name": "daily_stocktake_cap",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 200
+        },
+        "max_concurrent_runs": {
+          "name": "max_concurrent_runs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 3
+        },
+        "theme": {
+          "name": "theme",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "oauth_clients_owner_idx": {
+          "name": "oauth_clients_owner_idx",
+          "columns": [
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "oauth_clients_client_id_key": {
+          "name": "oauth_clients_client_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "client_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "oauth_clients_client_id_format": {
+          "name": "oauth_clients_client_id_format",
+          "value": "client_id ~ '^tc_[a-z0-9]{24}$'"
+        },
+        "oauth_clients_name_length": {
+          "name": "oauth_clients_name_length",
+          "value": "char_length(name) between 1 and 80"
+        },
+        "oauth_clients_logo_url_https": {
+          "name": "oauth_clients_logo_url_https",
+          "value": "logo_url is null or logo_url ~ '^https://'"
+        },
+        "oauth_clients_secret_hash_format": {
+          "name": "oauth_clients_secret_hash_format",
+          "value": "secret_hash ~ '^[0-9a-f]{64}$'"
+        },
+        "oauth_clients_secret_prefix_length": {
+          "name": "oauth_clients_secret_prefix_length",
+          "value": "char_length(secret_prefix) = 8"
+        },
+        "oauth_clients_redirect_uris_count": {
+          "name": "oauth_clients_redirect_uris_count",
+          "value": "cardinality(redirect_uris) between 1 and 10"
+        },
+        "oauth_clients_allowed_scopes": {
+          "name": "oauth_clients_allowed_scopes",
+          "value": "cardinality(allowed_scopes) >= 1 and allowed_scopes <@ array['stocktake:write','stocktake:read','inventory:read']::text[]"
+        },
+        "oauth_clients_status": {
+          "name": "oauth_clients_status",
+          "value": "status in ('active', 'suspended')"
+        },
+        "oauth_clients_limits_positive": {
+          "name": "oauth_clients_limits_positive",
+          "value": "daily_stocktake_cap > 0 and max_concurrent_runs > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.oauth_codes": {
+      "name": "oauth_codes",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "code_hash": {
+          "name": "code_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "redirect_uri": {
+          "name": "redirect_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_challenge": {
+          "name": "code_challenge",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_challenge_method": {
+          "name": "code_challenge_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'S256'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "oauth_codes_expires_idx": {
+          "name": "oauth_codes_expires_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "oauth_codes_client_fk": {
+          "name": "oauth_codes_client_fk",
+          "tableFrom": "oauth_codes",
+          "tableTo": "oauth_clients",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "oauth_codes_business_fk": {
+          "name": "oauth_codes_business_fk",
+          "tableFrom": "oauth_codes",
+          "tableTo": "businesses",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "oauth_codes_code_hash_key": {
+          "name": "oauth_codes_code_hash_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "oauth_codes_code_hash_format": {
+          "name": "oauth_codes_code_hash_format",
+          "value": "code_hash ~ '^[0-9a-f]{64}$'"
+        },
+        "oauth_codes_scopes_count": {
+          "name": "oauth_codes_scopes_count",
+          "value": "cardinality(scopes) >= 1"
+        },
+        "oauth_codes_code_challenge_length": {
+          "name": "oauth_codes_code_challenge_length",
+          "value": "char_length(code_challenge) between 43 and 128"
+        },
+        "oauth_codes_code_challenge_method": {
+          "name": "oauth_codes_code_challenge_method",
+          "value": "code_challenge_method = 'S256'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.oauth_grants": {
+      "name": "oauth_grants",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refresh_token_hash": {
+          "name": "refresh_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_refresh_token_hash": {
+          "name": "previous_refresh_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_expires_at": {
+          "name": "refresh_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "oauth_grants_active_client_business_key": {
+          "name": "oauth_grants_active_client_business_key",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "revoked_at is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "oauth_grants_business_active_idx": {
+          "name": "oauth_grants_business_active_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "revoked_at is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "oauth_grants_user_idx": {
+          "name": "oauth_grants_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "oauth_grants_previous_refresh_token_idx": {
+          "name": "oauth_grants_previous_refresh_token_idx",
+          "columns": [
+            {
+              "expression": "previous_refresh_token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "oauth_grants_client_fk": {
+          "name": "oauth_grants_client_fk",
+          "tableFrom": "oauth_grants",
+          "tableTo": "oauth_clients",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "oauth_grants_business_fk": {
+          "name": "oauth_grants_business_fk",
+          "tableFrom": "oauth_grants",
+          "tableTo": "businesses",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "oauth_grants_refresh_token_hash_key": {
+          "name": "oauth_grants_refresh_token_hash_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "refresh_token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "oauth_grants_scopes_count": {
+          "name": "oauth_grants_scopes_count",
+          "value": "cardinality(scopes) >= 1"
+        },
+        "oauth_grants_refresh_token_hash_format": {
+          "name": "oauth_grants_refresh_token_hash_format",
+          "value": "refresh_token_hash ~ '^[0-9a-f]{64}$'"
+        },
+        "oauth_grants_previous_refresh_token_hash_format": {
+          "name": "oauth_grants_previous_refresh_token_hash_format",
+          "value": "previous_refresh_token_hash is null or previous_refresh_token_hash ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.plans": {
+      "name": "plans",
+      "schema": "tally",
+      "columns": {
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_kobo_monthly": {
+          "name": "price_kobo_monthly",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "daily_stocktake_limit": {
+          "name": "daily_stocktake_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_concurrent_runs": {
+          "name": "max_concurrent_runs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort": {
+          "name": "sort",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "plans_code": {
+          "name": "plans_code",
+          "value": "code in ('free', 'pro')"
+        },
+        "plans_name_length": {
+          "name": "plans_name_length",
+          "value": "char_length(name) between 1 and 40"
+        },
+        "plans_price_nonneg": {
+          "name": "plans_price_nonneg",
+          "value": "price_kobo_monthly >= 0"
+        },
+        "plans_limits_positive": {
+          "name": "plans_limits_positive",
+          "value": "daily_stocktake_limit > 0 and max_concurrent_runs > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.sale_items": {
+      "name": "sale_items",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sale_id": {
+          "name": "sale_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_name": {
+          "name": "item_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "core_qid": {
+          "name": "core_qid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unit_price": {
+          "name": "unit_price",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "line_total": {
+          "name": "line_total",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "sale_items_sale_idx": {
+          "name": "sale_items_sale_idx",
+          "columns": [
+            {
+              "expression": "sale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sale_items_item_idx": {
+          "name": "sale_items_item_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sale_items_sale_fk": {
+          "name": "sale_items_sale_fk",
+          "tableFrom": "sale_items",
+          "tableTo": "sales",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "sale_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sale_items_item_fk": {
+          "name": "sale_items_item_fk",
+          "tableFrom": "sale_items",
+          "tableTo": "inventory_items",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "item_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "sale_items_unit_price_nonneg": {
+          "name": "sale_items_unit_price_nonneg",
+          "value": "unit_price >= 0"
+        },
+        "sale_items_quantity_positive": {
+          "name": "sale_items_quantity_positive",
+          "value": "quantity > 0"
+        },
+        "sale_items_line_total": {
+          "name": "sale_items_line_total",
+          "value": "line_total = round(unit_price * quantity, 2)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.sale_payments": {
+      "name": "sale_payments",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sale_id": {
+          "name": "sale_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference": {
+          "name": "reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "received_by": {
+          "name": "received_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_payment_id": {
+          "name": "client_payment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "sale_payments_business_client_payment_id_key": {
+          "name": "sale_payments_business_client_payment_id_key",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "client_payment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "client_payment_id is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sale_payments_sale_idx": {
+          "name": "sale_payments_sale_idx",
+          "columns": [
+            {
+              "expression": "sale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sale_payments_business_created_idx": {
+          "name": "sale_payments_business_created_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sale_payments_sale_fk": {
+          "name": "sale_payments_sale_fk",
+          "tableFrom": "sale_payments",
+          "tableTo": "sales",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "sale_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "sale_payments_amount_positive": {
+          "name": "sale_payments_amount_positive",
+          "value": "amount > 0"
+        },
+        "sale_payments_method": {
+          "name": "sale_payments_method",
+          "value": "method in ('cash', 'transfer', 'card', 'other')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.sales": {
+      "name": "sales",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sale_number": {
+          "name": "sale_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'completed'"
+        },
+        "subtotal": {
+          "name": "subtotal",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "discount": {
+          "name": "discount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "total": {
+          "name": "total",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paid_amount": {
+          "name": "paid_amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "stock_deducted_at": {
+          "name": "stock_deducted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voided_at": {
+          "name": "voided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "void_reason": {
+          "name": "void_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "client_sale_id": {
+          "name": "client_sale_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "sales_business_client_sale_id_key": {
+          "name": "sales_business_client_sale_id_key",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "client_sale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "client_sale_id is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sales_business_created_idx": {
+          "name": "sales_business_created_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sales_business_id_businesses_id_fk": {
+          "name": "sales_business_id_businesses_id_fk",
+          "tableFrom": "sales",
+          "tableTo": "businesses",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "sales_business_id_key": {
+          "name": "sales_business_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id",
+            "id"
+          ]
+        },
+        "sales_business_sale_number_key": {
+          "name": "sales_business_sale_number_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id",
+            "sale_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "sales_status": {
+          "name": "sales_status",
+          "value": "status in ('completed', 'voided')"
+        },
+        "sales_amounts_nonneg": {
+          "name": "sales_amounts_nonneg",
+          "value": "subtotal >= 0 and discount >= 0 and total >= 0"
+        },
+        "sales_total_formula": {
+          "name": "sales_total_formula",
+          "value": "total = subtotal - discount"
+        },
+        "sales_paid_nonneg": {
+          "name": "sales_paid_nonneg",
+          "value": "paid_amount >= 0"
+        },
+        "sales_void_consistent": {
+          "name": "sales_void_consistent",
+          "value": "(status = 'voided') = (voided_at is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.stock_movements": {
+      "name": "stock_movements",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity_delta": {
+          "name": "quantity_delta",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity_after": {
+          "name": "quantity_after",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "sale_id": {
+          "name": "sale_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unit_cost": {
+          "name": "unit_cost",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "performed_by": {
+          "name": "performed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "client_movement_id": {
+          "name": "client_movement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "stock_movements_business_client_movement_id_key": {
+          "name": "stock_movements_business_client_movement_id_key",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "client_movement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "client_movement_id is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_movements_item_created_idx": {
+          "name": "stock_movements_item_created_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_movements_sale_idx": {
+          "name": "stock_movements_sale_idx",
+          "columns": [
+            {
+              "expression": "sale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "sale_id is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "stock_movements_item_fk": {
+          "name": "stock_movements_item_fk",
+          "tableFrom": "stock_movements",
+          "tableTo": "inventory_items",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "item_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "stock_movements_sale_fk": {
+          "name": "stock_movements_sale_fk",
+          "tableFrom": "stock_movements",
+          "tableTo": "sales",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "sale_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "stock_movements_type": {
+          "name": "stock_movements_type",
+          "value": "type in ('opening', 'restock', 'sale', 'adjustment', 'void')"
+        },
+        "stock_movements_delta_nonzero": {
+          "name": "stock_movements_delta_nonzero",
+          "value": "quantity_delta <> 0"
+        },
+        "stock_movements_unit_cost_nonneg": {
+          "name": "stock_movements_unit_cost_nonneg",
+          "value": "unit_cost is null or unit_cost >= 0"
+        },
+        "stock_movements_sale_link": {
+          "name": "stock_movements_sale_link",
+          "value": "(type in ('sale', 'void')) = (sale_id is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.vision_agent_runs": {
+      "name": "vision_agent_runs",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scan_id": {
+          "name": "scan_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rerun_of_scan_id": {
+          "name": "rerun_of_scan_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turns": {
+          "name": "turns",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_by": {
+          "name": "started_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "vision_agent_runs_rerun_of_idx": {
+          "name": "vision_agent_runs_rerun_of_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rerun_of_scan_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "vision_agent_runs_business_started_idx": {
+          "name": "vision_agent_runs_business_started_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vision_agent_runs_business_id_businesses_id_fk": {
+          "name": "vision_agent_runs_business_id_businesses_id_fk",
+          "tableFrom": "vision_agent_runs",
+          "tableTo": "businesses",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "vision_agent_runs_client_fk": {
+          "name": "vision_agent_runs_client_fk",
+          "tableFrom": "vision_agent_runs",
+          "tableTo": "oauth_clients",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "vision_agent_runs_scan_fk": {
+          "name": "vision_agent_runs_scan_fk",
+          "tableFrom": "vision_agent_runs",
+          "tableTo": "vision_scans",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "scan_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vision_agent_runs_rerun_of_fk": {
+          "name": "vision_agent_runs_rerun_of_fk",
+          "tableFrom": "vision_agent_runs",
+          "tableTo": "vision_scans",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "rerun_of_scan_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "vision_agent_runs_business_id_key": {
+          "name": "vision_agent_runs_business_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "vision_agent_runs_status": {
+          "name": "vision_agent_runs_status",
+          "value": "status in ('running', 'done', 'fallback', 'failed')"
+        },
+        "vision_agent_runs_finished_consistent": {
+          "name": "vision_agent_runs_finished_consistent",
+          "value": "(status = 'running') = (finished_at is null)"
+        },
+        "vision_agent_runs_counts_nonneg": {
+          "name": "vision_agent_runs_counts_nonneg",
+          "value": "turns >= 0 and input_tokens >= 0 and output_tokens >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.vision_agent_steps": {
+      "name": "vision_agent_steps",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn": {
+          "name": "turn",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool": {
+          "name": "tool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "args": {
+          "name": "args",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ms": {
+          "name": "ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "vision_agent_steps_run_idx": {
+          "name": "vision_agent_steps_run_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vision_agent_steps_run_fk": {
+          "name": "vision_agent_steps_run_fk",
+          "tableFrom": "vision_agent_steps",
+          "tableTo": "vision_agent_runs",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "run_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "vision_agent_steps_kind": {
+          "name": "vision_agent_steps_kind",
+          "value": "kind in ('baseline', 'thought', 'tool', 'result')"
+        },
+        "vision_agent_steps_turn_nonneg": {
+          "name": "vision_agent_steps_turn_nonneg",
+          "value": "turn >= 0"
+        },
+        "vision_agent_steps_tool_consistent": {
+          "name": "vision_agent_steps_tool_consistent",
+          "value": "(kind = 'tool') = (tool is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.vision_detections": {
+      "name": "vision_detections",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scan_id": {
+          "name": "scan_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brand": {
+          "name": "brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pack": {
+          "name": "pack",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "look": {
+          "name": "look",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "spark_count": {
+          "name": "spark_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sam_count": {
+          "name": "sam_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count_source": {
+          "name": "count_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "boxes": {
+          "name": "boxes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "candidates": {
+          "name": "candidates",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inventory_item_id": {
+          "name": "inventory_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inventory_match": {
+          "name": "inventory_match",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confirmed_qid": {
+          "name": "confirmed_qid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feedback_sent_at": {
+          "name": "feedback_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "review": {
+          "name": "review",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "catalog_resolution": {
+          "name": "catalog_resolution",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "catalog_resolved_at": {
+          "name": "catalog_resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "vision_detections_catalog_resolved_idx": {
+          "name": "vision_detections_catalog_resolved_idx",
+          "columns": [
+            {
+              "expression": "catalog_resolved_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vision_detections_scan_fk": {
+          "name": "vision_detections_scan_fk",
+          "tableFrom": "vision_detections",
+          "tableTo": "vision_scans",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "scan_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "vision_detections_inventory_item_fk": {
+          "name": "vision_detections_inventory_item_fk",
+          "tableFrom": "vision_detections",
+          "tableTo": "inventory_items",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "inventory_item_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vision_detections_item_fk": {
+          "name": "vision_detections_item_fk",
+          "tableFrom": "vision_detections",
+          "tableTo": "inventory_items",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id",
+            "item_id"
+          ],
+          "columnsTo": [
+            "business_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "vision_detections_scan_position_key": {
+          "name": "vision_detections_scan_position_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "scan_id",
+            "position"
+          ]
+        },
+        "vision_detections_business_id_key": {
+          "name": "vision_detections_business_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "vision_detections_position_nonneg": {
+          "name": "vision_detections_position_nonneg",
+          "value": "position >= 0"
+        },
+        "vision_detections_confidence": {
+          "name": "vision_detections_confidence",
+          "value": "confidence in ('high', 'medium', 'low')"
+        },
+        "vision_detections_count_source": {
+          "name": "vision_detections_count_source",
+          "value": "count_source in ('sam', 'spark')"
+        },
+        "vision_detections_counts_nonneg": {
+          "name": "vision_detections_counts_nonneg",
+          "value": "spark_count >= 0 and count >= 0 and (sam_count is null or sam_count >= 0)"
+        },
+        "vision_detections_inventory_match": {
+          "name": "vision_detections_inventory_match",
+          "value": "(inventory_item_id is null) = (inventory_match is null) and (inventory_match is null or inventory_match in ('reading', 'catalogue', 'name'))"
+        },
+        "vision_detections_name_length": {
+          "name": "vision_detections_name_length",
+          "value": "char_length(name) between 1 and 200"
+        },
+        "vision_detections_review_length": {
+          "name": "vision_detections_review_length",
+          "value": "review is null or char_length(review) between 1 and 500"
+        },
+        "vision_detections_catalog_resolution": {
+          "name": "vision_detections_catalog_resolution",
+          "value": "(catalog_resolution is null) = (catalog_resolved_at is null) and (catalog_resolution is null or catalog_resolution in ('created', 'linked', 'dismissed'))"
+        },
+        "vision_detections_action": {
+          "name": "vision_detections_action",
+          "value": "action is null or action in ('restock', 'restore', 'add', 'skip')"
+        },
+        "vision_detections_outcome": {
+          "name": "vision_detections_outcome",
+          "value": "outcome is null or outcome in ('accepted', 'corrected', 'new_item', 'removed')"
+        },
+        "vision_detections_confirmed_qid_format": {
+          "name": "vision_detections_confirmed_qid_format",
+          "value": "confirmed_qid is null or confirmed_qid ~ '^QC-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]$'"
+        },
+        "vision_detections_quantity_nonneg": {
+          "name": "vision_detections_quantity_nonneg",
+          "value": "quantity is null or quantity >= 0"
+        },
+        "vision_detections_decision_consistent": {
+          "name": "vision_detections_decision_consistent",
+          "value": "(action is null) = (decided_at is null) and (action is null) = (outcome is null) and (action is null) = (decided_by is null)\n        and (action = 'skip') = (outcome = 'removed') and (action is distinct from 'skip') = (item_id is not null or action is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tally.vision_scans": {
+      "name": "vision_scans",
+      "schema": "tally",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "image_sha256": {
+          "name": "image_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_bytes": {
+          "name": "image_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "read_model": {
+          "name": "read_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count_model": {
+          "name": "count_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "catalogue_available": {
+          "name": "catalogue_available",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "read_ms": {
+          "name": "read_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sam_ms": {
+          "name": "sam_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "match_ms": {
+          "name": "match_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "discarded_at": {
+          "name": "discarded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "superseded_at": {
+          "name": "superseded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "vision_scans_business_created_idx": {
+          "name": "vision_scans_business_created_idx",
+          "columns": [
+            {
+              "expression": "business_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vision_scans_business_id_businesses_id_fk": {
+          "name": "vision_scans_business_id_businesses_id_fk",
+          "tableFrom": "vision_scans",
+          "tableTo": "businesses",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "business_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "vision_scans_client_fk": {
+          "name": "vision_scans_client_fk",
+          "tableFrom": "vision_scans",
+          "tableTo": "oauth_clients",
+          "schemaTo": "tally",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "vision_scans_business_id_key": {
+          "name": "vision_scans_business_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "business_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "vision_scans_status": {
+          "name": "vision_scans_status",
+          "value": "status in ('open', 'confirmed', 'discarded', 'superseded')"
+        },
+        "vision_scans_confirmed_consistent": {
+          "name": "vision_scans_confirmed_consistent",
+          "value": "(status = 'confirmed') = (confirmed_at is not null)"
+        },
+        "vision_scans_discarded_consistent": {
+          "name": "vision_scans_discarded_consistent",
+          "value": "(status = 'discarded') = (discarded_at is not null)"
+        },
+        "vision_scans_superseded_consistent": {
+          "name": "vision_scans_superseded_consistent",
+          "value": "(status = 'superseded') = (superseded_at is not null)"
+        },
+        "vision_scans_image_sha256_format": {
+          "name": "vision_scans_image_sha256_format",
+          "value": "image_sha256 ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "tally": "tally"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
