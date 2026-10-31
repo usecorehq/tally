@@ -77,6 +77,16 @@ export class ClientsRepository {
     return row;
   }
 
+  async findClientById(id: string): Promise<schema.OauthClient | undefined> {
+    const [row] = await this.db.select().from(oauthClients).where(eq(oauthClients.id, id)).limit(1);
+    return row;
+  }
+
+  async findBusiness(id: string): Promise<{ id: string; name: string } | undefined> {
+    const [row] = await this.db.select({ id: businesses.id, name: businesses.name }).from(businesses).where(eq(businesses.id, id)).limit(1);
+    return row;
+  }
+
   /** Live businesses the user owns, each flagged when this client already holds an active grant on it. */
   async ownedBusinesses(userId: string, clientId: string): Promise<{ id: string; name: string; connected: boolean }[]> {
     const owned = await this.db

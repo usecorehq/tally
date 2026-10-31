@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Query, UseFilters } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Public } from "../../common/decorators/public.decorator";
+import { Scopes } from "../../common/decorators/scopes.decorator";
 import { CatalogExceptionFilter } from "./catalog-exception.filter";
 import { ProductParams, ProductSearchQuery, SubtypeParams, TemplatesQuery } from "./catalog.dto";
 import { CatalogService } from "./catalog.service";
@@ -61,6 +62,7 @@ export class CatalogController {
   }
 
   @Get("products")
+  @Scopes("stocktake:write")
   @ApiOperation({ summary: "Search catalogue products." })
   @ApiOkResponse({
     schema: {
@@ -98,6 +100,7 @@ export class CatalogController {
   }
 
   @Get("products/:qid")
+  @Scopes("stocktake:write")
   @ApiOperation({ summary: "One product with indicative price and variants. A merged product returns { qid, status: 'merged', mergedInto }." })
   @ApiOkResponse({ schema: { example: { qid: "QC-7K2M-9XQ4-R", status: "merged", mergedInto: "QC-8M3N-2PQ5-S" } } })
   getProduct(@Param() { qid }: ProductParams) {

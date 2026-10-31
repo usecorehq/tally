@@ -9,18 +9,22 @@ import { ConfigService } from "@nestjs/config";
 import type { schema } from "@tally/db";
 import * as jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
+import type { AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { isUniqueViolation } from "../businesses/barcode";
 import { ClientsRepository } from "./clients.repository";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  CLIENT_ID,
   CLIENT_TOKEN_AUDIENCE,
   CODE_TTL_SECONDS,
+  EMBED_TOKEN_AUDIENCE,
   OAUTH_SCOPES,
   OAuthError,
   type OauthScope,
   PKCE_CHALLENGE,
   PKCE_VERIFIER,
   REFRESH_TTL_MS,
+  SESSION_TOKEN_TTL_SECONDS,
   TOKEN_ISSUER,
   UUID,
   hexEqual,
@@ -126,6 +130,50 @@ export class ClientsService {
     if (!grant) throw new NotFoundException(`No grant ${grantId}`);
     if (!(await this.repo.isOwner(grant.businessId, userId))) throw notOwner();
     if (!grant.revokedAt) await this.repo.revokeGrant(grant.id, new Date());
+  }
+
+  async me(principal: AuthenticatedUser) {
+    assertClient(principal);
+    const [client, business] = await Promise.all([
+      this.repo.findClientById(principal.clientId!),
+      this.repo.findBusiness(principal.businessId!),
+    ]);
+    if (!client || !business) throw new NotFoundException("The connected client or business no longer exists");
+    return { client_id: client.clientId, business, scopes: principal.scopes ?? [] };
+  }
+
+  /** An embed token carries the access token's grant and scopes; only a client server may mint one. */
+  createSession(principal: AuthenticatedUser) {
+    assertClient(principal);
+    const secret = this.jwtSecret();
+    const scope = (principal.scopes ?? []).join(" ");
+    const sessionToken = jwt.sign(
+      { bid: principal.businessId, cid: principal.clientId, gid: principal.grantId, scope },
+      secret,
+      {
+        algorithm: "HS256",
+        issuer: TOKEN_ISSUER,
+        audience: EMBED_TOKEN_AUDIENCE,
+        subject: principal.sub,
+        expiresIn: SESSION_TOKEN_TTL_SECONDS,
+        jwtid: randomUUID(),
+      },
+    );
+    const { exp } = jwt.decode(sessionToken, { json: true })!;
+    return { session_token: sessionToken, expires_at: new Date(exp! * 1000).toISOString(), business_id: principal.businessId! };
+  }
+
+  /** Non-secret fields the embed page needs to check parent_origin and set frame-ancestors. */
+  async embedConfig(clientId: unknown) {
+    const client = isNonEmptyString(clientId) && CLIENT_ID.test(clientId) ? await this.repo.findClient(clientId) : undefined;
+    if (!client) throw new NotFoundException({ statusCode: HttpStatus.NOT_FOUND, error: "Not Found", message: "Unknown client", code: "unknown_client" });
+    return {
+      client_id: client.clientId,
+      name: client.name,
+      status: client.status,
+      allowed_origins: client.allowedOrigins,
+      theme: client.theme,
+    };
   }
 
   /**
@@ -251,6 +299,17 @@ export class ClientsService {
     const secret = this.config.get<string>("clients.jwtSecret");
     if (!secret) throw new ServiceUnavailableException("Connect Tally is not configured on this server");
     return secret;
+  }
+}
+
+function assertClient(principal: AuthenticatedUser) {
+  if (principal.kind !== "client") {
+    throw new ForbiddenException({
+      statusCode: HttpStatus.FORBIDDEN,
+      error: "Forbidden",
+      message: "Needs a Connect Tally access token",
+      code: "client_token_required",
+    });
   }
 }
 

@@ -1,0 +1,21 @@
+export const VARIANTS = [
+  "integrations",
+  "integrations-empty",
+  "integrations-failed",
+  "integrations-loading",
+  "integrations-staff",
+  "usage",
+  "usage-near-limit",
+  "usage-at-limit",
+  "usage-empty",
+  "usage-failed",
+  "usage-loading",
+  "plan",
+  "plan-pro",
+  "plan-success",
+  "plan-failed",
+  "plan-loading",
+  "plan-staff",
+  "limit-reached",
+] as const;
+export type Variant = (typeof VARIANTS)[number];

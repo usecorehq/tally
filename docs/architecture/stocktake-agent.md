@@ -16,7 +16,7 @@ Identify one product stays a fixed pipeline ([identify](vision-recognition.md#id
 
 ## How a run works
 
-1. `POST …/vision/stocktakes` checks membership and the image, creates a `vision_agent_runs` row, and returns `202 { runId }`. The rest runs in the API process in the background.
+1. `POST …/vision/stocktakes` checks membership, the image and the [usage limits](#usage-limits), creates a `vision_agent_runs` row, and returns `202 { runId }`. The rest runs in the API process in the background.
 2. **First pass:** the quick scan's analysis (Muse Spark read, SAM counts, catalogue match, store check), stored as the `baseline` step. It is the agent's checklist and its fallback.
 3. **Agent loop** (Muse Spark 1.3, low reasoning, Responses API tool calling). The model sees the photo and a checklist of the first-pass lines, with `CHECK` on lines that need attention: low confidence, no catalogue match, or a store match to confirm. Each turn it may call several tools at once; Tally runs them in parallel (except `submit_stocktake`, which runs last), returns the results, and asks again.
 4. The loop ends when the model calls `submit_stocktake` and it is accepted, the model stops calling tools, or the budget runs out (12 turns or 150 s). Lines the agent never recorded keep the first-pass result, flagged for the merchant (`review`).
@@ -62,13 +62,52 @@ The pattern from Meta's agent workshop: checks run inside the tools at fixed poi
 - **Tool budgets** stop runaway loops; errors come back to the model as text it can act on, never as exceptions.
 - **No server copy:** the photo travels with `store: false` and stateless encrypted reasoning replay, Meta's recommended path for agents. `previous_response_id` (server-stored history) failed on a live run with "referenced response not found or expired".
 
+## Usage limits
+
+Every stock-take run, rerun and quick scan counts against the business's [plan](database.md#plans-and-subscriptions), whichever app started it. `BillingService.limitCheck` (`apps/api/src/modules/billing/`) runs after the membership check and before any model call (for a rerun, before its photo is fetched).
+
+- **What counts:** runs (reruns included) that did not fail, plus quick scans (scans no run points at; a run's own scan is the run). A failed run, or a quick scan that never got stored, gave the merchant nothing and doesn't count. Photo checks and identify don't count.
+- **Days are Lagos days** (`Africa/Lagos`, computed in SQL), so a day's allowance resets at midnight in Nigeria.
+- **Checks, in order:** the business's stock-takes today against `plans.daily_stocktake_limit` (`plan_limit`); its running runs against `plans.max_concurrent_runs` (`concurrent_runs`); then, for a Connect Tally client, its stock-takes today across all businesses against `oauth_clients.daily_stocktake_cap` (`client_cap`) and its running runs against `oauth_clients.max_concurrent_runs` (`concurrent_runs`). A run still `running` after 300 s (lost to a restart) holds no slot.
+- **Over a limit:** `429` with `Retry-After` (seconds to the next Lagos midnight for daily limits, 30 for concurrency) and `{ "statusCode": 429, "code": "plan_limit" | "client_cap" | "concurrent_runs", "message": "…", "retry_after_seconds": 7384 }`.
+- **Not atomic:** two starts at the same moment can both pass and overshoot a limit by one. Accepted for now; there are no locks.
+- **Attribution:** `vision_agent_runs.client_id` and `vision_scans.client_id` hold the Connect Tally client that started the work; null means Tally's own apps.
+
+### `GET /api/plans`
+
+The active plans in display order: `[{ code, name, price_kobo_monthly, daily_stocktake_limit, max_concurrent_runs }]`. Prices are for display only.
+
+### `GET /api/businesses/:id/usage?days=30`
+
+Members only; `days` is 1–90 (default 30). Counts only, with no prices or revenue:
+
+```json
+{
+  "plan": { "code": "free", "name": "Free", "daily_stocktake_limit": 50, "max_concurrent_runs": 2, "simulated": false },
+  "today": { "stocktakes": 2, "scans": 1 },
+  "month": { "stocktakes": 14, "scans": 6, "input_tokens": 812000, "output_tokens": 41000 },
+  "daily": [{ "date": "2026-10-31", "stocktakes": 2, "scans": 1 }],
+  "by_source": [{ "client_id": null, "name": "Tally", "stocktakes": 14 }]
+}
+```
+
+- `plan` is the active, unexpired subscription's plan, else Free. `simulated` is false when there is no subscription.
+- `today` and `month` (this Lagos calendar month) use the same counting rules as the limits. The daily limit applies to `stocktakes + scans`.
+- `daily` has one entry per Lagos day, oldest first, today last, with gaps as zeros.
+- `month` tokens are the agent runs' `input_tokens` / `output_tokens`, failed runs included (they were spent).
+- `by_source` is this month's stock-take runs by app: `client_id` is the public `tc_…` id, null for Tally's own apps (named "Tally").
+
+### `POST /api/businesses/:id/subscription`
+
+Owners only (403 `code: "not_owner"`). Body `{ "plan_code": "pro" }`; a plan that isn't offered is 400 `code: "unknown_plan"`. Simulated: it switches the plan at once for 30 days and takes no payment. Returns `{ plan_code, status: "active", simulated: true, started_at, current_period_end }`.
+
 ## API
 
 All routes need a Supabase JWT and are for business members only.
 
 ### `POST /api/businesses/:id/vision/stocktakes`
 
-Multipart `image`, with the same rules as `shelf-scans`: JPEG/PNG/WebP, ≤ 4 MB, ~1600 px. Returns `202 { "runId": "…", "status": "running" }`. Errors are the same as `shelf-scans`, and 503 when `META_MODEL_API_KEY` isn't set.
+Multipart `image`, with the same rules as `shelf-scans`: JPEG/PNG/WebP, ≤ 4 MB, ~1600 px. Returns `202 { "runId": "…", "status": "running" }`. Errors are the same as `shelf-scans`, 503 when `META_MODEL_API_KEY` isn't set, and 429 over a [usage limit](#usage-limits).
 
 ### `GET /api/businesses/:id/vision/stocktakes/:runId`
 

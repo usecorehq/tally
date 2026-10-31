@@ -3,7 +3,7 @@
  * Crops train recognition and can become the product's Qore Catalog picture once a curator approves one.
  */
 import sharp from "sharp";
-import type { Box } from "./shelf-reader";
+import type { Box, ImageType } from "./shelf-reader";
 
 /** Qore Catalog rejects pictures whose short side is under 96 px for training samples: smaller crops stay in R2 only. */
 export const MIN_CROP_SIDE = 96;
@@ -11,7 +11,7 @@ export const MIN_CROP_SIDE = 96;
 export const MIN_STORED_CROP_SIDE = 48;
 const MAX_CROP_SIDE = 640;
 /** Margin around the box, as a share of its size, so the label edge isn't cut off. */
-const PAD = 0.06;
+export const PAD = 0.06;
 
 /** R2 key for a detection's crop: tally/crops/<scanId>/<position>.webp. */
 export const cropKey = (scanId: string, position: number) => `tally/crops/${scanId}/${position}.webp`;
@@ -36,28 +36,53 @@ export function pixelRegion(box: Box, width: number, height: number): { left: nu
   return { left: x1, top: y1, width: Math.max(0, x2 - x1), height: Math.max(0, y2 - y1) };
 }
 
-/** WebP crops per box (null when there's no box or its short side is under minSide); EXIF-oriented, no metadata. */
-export async function makeCrops(
+/** A box's size in pixels of a width × height photo, before the context margin (rounded as in sampleContext). */
+export function boxPixels(box: Box, width: number, height: number): { width: number; height: number } {
+  return { width: Math.round(((box.x2 - box.x1) / 1000) * width), height: Math.round(((box.y2 - box.y1) / 1000) * height) };
+}
+
+/** One cut crop: the WebP, and the product's own size in the source photo before the margin. */
+export type Crop = { crop: Buffer; boxWidth: number; boxHeight: number };
+
+/**
+ * WebP crops per box, cut from the full-resolution photo (upright, capped at MAX_PHOTO_SIDE like the stored photo,
+ * so boxes share its pixels). null when there's no box or the box's short side, before the margin, is under minSide:
+ * a small product is never padded or enlarged to pass. EXIF-oriented, no metadata.
+ */
+export async function cutCrops(
   image: Buffer,
   boxes: (Box | null)[],
-  /** Agent zooms read small labels: a lower minimum, and enlarged to the max side. */
+  /** Agent zooms read small labels: a lower minimum, and enlarged to the max side. Never used for stored crops. */
   opts: { minSide?: number; enlarge?: boolean } = {},
-): Promise<(Buffer | null)[]> {
+): Promise<{ source: { width: number; height: number }; crops: (Crop | null)[] }> {
   const minSide = opts.minSide ?? MIN_CROP_SIDE;
-  const { data, info } = await sharp(image).rotate().raw().toBuffer({ resolveWithObject: true });
+  const { data, info } = await sharp(image)
+    .rotate()
+    .resize({ width: MAX_PHOTO_SIDE, height: MAX_PHOTO_SIDE, fit: "inside", withoutEnlargement: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
   const raw = { raw: { width: info.width, height: info.height, channels: info.channels } } as const;
-  return Promise.all(
-    boxes.map(async (box) => {
+  const crops = await Promise.all(
+    boxes.map(async (box): Promise<Crop | null> => {
       if (!box) return null;
+      const size = boxPixels(box, info.width, info.height);
+      if (Math.min(size.width, size.height) < minSide) return null;
       const r = pixelRegion(box, info.width, info.height);
-      if (Math.min(r.width, r.height) < minSide) return null;
-      return sharp(data, raw)
+      if (r.width < 1 || r.height < 1) return null;
+      const crop = await sharp(data, raw)
         .extract(r)
         .resize({ width: MAX_CROP_SIDE, height: MAX_CROP_SIDE, fit: "inside", withoutEnlargement: !opts.enlarge })
         .webp({ quality: 80 })
         .toBuffer();
+      return { crop, boxWidth: size.width, boxHeight: size.height };
     }),
   );
+  return { source: { width: info.width, height: info.height }, crops };
+}
+
+/** WebP crops per box (see cutCrops), without the sizes. */
+export async function makeCrops(image: Buffer, boxes: (Box | null)[], opts: { minSide?: number; enlarge?: boolean } = {}): Promise<(Buffer | null)[]> {
+  return (await cutCrops(image, boxes, opts)).crops.map((c) => c?.crop ?? null);
 }
 
 /** A stored crop's size; 0×0 when it can't be read. */
@@ -77,13 +102,47 @@ export async function catalogueSized(crop: Uint8Array): Promise<boolean> {
 /** R2 key for a scan's shelf photo, kept for good as the stock-take's audit record. */
 export const shelfPhotoKey = (scanId: string) => `tally/scans/${scanId}.jpg`;
 
-const MAX_PHOTO_SIDE = 2560;
+/**
+ * Long-side cap for the stored shelf photo and the pixels crops are cut from. Phones shoot ~4000 px; keeping that
+ * is what lets a product 40–100 px wide in a 1024 px copy reach Qore Catalog's 96 px minimum.
+ */
+export const MAX_PHOTO_SIDE = 4096;
 
-/** The stored copy of a shelf photo: upright, at most 2560 px, JPEG, with no metadata (EXIF and GPS dropped). */
+/** The stored copy of a shelf photo: upright, at most 4096 px, JPEG, with no metadata (EXIF and GPS dropped). */
 export async function storablePhoto(image: Buffer): Promise<Buffer> {
   return sharp(image)
     .rotate()
     .resize({ width: MAX_PHOTO_SIDE, height: MAX_PHOTO_SIDE, fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 85 })
+    .jpeg({ quality: 85, mozjpeg: true })
     .toBuffer();
+}
+
+/**
+ * Long-side cap for the copy sent to Muse Spark and SAM: what they were sent before full-resolution photos
+ * (mp uploaded at most 2560 px), so cost and latency don't change.
+ */
+export const MODEL_LONG_SIDE = 2560;
+
+/**
+ * The copy of a shelf photo the models read. Boxes come back on a 0–1000 grid of this copy, which is the full photo
+ * upright and uniformly scaled, so the same grid maps straight onto the full-resolution pixels for cropping.
+ * An upright photo already within MODEL_LONG_SIDE is sent untouched; one that can't be decoded too (as before).
+ */
+export async function modelCopy(image: Buffer, type: ImageType): Promise<{ image: Buffer; type: ImageType; width: number | null; height: number | null }> {
+  try {
+    const meta = await sharp(image).metadata();
+    const turned = (meta.orientation ?? 1) >= 5;
+    const width = (turned ? meta.height : meta.width) ?? 0;
+    const height = (turned ? meta.width : meta.height) ?? 0;
+    if (!width || !height) return { image, type, width: null, height: null };
+    if ((meta.orientation ?? 1) === 1 && Math.max(width, height) <= MODEL_LONG_SIDE) return { image, type, width, height };
+    const { data, info } = await sharp(image)
+      .rotate()
+      .resize({ width: MODEL_LONG_SIDE, height: MODEL_LONG_SIDE, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 90 })
+      .toBuffer({ resolveWithObject: true });
+    return { image: data, type: "image/jpeg", width: info.width, height: info.height };
+  } catch {
+    return { image, type, width: null, height: null };
+  }
 }

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, jest 
 import sharp from "sharp";
 import { ConflictException, ForbiddenException, INestApplication, Logger, NotFoundException, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import * as jwt from "jsonwebtoken";
 import { createHash } from "node:crypto";
@@ -12,6 +12,8 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { MAX_IDENTIFY_IMAGE_BYTES, MAX_SHELF_IMAGE_BYTES, VisionController } from "./vision.controller";
 import { R2Storage } from "../media/r2-storage";
+import { UsageLimitException, UsageLimitFilter } from "../billing/billing-errors";
+import { BillingService } from "../billing/billing.service";
 import { VisionRepository } from "./vision.repository";
 import { STOCKTAKE_DEADLINES, VisionService } from "./vision.service";
 
@@ -43,7 +45,7 @@ const pending = {
   itemName: "Peak Milk 400g",
   price: "4500.00",
   sample: {
-    boxes: [{ x1: 100, y1: 200, x2: 300, y2: 700 }],
+    boxes: [{ x1: 100, y1: 200, x2: 400, y2: 700 }],
     countSource: "sam",
     capturedAt: new Date("2026-10-29T09:00:00Z"),
     readModel: "muse-spark-1.3",
@@ -232,6 +234,7 @@ async function app(apiKey: string | undefined) {
     presignedGetUrl: jest.fn(async (key: string, _seconds?: number) => `https://r2.example/${key}?sig=1`),
     exists: jest.fn(async (_key: string) => false),
   };
+  const usage = { limitCheck: jest.fn(async (_b: string, _c: string | null) => undefined) };
   const config: Record<string, unknown> = { "supabase.jwtSecret": SECRET, "meta.apiKey": apiKey, "meta.baseUrl": "https://api.meta.ai/v1" };
   const moduleRef = await Test.createTestingModule({
     controllers: [VisionController],
@@ -241,6 +244,8 @@ async function app(apiKey: string | undefined) {
       { provide: CatalogService, useValue: catalog },
       { provide: VisionRepository, useValue: repo },
       { provide: R2Storage, useValue: media },
+      { provide: BillingService, useValue: usage },
+      { provide: APP_FILTER, useClass: UsageLimitFilter },
       { provide: ConfigService, useValue: { get: (k: string) => config[k], getOrThrow: (k: string) => config[k] } },
       { provide: APP_GUARD, useClass: SupabaseJwtGuard },
     ],
@@ -249,7 +254,7 @@ async function app(apiKey: string | undefined) {
   nest.setGlobalPrefix("api");
   nest.useGlobalPipes(new ValidationPipe({ transform: true }));
   await nest.init();
-  return { nest, businesses, catalog, repo, media };
+  return { nest, businesses, catalog, repo, media, usage };
 }
 
 describe("VisionController shelf-scans (HTTP)", () => {
@@ -356,13 +361,42 @@ describe("VisionController shelf-scans (HTTP)", () => {
       const res = await post().set(auth).attach("image", photo, "shelf.jpg").expect(200);
       expect(res.body.cropsStored).toBe(2);
       // The tiny one can never become a catalogue picture: say so.
-      expect(log).toHaveBeenCalledWith("Scan scan-1: 2 of 3 crops stored, 1 too small to store (< 48 px)");
+      expect(log).toHaveBeenCalledWith("Scan scan-1: 2 of 3 crops stored from a 1000×1000 photo, 1 at 96+ px before the margin, 1 too small to store (< 48 px)");
       log.mockRestore();
       const crops = media.put.mock.calls.filter(([key]) => key.startsWith("tally/crops/"));
       expect(crops.map(([key]) => key).sort()).toEqual(["tally/crops/scan-1/0.webp", "tally/crops/scan-1/2.webp"]);
       const [, body, type] = media.put.mock.calls.find(([key]) => key.endsWith("/0.webp"))!;
       expect(type).toBe("image/webp");
       expect((await sharp(Buffer.from(body)).metadata()).format).toBe("webp");
+    } finally {
+      media.enabled = false;
+    }
+  });
+
+  it("models read a 2560 px copy; the stored photo and crops keep the full resolution", async () => {
+    media.enabled = true;
+    media.put.mockClear();
+    fetchSpy.mockClear();
+    try {
+      const photo = await sharp({ create: { width: 4000, height: 3000, channels: 3, background: "#c33" } }).jpeg().toBuffer();
+      // 40 × 40 on the 0–1000 grid: 102 × 77 px in the 2560 px copy (under 96), 160 × 120 px in the 4000 px photo.
+      const item = { ...peak, boxes: [{ x_min: 100, y_min: 100, x_max: 140, y_max: 140 }] };
+      fetchSpy.mockImplementation(metaApi(() => sparkReply([item]), () => samReply("")));
+      await post().set(auth).attach("image", photo, "shelf.jpg").expect(200);
+      const sent = fetchSpy.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as { input: { content: { type: string; image_url?: string }[] }[] });
+      expect(sent.length).toBeGreaterThan(0);
+      for (const body of sent) {
+        const url = body.input[0]!.content.find((c) => c.type === "input_image")!.image_url!;
+        const meta = await sharp(Buffer.from(url.split(",")[1]!, "base64")).metadata();
+        expect([meta.width, meta.height]).toEqual([2560, 1920]);
+      }
+      const [, stored] = media.put.mock.calls.find(([key]) => key === "tally/scans/scan-1.jpg")!;
+      const storedMeta = await sharp(Buffer.from(stored)).metadata();
+      expect([storedMeta.width, storedMeta.height]).toEqual([4000, 3000]);
+      const [, crop] = media.put.mock.calls.find(([key]) => key === "tally/crops/scan-1/0.webp")!;
+      const cropMeta = await sharp(Buffer.from(crop)).metadata();
+      // The 160 × 120 px product plus a 6% margin each side, cut from the 4000 px pixels.
+      expect([cropMeta.width, cropMeta.height]).toEqual([180, 136]);
     } finally {
       media.enabled = false;
     }
@@ -630,7 +664,7 @@ describe("VisionController confirm + get (HTTP)", () => {
         feedbackClientRef: `${SCAN}:0`,
         // The stored photo is 400 × 600 here: the 0–1000 box in its pixels, plus what counted the line and the label.
         sample: {
-          box: { x: 40, y: 120, w: 80, h: 300 },
+          box: { x: 40, y: 120, w: 120, h: 300 },
           sourceWidth: 400,
           sourceHeight: 600,
           detectorModel: "sam-3.1",
@@ -646,7 +680,7 @@ describe("VisionController confirm + get (HTTP)", () => {
         skipped: 0,
         failed: 0,
         skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 },
-        samples: [{ ref: `${SCAN}:0`, qid: "QC-7K2M-9XQ4-R", sampleId: "smp_1", status: "accepted" }],
+        samples: [{ ref: `${SCAN}:0`, qid: "QC-7K2M-9XQ4-R", sampleId: "smp_1", status: "accepted", cropWidth: 120, cropHeight: 300 }],
       });
     });
 
@@ -688,7 +722,7 @@ describe("VisionController confirm + get (HTTP)", () => {
         skipped: 2,
         failed: 0,
         skippedBy: { noProduct: 1, noCrop: 1, tooSmall: 0 },
-        samples: [{ ref: `${SCAN}:0`, qid: null, sampleId: "smp_new", status: "pending" }],
+        samples: [{ ref: `${SCAN}:0`, qid: null, sampleId: "smp_new", status: "pending", cropWidth: 120, cropHeight: 300 }],
       });
       ctx.media.get.mockImplementation(async () => (await webp(400, 600)) as Uint8Array | null);
     });
@@ -698,6 +732,36 @@ describe("VisionController confirm + get (HTTP)", () => {
       const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
       expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
       expect(res.body.images).toEqual({ uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 1 }, samples: [] });
+    });
+
+    it("never sends a product under 96 px that its margin padded past 96 px", async () => {
+      // 88 px wide on the 400 px photo (like the OMO sample on 30 Oct); its stored crop with the 6% margin is 104 px.
+      ctx.repo.confirm.mockResolvedValueOnce({
+        created: 1,
+        restocked: 0,
+        restored: 0,
+        skipped: 0,
+        alreadyDecided: 0,
+        invalid: [],
+        scanConfirmed: true,
+        superseded: 0,
+        pendingFeedback: [{ ...pending, sample: { ...pending.sample, boxes: [{ x1: 100, y1: 200, x2: 320, y2: 700 }] } }],
+      } as never);
+      ctx.media.get.mockResolvedValueOnce(await webp(104, 330));
+      const res = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+      expect(ctx.catalog.client.uploadImage).not.toHaveBeenCalled();
+      expect(res.body.images).toEqual({ uploaded: 0, skipped: 1, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 1 }, samples: [] });
+    });
+
+    it("without the stored photo, judges the crop less its margin", async () => {
+      // 104 px stored is ~92 px before a 6% margin each side: too small. 120 px stored is ~107 px: sent, size unknown.
+      ctx.media.get.mockImplementation(async (key: string) => (key.startsWith("tally/scans/") ? null : await webp(104, 330)));
+      const small = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+      expect(small.body.images.skippedBy.tooSmall).toBe(1);
+      ctx.media.get.mockImplementation(async (key: string) => (key.startsWith("tally/scans/") ? null : await webp(120, 330)));
+      const big = await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
+      expect(big.body.images.samples).toEqual([{ ref: `${SCAN}:0`, qid: "QC-7K2M-9XQ4-R", sampleId: "smp_1", status: "accepted", cropWidth: null, cropHeight: null }]);
+      ctx.media.get.mockImplementation(async () => (await webp(400, 600)) as Uint8Array | null);
     });
 
     it("an upload failure is counted, not fatal, and logged with Qore Catalog's reason", async () => {
@@ -715,7 +779,7 @@ describe("VisionController confirm + get (HTTP)", () => {
       const log = jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
       ctx.media.get.mockResolvedValueOnce(await webp(90, 300));
       await request(nest.getHttpServer()).post(confirmPath).set(auth).send({ decisions: [add] }).expect(200);
-      expect(log).toHaveBeenCalledWith(`Crop ${SCAN}:0 not sent: crop 90×300 is under Qore Catalog's 96 px minimum`);
+      expect(log).toHaveBeenCalledWith(`Crop ${SCAN}:0 not sent: crop 120×300 before the margin, 90×300 stored, is under Qore Catalog's 96 px minimum`);
       expect(log).toHaveBeenCalledWith("Crops to Qore Catalog: 0 uploaded, 0 failed, 1 skipped (0 no product, 0 no crop, 1 too small); samples 0 accepted, 0 pending");
       log.mockRestore();
     });
@@ -1048,7 +1112,7 @@ describe("VisionController stock-takes (HTTP)", () => {
     ]);
     const res = await request(nest.getHttpServer()).post(startPath).set(auth).attach("image", JPEG, "shelf.jpg").expect(202);
     expect(res.body).toEqual({ runId: "run-1", status: "running" });
-    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", null);
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", null, null);
 
     expect(await waitForFinish()).toMatchObject({ status: "done", scanId: "scan-1", turns: 1, error: null });
     const [, saved] = ctx.repo.saveScan.mock.calls[0] as unknown as [unknown, { evidence?: { tool: string }[] }[]];
@@ -1218,7 +1282,7 @@ describe("VisionController rerun and discard (HTTP)", () => {
     const res = await request(nest.getHttpServer()).post(`${scanPath}/rerun`).set(auth).expect(202);
     expect(res.body).toEqual({ runId: "run-1", status: "running", rerunOf: ROOT });
     expect(ctx.businesses.getForMember).toHaveBeenCalledWith(BIZ, USER);
-    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", ROOT);
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", ROOT, null);
     for (let i = 0; i < 100 && ctx.repo.finishRun.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
     expect(ctx.repo.finishRun.mock.calls[0]?.[1]).toMatchObject({ status: "fallback", scanId: "scan-1" });
     // Its scan checks the group: a sibling confirmed meanwhile supersedes it at once.
@@ -1454,5 +1518,80 @@ describe("VisionService.syncResolutions", () => {
     expect(await vision.syncResolutions()).toBeNull();
     expect(warn).toHaveBeenCalledWith("Catalogue resolutions not synced: Catalog GET /v1/feedback/resolutions failed: 403");
     warn.mockRestore();
+  });
+});
+
+describe("VisionController usage limits and attribution", () => {
+  let ctx: Awaited<ReturnType<typeof app>>;
+  let fetchSpy: ReturnType<typeof jest.spyOn<typeof global, "fetch">>;
+  const CLIENT = "00000000-0000-4000-8000-0000000000e1";
+  const server = () => ctx.nest.getHttpServer();
+  const waitForFinish = async () => {
+    for (let i = 0; i < 100 && ctx.repo.finishRun.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+  };
+
+  beforeAll(async () => {
+    fetchSpy = jest.spyOn(global, "fetch");
+    ctx = await app("LLM_000_not-a-real-key");
+  });
+  afterAll(async () => {
+    await ctx.nest.close();
+    fetchSpy.mockRestore();
+  });
+  beforeEach(() => {
+    fetchSpy.mockReset();
+    fetchSpy.mockImplementation(metaApi(() => sparkReply([peak]), () => samReply(samText)));
+    ctx.usage.limitCheck.mockReset();
+    ctx.usage.limitCheck.mockResolvedValue(undefined);
+    ctx.repo.createRun.mockClear();
+    ctx.repo.saveScan.mockClear();
+    ctx.repo.finishRun.mockClear();
+  });
+
+  it("a quick scan over the plan limit is 429 plan_limit with Retry-After, before any model call", async () => {
+    ctx.usage.limitCheck.mockRejectedValueOnce(new UsageLimitException("plan_limit", "The Free plan allows 5 stock-takes a day.", 4321));
+    const res = await request(server()).post(path).set(auth).attach("image", JPEG, "shelf.jpg").expect(429);
+    expect(res.headers["retry-after"]).toBe("4321");
+    expect(res.body).toEqual({ statusCode: 429, code: "plan_limit", message: "The Free plan allows 5 stock-takes a day.", retry_after_seconds: 4321 });
+    expect(ctx.usage.limitCheck).toHaveBeenCalledWith(BIZ, null);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(ctx.repo.saveScan).not.toHaveBeenCalled();
+  });
+
+  it("a stock-take over the concurrency limit is 429 concurrent_runs and creates no run", async () => {
+    ctx.usage.limitCheck.mockRejectedValueOnce(new UsageLimitException("concurrent_runs", "Too many stock-takes are running.", 30));
+    const res = await request(server()).post(`/api/businesses/${BIZ}/vision/stocktakes`).set(auth).attach("image", JPEG, "shelf.jpg").expect(429);
+    expect(res.headers["retry-after"]).toBe("30");
+    expect(res.body.code).toBe("concurrent_runs");
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+  });
+
+  it("a rerun is limit-checked before its photo is fetched", async () => {
+    ctx.media.enabled = true;
+    ctx.media.get.mockClear();
+    ctx.usage.limitCheck.mockRejectedValueOnce(new UsageLimitException("plan_limit", "Over the limit.", 60));
+    await request(server()).post(`/api/businesses/${BIZ}/vision/shelf-scans/${SCAN}/rerun`).set(auth).expect(429);
+    ctx.media.enabled = false;
+    expect(ctx.media.get).not.toHaveBeenCalled();
+    expect(ctx.repo.createRun).not.toHaveBeenCalled();
+  });
+
+  it("a user's quick scan stores client_id null", async () => {
+    await request(server()).post(path).set(auth).attach("image", JPEG, "shelf.jpg").expect(200);
+    expect(ctx.repo.saveScan.mock.calls[0]![0]).toMatchObject({ businessId: BIZ, createdBy: USER, clientId: null });
+  });
+
+  it("a partner app's quick scan is checked and stored with its client_id", async () => {
+    await ctx.nest.get(VisionService).recogniseShelf(BIZ, USER, JPEG, CLIENT);
+    expect(ctx.usage.limitCheck).toHaveBeenCalledWith(BIZ, CLIENT);
+    expect(ctx.repo.saveScan.mock.calls[0]![0]).toMatchObject({ businessId: BIZ, clientId: CLIENT });
+  });
+
+  it("a partner app's stock-take run and its scan carry its client_id", async () => {
+    await ctx.nest.get(VisionService).startStocktake(BIZ, USER, JPEG, CLIENT);
+    expect(ctx.usage.limitCheck).toHaveBeenCalledWith(BIZ, CLIENT);
+    expect(ctx.repo.createRun).toHaveBeenCalledWith(BIZ, USER, "muse-spark-1.3", null, CLIENT);
+    await waitForFinish();
+    expect(ctx.repo.saveScan.mock.calls[0]![0]).toMatchObject({ clientId: CLIENT });
   });
 });

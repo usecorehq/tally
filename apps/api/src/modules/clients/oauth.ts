@@ -12,12 +12,15 @@ export type OauthScope = keyof typeof OAUTH_SCOPES;
 export const CODE_TTL_SECONDS = 60;
 export const ACCESS_TOKEN_TTL_SECONDS = 900;
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const SESSION_TOKEN_TTL_SECONDS = 900;
 export const CLIENT_TOKEN_AUDIENCE = "tally-client";
+export const EMBED_TOKEN_AUDIENCE = "tally-embed";
 export const TOKEN_ISSUER = "tally";
 
 /** RFC 7636: a verifier is 43–128 unreserved chars; an S256 challenge is 32 bytes base64url. */
 export const PKCE_VERIFIER = /^[A-Za-z0-9\-._~]{43,128}$/;
 export const PKCE_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+export const CLIENT_ID = /^tc_[a-z0-9]{24}$/;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** RFC 6749 error body: `{ error, error_description }`. */
