@@ -36,6 +36,7 @@ async function app() {
     daily: jest.fn(async (_b: string, _days: number) => [] as { date: string; stocktakes: number; scans: number }[]),
     month: jest.fn(async (_b: string) => ({ stocktakes: 0, scans: 0, inputTokens: 0, outputTokens: 0 })),
     bySource: jest.fn(async (_b: string) => [] as { clientId: string | null; name: string | null; stocktakes: number }[]),
+    clientMonth: jest.fn(async (_c: string) => ({ stocktakes: 0, scans: 0 })),
     subscribe: jest.fn(async (businessId: string, planCode: string) => ({
       id: "sub-1",
       businessId,
@@ -137,6 +138,18 @@ describe("BillingService.limitCheck", () => {
     const err = await rejection(ctx.service.limitCheck(BIZ, CLIENT));
     expect(err!.getResponse()).toMatchObject({ code: "plan_limit" });
     expect(ctx.repo.client).not.toHaveBeenCalled();
+  });
+});
+
+describe("BillingService.clientUsage", () => {
+  it("counts today as limitCheck does for the client, plus its month across businesses", async () => {
+    const ctx = await app();
+    ctx.repo.today.mockResolvedValue({ used: 7, running: 2, secondsToMidnight: 900 });
+    ctx.repo.clientMonth.mockResolvedValue({ stocktakes: 41, scans: 9 });
+    await expect(ctx.service.clientUsage(CLIENT)).resolves.toEqual({ today: { used: 7, running: 2 }, month: { stocktakes: 41, scans: 9 } });
+    expect(ctx.repo.today).toHaveBeenCalledWith({ clientId: CLIENT });
+    expect(ctx.repo.clientMonth).toHaveBeenCalledWith(CLIENT);
+    await ctx.nest.close();
   });
 });
 
