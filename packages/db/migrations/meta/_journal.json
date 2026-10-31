@@ -99,6 +99,13 @@
       "when": 1793398806320,
       "tag": "0013_seed_placeholder_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793427114623,
+      "tag": "0014_raise_free_plan_limits",
+      "breakpoints": true
     }
   ]
 }

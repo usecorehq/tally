@@ -83,7 +83,7 @@ Members only; `days` is 1–90 (default 30). Counts only, with no prices or reve
 
 ```json
 {
-  "plan": { "code": "free", "name": "Free", "daily_stocktake_limit": 5, "max_concurrent_runs": 1, "simulated": false },
+  "plan": { "code": "free", "name": "Free", "daily_stocktake_limit": 50, "max_concurrent_runs": 2, "simulated": false },
   "today": { "stocktakes": 2, "scans": 1 },
   "month": { "stocktakes": 14, "scans": 6, "input_tokens": 812000, "output_tokens": 41000 },
   "daily": [{ "date": "2026-10-31", "stocktakes": 2, "scans": 1 }],
