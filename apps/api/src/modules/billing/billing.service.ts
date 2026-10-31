@@ -41,6 +41,12 @@ export class BillingService {
     }
   }
 
+  /** A partner app's own usage against its caps: today as limitCheck counts it, and this month. */
+  async clientUsage(clientId: string): Promise<{ today: { used: number; running: number }; month: { stocktakes: number; scans: number } }> {
+    const [today, month] = await Promise.all([this.repo.today({ clientId }), this.repo.clientMonth(clientId)]);
+    return { today: { used: today.used, running: today.running }, month };
+  }
+
   async plans() {
     const rows = await this.repo.activePlans();
     return rows.map((p) => ({

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, isNull, or, schema } from "@tally/db";
+import { and, asc, desc, eq, inArray, isNull, or, schema, sql } from "@tally/db";
 import { TALLY_DB, type TallyDb } from "../../drizzle/drizzle.module";
 
 const { businesses, businessMembers, oauthClients, oauthCodes, oauthGrants } = schema;
@@ -61,6 +61,18 @@ export class ClientsTx {
 
   async revokeGrant(id: string, at: Date): Promise<void> {
     await this.tx.update(oauthGrants).set({ revokedAt: at, updatedAt: at }).where(eq(oauthGrants.id, id));
+  }
+
+  async suspendClient(id: string, at: Date): Promise<schema.OauthClient> {
+    const [row] = await this.tx.update(oauthClients).set({ status: "suspended", updatedAt: at }).where(eq(oauthClients.id, id)).returning();
+    return row!;
+  }
+
+  async revokeClientGrants(clientId: string, at: Date): Promise<void> {
+    await this.tx
+      .update(oauthGrants)
+      .set({ revokedAt: at, updatedAt: at })
+      .where(and(eq(oauthGrants.clientId, clientId), isNull(oauthGrants.revokedAt)));
   }
 }
 
@@ -161,6 +173,40 @@ export class ClientsRepository {
   async findGrant(id: string): Promise<schema.OauthGrant | undefined> {
     const [row] = await this.db.select().from(oauthGrants).where(eq(oauthGrants.id, id)).limit(1);
     return row;
+  }
+
+  async listOwnedClients(userId: string): Promise<schema.OauthClient[]> {
+    return this.db.select().from(oauthClients).where(eq(oauthClients.ownerUserId, userId)).orderBy(desc(oauthClients.createdAt));
+  }
+
+  async countOwnedClients(userId: string): Promise<number> {
+    const [row] = await this.db.select({ n: sql<number>`count(*)::int` }).from(oauthClients).where(eq(oauthClients.ownerUserId, userId));
+    return row!.n;
+  }
+
+  async insertClient(values: schema.NewOauthClient): Promise<schema.OauthClient> {
+    const [row] = await this.db.insert(oauthClients).values(values).returning();
+    return row!;
+  }
+
+  async updateClient(
+    id: string,
+    values: Partial<Pick<schema.OauthClient, "name" | "logoUrl" | "redirectUris" | "allowedOrigins" | "secretHash" | "secretPrefix">>,
+  ): Promise<schema.OauthClient> {
+    const [row] = await this.db
+      .update(oauthClients)
+      .set({ ...values, updatedAt: new Date() })
+      .where(eq(oauthClients.id, id))
+      .returning();
+    return row!;
+  }
+
+  async countActiveGrants(clientId: string): Promise<number> {
+    const [row] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(oauthGrants)
+      .where(and(eq(oauthGrants.clientId, clientId), isNull(oauthGrants.revokedAt)));
+    return row!.n;
   }
 
   async revokeGrant(id: string, at: Date): Promise<void> {

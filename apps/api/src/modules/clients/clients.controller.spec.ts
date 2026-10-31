@@ -42,7 +42,7 @@ class FakeRepo {
     const now = new Date();
     this.clients = [
       {
-        id: CLIENT_UUID, clientId: CLIENT_ID, name: "Partner App", logoUrl: null,
+        id: CLIENT_UUID, clientId: CLIENT_ID, ownerUserId: null, name: "Partner App", logoUrl: null,
         secretHash: sha256Hex(CLIENT_SECRET), secretPrefix: CLIENT_SECRET.slice(4, 12),
         redirectUris: [REDIRECT], allowedOrigins: [], allowedScopes: ["stocktake:write", "stocktake:read"],
         status: "active", dailyStocktakeCap: 200, maxConcurrentRuns: 3, theme: {}, createdAt: now, updatedAt: now,
@@ -72,6 +72,10 @@ class FakeRepo {
     lockGrantByPreviousHash: async (h) => this.grants.find((g) => g.previousRefreshTokenHash === h),
     rotateRefresh: async (id, v) => Object.assign(this.grants.find((g) => g.id === id)!, v),
     revokeGrant: async (id, at) => void (this.grants.find((g) => g.id === id)!.revokedAt = at),
+    suspendClient: async (id) => Object.assign(this.clients.find((c) => c.id === id)!, { status: "suspended" }),
+    revokeClientGrants: async (clientId, at) => {
+      for (const g of this.grants) if (g.clientId === clientId && !g.revokedAt) g.revokedAt = at;
+    },
   };
 
   async transaction<T>(fn: (tx: ClientsTx) => Promise<T>): Promise<T> {

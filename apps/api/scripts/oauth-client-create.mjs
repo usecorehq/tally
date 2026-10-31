@@ -1,13 +1,12 @@
 // Registers a Connect Tally partner app (CTO only) or suspends one. Prints the secret once; only its
 // sha256 is stored. Usage: apps/api/README.md#connect-tally-clients.
-import { createHash, randomBytes, randomInt } from "node:crypto";
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 
 const require = createRequire(import.meta.url);
-const { buildTallyDb, eq, schema, sql } = require("@tally/db");
+const { buildTallyDb, eq, schema, sql, OAUTH_CLIENT_SCOPES: SCOPES, newClientId, newClientSecret, originProblem, redirectUriProblem } =
+  require("@tally/db");
 
-const SCOPES = ["stocktake:write", "stocktake:read", "inventory:read"];
 const USAGE = [
   'Usage: node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --name "<app name>" --redirect-uri <https url> [--redirect-uri …]',
   "         [--origin <https origin> …] [--scope <scope> …] [--cap <daily stock-takes>] [--concurrent <runs>]",
@@ -31,17 +30,6 @@ function fail(message) {
   process.exit(1);
 }
 
-function httpsUrl(value, what) {
-  let url;
-  try {
-    url = new URL(value);
-  } catch {
-    fail(`${what} is not a URL: ${value}`);
-  }
-  if (url.protocol !== "https:") fail(`${what} must be https: ${value}`);
-  return url;
-}
-
 function positiveInt(value, what) {
   if (value === undefined) return undefined;
   if (!/^[1-9][0-9]*$/.test(value)) fail(`${what} must be a positive whole number: ${value}`);
@@ -58,25 +46,25 @@ if (!opts.suspend) {
   const redirectUris = opts["redirect-uri"] ?? [];
   if (redirectUris.length < 1 || redirectUris.length > 10) fail("Give 1–10 --redirect-uri values.");
   for (const uri of redirectUris) {
-    // OAuth redirect URIs may not carry a fragment.
-    if (httpsUrl(uri, "--redirect-uri").hash) fail(`--redirect-uri must not have a #fragment: ${uri}`);
+    const problem = redirectUriProblem(uri);
+    if (problem) fail(`--redirect-uri ${problem}`);
   }
   const origins = opts.origin ?? [];
   for (const origin of origins) {
-    if (httpsUrl(origin, "--origin").origin !== origin) fail(`--origin must be a bare origin (no path or trailing slash): ${origin}`);
+    const problem = originProblem(origin);
+    if (problem) fail(`--origin ${problem}`);
   }
   const scopes = [...new Set(opts.scope ?? SCOPES)];
   for (const scope of scopes) if (!SCOPES.includes(scope)) fail(`Unknown --scope ${scope}; allowed: ${SCOPES.join(", ")}`);
 
-  const clientId = "tc_" + Array.from({ length: 24 }, () => "abcdefghijklmnopqrstuvwxyz0123456789"[randomInt(36)]).join("");
-  const secret = "tcs_" + randomBytes(32).toString("base64url");
+  const { secret, secretHash, secretPrefix } = newClientSecret();
   insert = {
     secret,
     row: {
-      clientId,
+      clientId: newClientId(),
       name,
-      secretHash: createHash("sha256").update(secret).digest("hex"),
-      secretPrefix: secret.slice(4, 12),
+      secretHash,
+      secretPrefix,
       redirectUris,
       allowedOrigins: origins,
       allowedScopes: scopes,
