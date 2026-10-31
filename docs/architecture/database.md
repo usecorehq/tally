@@ -10,7 +10,7 @@ Tally stores its data in the **`tally` schema of the shared Qorelly Supabase Pos
 |---|---|
 | Drizzle schema | `packages/db/src/schema.ts` — `export const tally = pgSchema("tally")` |
 | Client | `packages/db/src/client.ts` — `buildTallyDb(url, { max?, connectTimeout? })` on `postgres.js`; `prepare: false` on the Supabase pooler; at most 5 connections (`DB_POOL_MAX`), idle ones closed after 20 s, 10 s connect timeout. See [Connection pooling](#connection-pooling) |
-| Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business, `0010` OAuth clients, `0011` their `auth.users` keys (custom SQL, `drizzle-kit generate --custom`), `0012` plans and subscriptions, `0013` the placeholder plans (custom SQL) |
+| Migrations | `packages/db/migrations/`: `0000` schema, `0001` core tables, `0002` stock and payment functions (hand-written SQL, `drizzle-kit generate --custom`), `0003` unique barcode per business, `0010` OAuth clients, `0011` their `auth.users` keys (custom SQL, `drizzle-kit generate --custom`), `0012` plans and subscriptions, `0013` the placeholder plans, `0014` Free raised to 50 a day (custom SQL) |
 | Config | `packages/db/drizzle.config.ts`, reads `SUPABASE_DB_URL` from the root `.env`, falling back to `apps/api/.env` |
 | API access | `DrizzleModule` provides the client as `TALLY_DB` |
 
@@ -71,7 +71,7 @@ Every stock-take and quick scan counts against the business's plan, whichever ap
 
 | Table | Notes |
 |---|---|
-| `plans` | Keyed by `code` (`free` or `pro`): `name`, `price_kobo_monthly` (display only), `daily_stocktake_limit`, `max_concurrent_runs`, `sort`, `active`. Seeded by `0013` with placeholders: Free is ₦0, 5 stock-takes a day, 1 at a time; Pro is ₦15,000 a month, 100 a day, 3 at a time. Change them with a new migration or an admin update, never by editing `0013` |
+| `plans` | Keyed by `code` (`free` or `pro`): `name`, `price_kobo_monthly` (display only), `daily_stocktake_limit`, `max_concurrent_runs`, `sort`, `active`. Seeded by `0013` with placeholders; `0014` raised Free to ₦0, 50 stock-takes a day, 2 at a time; Pro is ₦15,000 a month, 100 a day, 3 at a time. Change them with a new migration or an admin update, never by editing `0013` |
 | `business_subscriptions` | At most one row per business (`business_id` unique, cascades from `businesses`): `plan_code` (→ `plans.code`, `ON DELETE RESTRICT`), `status` (`active` or `cancelled`), `simulated`, `started_at`, `current_period_end` |
 
 - **No row means Free.** A business without a `business_subscriptions` row is on the `free` plan.
