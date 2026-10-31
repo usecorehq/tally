@@ -1,15 +1,15 @@
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { BusinessesService } from "../businesses/businesses.service";
-import { UsageLimitException } from "./usage-errors";
-import { UsageRepository } from "./usage.repository";
+import { UsageLimitException } from "./billing-errors";
+import { BillingRepository } from "./billing.repository";
 
 /** Seconds a client waits when every run slot is busy: about a quarter of a stock-take. */
 const CONCURRENCY_RETRY_SECONDS = 30;
 
 @Injectable()
-export class UsageService {
+export class BillingService {
   constructor(
-    private readonly repo: UsageRepository,
+    private readonly repo: BillingRepository,
     private readonly businesses: BusinessesService,
   ) {}
 

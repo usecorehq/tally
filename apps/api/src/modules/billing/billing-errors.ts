@@ -14,7 +14,7 @@ export class UsageLimitException extends HttpException {
   }
 }
 
-/** Global (UsageModule's APP_FILTER), so vision routes get the header without a filter of their own. */
+/** Global (BillingModule's APP_FILTER), so vision routes get the header without a filter of their own. */
 @Catch(UsageLimitException)
 export class UsageLimitFilter implements ExceptionFilter {
   catch(exception: UsageLimitException, host: ArgumentsHost) {

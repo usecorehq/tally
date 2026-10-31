@@ -12,8 +12,8 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { MAX_IDENTIFY_IMAGE_BYTES, MAX_SHELF_IMAGE_BYTES, VisionController } from "./vision.controller";
 import { R2Storage } from "../media/r2-storage";
-import { UsageLimitException, UsageLimitFilter } from "../usage/usage-errors";
-import { UsageService } from "../usage/usage.service";
+import { UsageLimitException, UsageLimitFilter } from "../billing/billing-errors";
+import { BillingService } from "../billing/billing.service";
 import { VisionRepository } from "./vision.repository";
 import { STOCKTAKE_DEADLINES, VisionService } from "./vision.service";
 
@@ -244,7 +244,7 @@ async function app(apiKey: string | undefined) {
       { provide: CatalogService, useValue: catalog },
       { provide: VisionRepository, useValue: repo },
       { provide: R2Storage, useValue: media },
-      { provide: UsageService, useValue: usage },
+      { provide: BillingService, useValue: usage },
       { provide: APP_FILTER, useClass: UsageLimitFilter },
       { provide: ConfigService, useValue: { get: (k: string) => config[k], getOrThrow: (k: string) => config[k] } },
       { provide: APP_GUARD, useClass: SupabaseJwtGuard },

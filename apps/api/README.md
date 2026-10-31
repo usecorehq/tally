@@ -117,7 +117,7 @@ node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --suspend
 
 The OAuth endpoints (consent data, codes, token, revoke, grants), `me`, `sessions` and `embed-config` live under `/api/clients/v1`. Routes open to client and embed tokens carry `@Scopes(...)`; see [docs/architecture/auth.md](../../docs/architecture/auth.md#connect-tally).
 
-## Usage and plans
+## Billing: plans, subscriptions and usage
 
 Stock-takes and quick scans count against the business's plan; over a limit the vision routes answer 429 with `Retry-After`. Rules and response shapes: [usage limits](../../docs/architecture/stocktake-agent.md#usage-limits).
 
@@ -142,7 +142,7 @@ src/
   modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
   modules/vision/benchmark-score.ts  Scoring for scripts/vision-benchmark.mjs (not used by routes)
   modules/vision/shelf-sweep.ts      Experimental row-by-row shelf read (benchmark only, not used by routes)
-  modules/usage/              Plan limits before every run or scan, usage counts, simulated subscriptions
+  modules/billing/            Plans, simulated subscriptions, usage counts and the limit check before every run or scan
   modules/media/              R2Storage: Tally's files in Cloudflare R2 (aws4fetch, server-only)
   modules/health/             GET /api/health
 ```
