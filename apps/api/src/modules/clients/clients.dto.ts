@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsOptional, IsUUID } from "class-validator";
+import { IsOptional, IsUUID, Matches } from "class-validator";
 
 // OAuth inputs are checked by ClientsService so their errors keep the RFC 6749 body; these only describe them.
 
@@ -75,4 +75,52 @@ export class EmbedConfigQuery {
   @ApiPropertyOptional({ example: "tc_0123456789abcdefghijklmn" })
   @IsOptional()
   client_id?: unknown;
+}
+
+// Developer app bodies are checked by DeveloperAppsService with the rules the CTO's script uses; these only describe them.
+
+export class CreateAppBody {
+  @ApiProperty({ example: "Partner App", description: "1–80 characters" })
+  @IsOptional()
+  name?: unknown;
+
+  @ApiPropertyOptional({ example: "https://partner.example/logo.png", nullable: true })
+  @IsOptional()
+  logo_url?: unknown;
+
+  @ApiProperty({ example: ["https://partner.example/callback"], description: "1–10 https URLs, no #fragment" })
+  @IsOptional()
+  redirect_uris?: unknown;
+
+  @ApiPropertyOptional({ example: ["https://partner.example"], description: "Up to 10 bare https origins that may embed the stock-take" })
+  @IsOptional()
+  allowed_origins?: unknown;
+
+  @ApiProperty({ example: ["stocktake:write", "stocktake:read"], description: "A non-empty subset of the three scopes" })
+  @IsOptional()
+  scopes?: unknown;
+}
+
+export class UpdateAppBody {
+  @ApiPropertyOptional({ example: "Partner App" })
+  @IsOptional()
+  name?: unknown;
+
+  @ApiPropertyOptional({ example: "https://partner.example/logo.png", nullable: true, description: "null removes the logo" })
+  @IsOptional()
+  logo_url?: unknown;
+
+  @ApiPropertyOptional({ example: ["https://partner.example/callback"] })
+  @IsOptional()
+  redirect_uris?: unknown;
+
+  @ApiPropertyOptional({ example: ["https://partner.example"] })
+  @IsOptional()
+  allowed_origins?: unknown;
+}
+
+export class AppParams {
+  @ApiProperty({ example: "tc_0123456789abcdefghijklmn" })
+  @Matches(/^tc_[a-z0-9]{24}$/)
+  clientId!: string;
 }

@@ -153,6 +153,19 @@ export class BillingRepository {
     return { stocktakes: runs!.stocktakes, scans: scans!.n, inputTokens: runs!.inputTokens, outputTokens: runs!.outputTokens };
   }
 
+  /** This Lagos month's stock-takes and quick scans started by one partner app, across businesses. */
+  async clientMonth(clientId: string): Promise<{ stocktakes: number; scans: number }> {
+    const [runs] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(visionAgentRuns)
+      .where(and(eq(visionAgentRuns.clientId, clientId), counted, sql`${visionAgentRuns.startedAt} >= ${lagosMonthStart}`));
+    const [scans] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(visionScans)
+      .where(and(eq(visionScans.clientId, clientId), quickScan, sql`${visionScans.createdAt} >= ${lagosMonthStart}`));
+    return { stocktakes: runs!.n, scans: scans!.n };
+  }
+
   /** This Lagos month's stock-takes by the app that started them; clientId null = Tally's own apps. */
   async bySource(businessId: string): Promise<{ clientId: string | null; name: string | null; stocktakes: number }[]> {
     return this.db

@@ -41,7 +41,7 @@ Connect Tally tokens (`kind: "client"` for `aud: tally-client`, `kind: "embed"` 
 
 ## Connect Tally
 
-Partner apps ("clients") get a merchant's consent through OAuth 2.0 (authorization code + PKCE `S256`) and then call Tally's API for that one business, or embed Tally's stock-take in an iframe. Clients are registered with `apps/api/scripts/oauth-client-create.mjs`; the tables are `oauth_clients`, `oauth_codes` and `oauth_grants` (see [Database](database.md#oauth-clients-connect-tally)). Code: `apps/api/src/modules/clients/`.
+Partner apps ("clients") get a merchant's consent through OAuth 2.0 (authorization code + PKCE `S256`) and then call Tally's API for that one business, or embed Tally's stock-take in an iframe. Clients are self-served by any signed-in Qorelly user (the `apps` routes below; the mp Developers page is planned) or registered by the CTO with `apps/api/scripts/oauth-client-create.mjs`; the tables are `oauth_clients`, `oauth_codes` and `oauth_grants` (see [Database](database.md#oauth-clients-connect-tally)). Code: `apps/api/src/modules/clients/`.
 
 | Endpoint (under `/api/clients/v1`) | Auth | Does |
 |---|---|---|
@@ -51,6 +51,13 @@ Partner apps ("clients") get a merchant's consent through OAuth 2.0 (authorizati
 | `POST oauth/revoke` | Public; client HTTP Basic | `token=<refresh token>` revokes its grant. 200 `{}` for any token once the client authenticates (RFC 7009) |
 | `GET grants?businessId` | Supabase user, owner | The business's connected apps |
 | `DELETE grants/:id` | Supabase user, owner | Disconnects an app (204) |
+| `GET apps` | Supabase user | The caller's own apps (`owner_user_id`), newest first. Never a secret |
+| `POST apps` | Supabase user | Registers an app: `name`, `logo_url`, `redirect_uris`, `allowed_origins`, `scopes`. 201 with `client_secret`, the only time it is shown. Default caps. 409 `code: app_limit` past 10 apps |
+| `GET apps/:clientId` | Supabase user, the app's owner | One app |
+| `PATCH apps/:clientId` | Supabase user, the app's owner | Name, logo, redirect URIs, allowed sites. Scopes are fixed at create |
+| `POST apps/:clientId/rotate-secret` | Supabase user, the app's owner | A new `client_secret`, shown once. The old one fails from the next token call |
+| `POST apps/:clientId/suspend` | Supabase user, the app's owner | Suspends the app and revokes all its grants. Only the CTO can reactivate it |
+| `GET apps/:clientId/activity` | Supabase user, the app's owner | `{ active_grants, today: { used, running }, month: { stocktakes, scans }, caps }`; `used` counts as the daily cap does |
 | `GET me` | Access token | `{ client_id, business: { id, name }, scopes }` |
 | `POST sessions` | Access token with `stocktake:write` | An embed session token for the iframe: the same claims with `aud: tally-embed`, 900 s. `{ session_token, expires_at, business_id }` |
 | `GET embed-config?client_id` | Public | `{ client_id, name, status, allowed_origins, theme }` for the embed page server; nothing secret. 404 `code: unknown_client` |
@@ -61,7 +68,8 @@ Partner apps ("clients") get a merchant's consent through OAuth 2.0 (authorizati
 - **Grants.** One active grant per client and business: reconnecting revokes the old one first.
 - **Access token.** HS256 JWT signed with `TALLY_CLIENT_JWT_SECRET` (never the Supabase secret), lives 900 s: `iss: tally`, `aud: tally-client`, `sub` (the merchant), `bid` (business), `cid` (`oauth_clients.id`), `gid` (grant), `scope`, `jti`.
 - **Refresh token.** Opaque, 30-day sliding expiry, rotated on every use. Presenting a token that was already rotated out revokes the whole grant (replay detection).
-- **Revocation.** A revoked grant's refresh token stops working at once, whether revoked by the client (`oauth/revoke`), the merchant (`DELETE grants/:id`), a reconnect or a replay.
+- **Developer apps.** Someone else's app, or a script-made one (`owner_user_id` null), is a 404 `code: app_not_found`. Bad input is 400 `code: invalid_app`, with the URL rules the CTO's script uses (`@tally/db` `redirectUriProblem` / `originProblem`); a suspended app is 409 `code: app_suspended` for edits and rotation. Client and embed tokens get 403 here (no `@Scopes`).
+- **Revocation.** A revoked grant's refresh token stops working at once, whether revoked by the client (`oauth/revoke`), the merchant (`DELETE grants/:id`), the app's developer suspending it, a reconnect or a replay.
 
 ### Scopes
 
@@ -109,6 +117,8 @@ mp owns the screens; apps/api owns the codes, grants, tokens, usage, plans and s
   - Integrations: the business's connected apps (`GET /clients/v1/grants`), with scopes, dates, this month's share of stock-takes and Revoke (`DELETE /clients/v1/grants/:id`). Owners only.
   - Usage: today's stock-takes and quick scans against the plan's daily limit (it counts both), this month's totals, 30 days of stock-takes and quick scans, and stock-takes by source.
   - Plan: the current plan and the plans to compare. Subscribing is simulated: a confirm titled "Simulated subscription: no charge", no payment details, no charge. Plan prices are display-only and never revenue.
+  - Developers (`app/settings/developers/`, per user, not per business): the user's own Connect Tally apps (`/clients/v1/apps`). Create takes a name, logo, redirect URIs, allowed sites and permissions, then opens the app's page. That page has the client ID, activity against the app's caps, editors for details, redirect URIs and allowed sites, a `TallyEmbed.mount` quickstart, Regenerate secret and Suspend (both confirmed).
+  - **The client secret is never rendered.** The create and regenerate server actions take it from the API and keep it in an AES-256-GCM encrypted, httpOnly, `SameSite=Strict` cookie (`tally_dev_secret_<client_id>`, path `/settings/developers`, key derived from `AUTH_SECRET`), bound to the user and app, for 10 minutes. The page only gets `tcs_••••••••` + the last 4 and the expiry. Copy (on the secret, or on the `.env` block, which then includes it) asks a server action for it each time and writes it straight to the clipboard. "Done, I've stored it" deletes the cookie early. Afterwards the page shows `tcs_<secret_prefix>••••••••` and "Regenerate to copy again"; the API keeps only the hash, so an old secret can never be fetched again.
   - `LimitReached` (`app/settings/limit-reached.tsx`) explains a 429 (`plan_limit`, `client_cap`, `concurrent_runs`) and links to Plan.
 
 ## Not built yet

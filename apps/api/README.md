@@ -102,7 +102,7 @@ node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs --business "Sup
 
 ## Connect Tally clients
 
-Partner apps that use Connect Tally are registered by the CTO with `scripts/oauth-client-create.mjs`. It writes a `tally.oauth_clients` row and prints the `client_id` and `client_secret` once. Only the secret's sha256 and its first 8 characters after `tcs_` are stored, so a lost secret means a new client. Clients are suspended, never deleted.
+Partners self-serve their apps through `/api/clients/v1/apps` (see [Auth](../../docs/architecture/auth.md#connect-tally)). The CTO can also register one with `scripts/oauth-client-create.mjs`, which mints ids and secrets with the same `@tally/db` helpers; its apps have no owner. It writes a `tally.oauth_clients` row and prints the `client_id` and `client_secret` once. Only the secret's sha256 and its first 8 characters after `tcs_` are stored, so a lost secret means a new client. Clients are suspended, never deleted.
 
 ```bash
 pnpm --filter @tally/db build

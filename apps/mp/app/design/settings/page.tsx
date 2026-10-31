@@ -6,7 +6,7 @@ import { VARIANTS } from "./variants";
 
 export const metadata = { title: "Settings preview · Tally" };
 
-/** /design/settings?v=…: Integrations, Usage and Plan on fixture data. Not served in production. */
+/** /design/settings?v=…: Integrations, Usage, Plan and Developers on fixture data. Not served in production. */
 export default async function SettingsDesignPage({ searchParams }: { searchParams: Promise<{ v?: string }> }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { v } = await searchParams;

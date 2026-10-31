@@ -37,7 +37,7 @@ app/onboarding/                  first-time setup wizard (Qorelly /setup port): 
   [businessId]/items/            starter items for a business that already exists
 app/businesses/new/              Add a business: the same wizard, with a close button back home (or back to consent via ?returnTo=/oauth/authorize…)
 app/oauth/authorize/             Connect Tally consent: account chooser, business picker, Allow / Cancel (page or popup); not frameable
-app/settings/                    Settings for the current business: integrations/ (connected apps, revoke), usage/ (today vs plan, 30 days, by source), plan/ (simulated subscribe)
+app/settings/                    Settings for the current business: integrations/ (connected apps, revoke), usage/ (today vs plan, 30 days, by source), plan/ (simulated subscribe); developers/ is per user (Connect Tally apps, credentials, rotate, suspend)
   limit-reached.tsx              LimitReached: a 429 from a stock-take explained, with Upgrade
 app/stocktake/                   new stock-take: business + photo, then the run continues at its own URL (?business=<id>)
   history/                       the business's stock-takes and quick scans, newest first, grouped by day, reruns nested
