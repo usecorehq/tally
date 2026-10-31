@@ -10,27 +10,29 @@ export const TABS: { href: string; label: string; icon: SolarIconName }[] = [
   { href: "/settings/integrations", label: "Integrations", icon: "Widget-5" },
   { href: "/settings/usage", label: "Usage", icon: "Chart" },
   { href: "/settings/plan", label: "Plan", icon: "Stars" },
+  { href: "/settings/developers", label: "Developers", icon: "Widget-4" },
 ];
 
-/** "Settings" and its three tabs; the business comes from the top-bar switcher. */
+/** "Settings" and its tabs; the business comes from the top-bar switcher (Developers is per user). */
 export function SettingsHeader({ active }: { active?: string } = {}) {
   const pathname = usePathname();
   const current = active ?? pathname;
   return (
     <>
       <PageHeader title="Settings" />
+      {/* Four labels fill a phone, so the glyphs come back from sm. */}
       <nav aria-label="Settings" className={cn("mb-6 flex w-full sm:w-fit", SEGMENT_TRACK)}>
         {TABS.map((t) => {
-          const on = current === t.href;
+          const on = current === t.href || current.startsWith(`${t.href}/`);
           return (
-            <Link key={t.href} href={t.href} aria-current={on ? "page" : undefined} className={cn("group flex h-11 min-w-0 flex-1 p-1 sm:flex-none", FOCUS)}>
+            <Link key={t.href} href={t.href} aria-current={on ? "page" : undefined} className={cn("group flex h-11 min-w-0 flex-auto p-1 sm:flex-none", FOCUS)}>
               <span
                 className={cn(
-                  "flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-colors",
+                  "flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2 text-[13px] font-medium transition-colors sm:px-3 sm:text-sm",
                   on ? SEGMENT_THUMB : "text-gray-500 group-hover:text-gray-900",
                 )}
               >
-                <SolarIcon name={t.icon} iconStyle={on ? "Fill" : "Outline"} size={18} className={cn("max-[379px]:hidden", on && "text-primary-ink")} />
+                <SolarIcon name={t.icon} iconStyle={on ? "Fill" : "Outline"} size={18} className={cn("max-sm:hidden", on && "text-primary-ink")} />
                 {t.label}
               </span>
             </Link>

@@ -7,6 +7,7 @@ import { UsageSkeleton, UsageView } from "../../settings/usage/usage-view";
 import { PlanSkeleton, PlanView } from "../../settings/plan/plan-view";
 import { LimitReached } from "../../settings/limit-reached";
 import type { ActionResult } from "../../settings/_lib/types";
+import { DevelopersPreview } from "./developers-preview";
 import { BUSINESSES, GRANTS, PLANS, PRO, USAGE, USAGE_EMPTY } from "./fixtures";
 import type { Variant } from "./variants";
 
@@ -22,6 +23,7 @@ export function SettingsPreview({ variant }: { variant: Variant }) {
   const business = staff ? BUSINESSES[1]! : BUSINESSES[0]!;
   const header = <SettingsHeader active={TABS.find((t) => t.href.endsWith(tab))?.href} />;
 
+  if (tab === "developers") return <DevelopersPreview variant={variant} />;
   if (variant === "limit-reached") {
     return (
       <>
