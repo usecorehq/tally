@@ -18,12 +18,12 @@ import {
   cn,
 } from "@tally/ui";
 import { formatCount, formatDay } from "../../_lib/format";
-import { PARTNER_DEMO_URL, quickstart, type AppActivity, type AppResult, type DeveloperApp, type WithSecret } from "../_lib/developer";
-import { AppLogo, CodeBlock, CredentialsCard, StatusPill, UrlListEditor, cleanList } from "../_components/developer-parts";
+import { PARTNER_DEMO_URL, quickstart, type AppActivity, type AppResult, type DeveloperApp, type HeldSecret, type Issued } from "../_lib/developer";
+import { AppLogo, CodeBlock, CredentialsCard, StatusPill, UrlListEditor, cleanList, type SecretActions } from "../_components/developer-parts";
 
-export type DetailActions = {
+export type DetailActions = SecretActions & {
   update: (clientId: string, input: Partial<Pick<DeveloperApp, "name" | "logo_url" | "redirect_uris" | "allowed_origins">>) => Promise<AppResult<DeveloperApp>>;
-  rotate: (clientId: string) => Promise<AppResult<WithSecret>>;
+  rotate: (clientId: string) => Promise<AppResult<Issued>>;
   suspend: (clientId: string) => Promise<AppResult<DeveloperApp>>;
 };
 
@@ -32,16 +32,18 @@ export function AppDetailView({
   app: initial,
   activity,
   actions,
-  initialSecret = null,
+  held: initialHeld,
+  created = false,
 }: {
   app: DeveloperApp;
   activity: AppActivity | null;
   actions: DetailActions;
-  initialSecret?: string | null;
+  /** A secret mp's server still holds for copying (create or regenerate in the last 10 minutes). */
+  held: HeldSecret | null;
+  created?: boolean;
 }) {
   const [app, setApp] = useState(initial);
-  // Only set by a rotate in this tab; a reload forgets it, as it should.
-  const [secret, setSecret] = useState<string | null>(initialSecret);
+  const [held, setHeld] = useState(initialHeld);
   const [confirm, setConfirm] = useState<"rotate" | "suspend" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const active = app.status === "active";
@@ -79,7 +81,12 @@ export function AppDetailView({
         </Notice>
       )}
 
-      <CredentialsCard app={app} secret={secret} />
+      {created && active && (
+        <Notice tone="brand" icon="Check-Circle" title={`${app.name} is ready`}>
+          Copy the client secret into your server now. Then let a merchant connect from one of your redirect URIs.
+        </Notice>
+      )}
+      <CredentialsCard app={app} held={held} actions={actions} onRegenerate={() => (setError(null), setConfirm("rotate"))} />
       <ActivitySection activity={activity} />
       <DetailsSection app={app} disabled={!active} save={save} />
       <UrlsSection
@@ -128,12 +135,12 @@ export function AppDetailView({
       {active && (
         <TraySection title="Danger zone" sheetClassName="flex flex-col divide-y divide-gray-100 p-0">
           <DangerRow
-            title="Rotate secret"
+            title="Regenerate secret"
             body="Issues a new secret. The current one stops working at once."
             action={
               <Button type="button" variant="quiet" size="sm" onClick={() => (setError(null), setConfirm("rotate"))}>
                 <SolarIcon name="Refresh" iconStyle="Outline" size={16} />
-                Rotate
+                Regenerate secret
               </Button>
             }
           />
@@ -153,18 +160,17 @@ export function AppDetailView({
       <ConfirmDialog
         open={confirm === "rotate"}
         onOpenChange={(open) => !open && setConfirm(null)}
-        title="Rotate the client secret?"
-        description="The current secret stops working immediately. Put the new one in your server's TALLY_CLIENT_SECRET right away."
-        confirmLabel="Rotate secret"
+        title="Regenerate the client secret?"
+        description="The current secret stops working immediately. Apps using it will fail until you update them."
+        confirmLabel="Regenerate secret"
         onConfirm={async () => {
           const res = await actions.rotate(app.client_id);
           if (!res.ok) {
             setError(res.error);
             throw new Error(res.error);
           }
-          const { client_secret, ...rest } = res.data;
-          setApp(rest);
-          setSecret(client_secret);
+          setApp(res.data.app);
+          setHeld(res.data.held);
         }}
       >
         {error ? <FormMessage message={error} /> : undefined}
@@ -183,7 +189,7 @@ export function AppDetailView({
             throw new Error(res.error);
           }
           setApp(res.data);
-          setSecret(null);
+          setHeld(null);
         }}
       >
         {error ? <FormMessage message={error} /> : undefined}

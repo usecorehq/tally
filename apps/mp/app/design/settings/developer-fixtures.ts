@@ -1,4 +1,4 @@
-import type { AppActivity, DeveloperApp, WithSecret } from "../../settings/developers/_lib/developer";
+import type { AppActivity, DeveloperApp, HeldSecret } from "../../settings/developers/_lib/developer";
 
 // Fixture apps for /design/settings?v=developers-*. The secret is built at runtime so the secrets check never sees one.
 
@@ -34,7 +34,8 @@ export const DEV_APPS: DeveloperApp[] = [
   { ...DEV_APP, client_id: "tc_m3n4o5p6q7r8s9t0u1v2w3x4", name: "Old prototype", logo_url: null, status: "suspended", created_at: "2026-08-20T09:00:00Z" },
 ];
 
-export const CREATED: WithSecret = { ...DEV_APP, client_secret: PREVIEW_SECRET };
+// Held for the full 10 minutes from when the preview opens.
+export const held = (): HeldSecret => ({ last4: PREVIEW_SECRET.slice(-4), expiresAt: new Date(Date.now() + 600_000).toISOString() });
 
 export const ACTIVITY: AppActivity = {
   client_id: DEV_APP.client_id,

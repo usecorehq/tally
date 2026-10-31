@@ -1,4 +1,5 @@
-// Response shapes of /clients/v1/apps (apps/api developer-apps.service.ts). A secret only ever arrives from create or rotate.
+// Response shapes of /clients/v1/apps (apps/api developer-apps.service.ts). A secret only ever arrives from create or rotate,
+// and only mp's server sees it: the page gets HeldSecret and copies through a server action.
 
 export type DeveloperApp = {
   client_id: string;
@@ -16,6 +17,12 @@ export type DeveloperApp = {
 };
 
 export type WithSecret = DeveloperApp & { client_secret: string };
+
+/** A just-issued secret mp's server holds for copying: what the page may know about it. */
+export type HeldSecret = { last4: string; expiresAt: string };
+
+/** create and rotate as the page sees them: the app, and the secret only as held. */
+export type Issued = { app: DeveloperApp; held: HeldSecret };
 
 /** GET /clients/v1/apps/:clientId/activity. `today.used` counts stock-takes and quick scans, as the daily cap does. */
 export type AppActivity = {
@@ -44,13 +51,15 @@ export const TALLY_ENV = {
 
 export const PARTNER_DEMO_URL = "https://github.com/usecorehq/tally/tree/main/examples/partner-demo#readme";
 
-/** The partner's server .env. Without the secret its line stays empty: it is only ever shown once. */
-export function envBlock(clientId: string, secret?: string | null): string {
-  return [
-    ...Object.entries(TALLY_ENV).map(([k, v]) => `${k}=${v}`),
-    `TALLY_CLIENT_ID=${clientId}`,
-    secret ? `TALLY_CLIENT_SECRET=${secret}` : "# Shown once, when you create the app or rotate its secret.\nTALLY_CLIENT_SECRET=",
-  ].join("\n");
+export const MASK = "••••••••";
+
+/** How the secret is shown: the last 4 while held, otherwise the stored prefix. Never the secret. */
+export const maskedSecret = (app: Pick<DeveloperApp, "secret_prefix">, held: HeldSecret | null) =>
+  held ? `tcs_${MASK}${held.last4}` : `tcs_${app.secret_prefix}${MASK}`;
+
+/** The partner's server .env. `secret` is only passed while copying; on screen the line is masked. */
+export function envBlock(clientId: string, secretLine: string): string {
+  return [...Object.entries(TALLY_ENV).map(([k, v]) => `${k}=${v}`), `TALLY_CLIENT_ID=${clientId}`, `TALLY_CLIENT_SECRET=${secretLine}`].join("\n");
 }
 
 export function quickstart(clientId: string): string {

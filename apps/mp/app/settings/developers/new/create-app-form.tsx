@@ -2,17 +2,23 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Button, ChoiceCard, FieldLabel, FormMessage, Input, Notice, SolarIcon, TraySection } from "@tally/ui";
-import { SCOPES, type AppResult, type WithSecret } from "../_lib/developer";
-import { CredentialsCard, UrlListEditor, cleanList } from "../_components/developer-parts";
+import { useRouter } from "next/navigation";
+import { Button, ChoiceCard, FieldLabel, FormMessage, Input, TraySection } from "@tally/ui";
+import { SCOPES, type AppResult, type Issued } from "../_lib/developer";
+import { UrlListEditor, cleanList } from "../_components/developer-parts";
 
 type CreateInput = { name: string; logo_url: string | null; redirect_uris: string[]; allowed_origins: string[]; scopes: string[] };
 
-/**
- * Create an app, then show its credentials in place. The secret is only in this component's state,
- * so leaving the page loses it; the warning says so.
- */
-export function CreateAppForm({ create, initialCreated = null }: { create: (input: CreateInput) => Promise<AppResult<WithSecret>>; initialCreated?: WithSecret | null }) {
+/** Create an app, then open its page, where the new secret is held by the server for copying. */
+export function CreateAppForm({
+  create,
+  afterCreate = (issued) => `/settings/developers/${issued.app.client_id}?created=1`,
+}: {
+  create: (input: CreateInput) => Promise<AppResult<Issued>>;
+  /** Where to go next; /design points it at a preview. */
+  afterCreate?: (issued: Issued) => string;
+}) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [logo, setLogo] = useState("");
   const [redirects, setRedirects] = useState<string[]>([""]);
@@ -20,26 +26,6 @@ export function CreateAppForm({ create, initialCreated = null }: { create: (inpu
   const [scopes, setScopes] = useState<string[]>(SCOPES.map((s) => s.scope));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<WithSecret | null>(initialCreated);
-
-  if (created) {
-    return (
-      <div className="flex flex-col gap-4">
-        <Notice tone="brand" icon="Check-Circle" title={`${created.name} is ready`}>
-          Copy the client secret now. Then add the redirect URI to your server and let a merchant connect.
-        </Notice>
-        <CredentialsCard app={created} secret={created.client_secret} />
-        <div className="flex justify-end">
-          <Button asChild size="lg">
-            <Link href={`/settings/developers/${created.client_id}`}>
-              I&apos;ve stored the secret
-              <SolarIcon name="Arrow-Right" iconStyle="Outline" size={16} />
-            </Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   const toggle = (scope: string) => setScopes((s) => (s.includes(scope) ? s.filter((x) => x !== scope) : [...s, scope]));
 
@@ -57,11 +43,11 @@ export function CreateAppForm({ create, initialCreated = null }: { create: (inpu
       allowed_origins: cleanList(origins),
       scopes,
     });
-    setBusy(false);
-    if (!res.ok) return setError(res.error);
-    setCreated(res.data);
-    // The form ends low on the page; the secret must not be missed above the fold.
-    window.scrollTo({ top: 0 });
+    if (!res.ok) {
+      setBusy(false);
+      return setError(res.error);
+    }
+    router.push(afterCreate(res.data));
   }
 
   return (
