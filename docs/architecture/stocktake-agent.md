@@ -64,7 +64,7 @@ The pattern from Meta's agent workshop: checks run inside the tools at fixed poi
 
 ## Usage limits
 
-Every stock-take run, rerun and quick scan counts against the business's [plan](database.md#plans-and-subscriptions), whichever app started it. `UsageService.limitCheck` (`apps/api/src/modules/usage/`) runs after the membership check and before any model call (for a rerun, before its photo is fetched).
+Every stock-take run, rerun and quick scan counts against the business's [plan](database.md#plans-and-subscriptions), whichever app started it. `BillingService.limitCheck` (`apps/api/src/modules/billing/`) runs after the membership check and before any model call (for a rerun, before its photo is fetched).
 
 - **What counts:** runs (reruns included) that did not fail, plus quick scans (scans no run points at; a run's own scan is the run). A failed run, or a quick scan that never got stored, gave the merchant nothing and doesn't count. Photo checks and identify don't count.
 - **Days are Lagos days** (`Africa/Lagos`, computed in SQL), so a day's allowance resets at midnight in Nigeria.

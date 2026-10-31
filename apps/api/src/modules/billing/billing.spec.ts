@@ -4,10 +4,10 @@ import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { BusinessesService } from "../businesses/businesses.service";
-import { UsageLimitException, UsageLimitFilter } from "./usage-errors";
-import { UsageController } from "./usage.controller";
-import { UsageRepository, type PlanRow } from "./usage.repository";
-import { UsageService } from "./usage.service";
+import { UsageLimitException, UsageLimitFilter } from "./billing-errors";
+import { BillingController } from "./billing.controller";
+import { BillingRepository, type PlanRow } from "./billing.repository";
+import { BillingService } from "./billing.service";
 
 // Real controller, service and 429 filter; the repository (SQL) and the membership lookup are mocked.
 const USER = "00000000-0000-4000-8000-0000000000aa";
@@ -50,10 +50,10 @@ async function app() {
   };
   const businesses = { getForMember: jest.fn(async (_b: string, _u: string) => ({ id: BIZ, role: "owner" })) };
   const moduleRef = await Test.createTestingModule({
-    controllers: [UsageController],
+    controllers: [BillingController],
     providers: [
-      UsageService,
-      { provide: UsageRepository, useValue: repo },
+      BillingService,
+      { provide: BillingRepository, useValue: repo },
       { provide: BusinessesService, useValue: businesses },
       { provide: APP_GUARD, useClass: AsUser },
       { provide: APP_FILTER, useClass: UsageLimitFilter },
@@ -63,10 +63,10 @@ async function app() {
   nest.setGlobalPrefix("api");
   nest.useGlobalPipes(new ValidationPipe({ transform: true }));
   await nest.init();
-  return { nest, repo, businesses, service: nest.get(UsageService) };
+  return { nest, repo, businesses, service: nest.get(BillingService) };
 }
 
-describe("UsageService.limitCheck", () => {
+describe("BillingService.limitCheck", () => {
   let ctx: Awaited<ReturnType<typeof app>>;
   beforeAll(async () => {
     ctx = await app();
@@ -140,7 +140,7 @@ describe("UsageService.limitCheck", () => {
   });
 });
 
-describe("UsageController (HTTP)", () => {
+describe("BillingController (HTTP)", () => {
   let ctx: Awaited<ReturnType<typeof app>>;
   const server = () => ctx.nest.getHttpServer();
   beforeAll(async () => {

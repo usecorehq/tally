@@ -14,7 +14,7 @@ import type { ImageSampleContext, MatchResult } from "@tally/catalog-client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
-import { UsageService } from "../usage/usage.service";
+import { BillingService } from "../billing/billing.service";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
 import { bestBox, boxPixels, cropKey, cropSize, cutCrops, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, modelCopy, PAD, shelfPhotoKey, storablePhoto } from "./crops";
 import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
@@ -235,7 +235,7 @@ export class VisionService implements OnApplicationBootstrap {
     private readonly catalog: CatalogService,
     private readonly repo: VisionRepository,
     private readonly media: R2Storage,
-    private readonly usage: UsageService,
+    private readonly billing: BillingService,
   ) {
     const apiKey = config.get<string>("meta.apiKey");
     this.meta = apiKey ? new MetaModelClient(config.getOrThrow<string>("meta.baseUrl"), apiKey) : null;
@@ -252,7 +252,7 @@ export class VisionService implements OnApplicationBootstrap {
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
     // Membership first, so a non-member gets 403 rather than a limit.
     await this.businesses.getForMember(businessId, userId);
-    await this.usage.limitCheck(businessId, clientId);
+    await this.billing.limitCheck(businessId, clientId);
 
     const started = Date.now();
     // Models read a copy capped at 2560 px; crops and the stored photo come from the full-resolution image.
@@ -399,7 +399,7 @@ export class VisionService implements OnApplicationBootstrap {
     const type = sniffImageType(image);
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
     await this.businesses.getForMember(businessId, userId);
-    await this.usage.limitCheck(businessId, clientId);
+    await this.billing.limitCheck(businessId, clientId);
     return this.launch(businessId, userId, clientId, image, type, null);
   }
 
@@ -410,7 +410,7 @@ export class VisionService implements OnApplicationBootstrap {
   async rerun(businessId: string, userId: string, scanId: string, clientId: string | null = null): Promise<{ runId: string; status: "running"; rerunOf: string }> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
     await this.businesses.getForMember(businessId, userId);
-    await this.usage.limitCheck(businessId, clientId);
+    await this.billing.limitCheck(businessId, clientId);
     const { root, scanIds } = await this.repo.group(businessId, scanId);
     if (await this.repo.groupSettled(scanIds)) {
       throw new ConflictException("A run of this photo is already confirmed. Take new stock to count again.");

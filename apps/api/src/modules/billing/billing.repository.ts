@@ -24,7 +24,7 @@ const quickScan = notExists(
 export type PlanRow = Pick<schema.Plan, "code" | "name" | "priceKoboMonthly" | "dailyStocktakeLimit" | "maxConcurrentRuns">;
 
 @Injectable()
-export class UsageRepository {
+export class BillingRepository {
   constructor(@Inject(TALLY_DB) private readonly db: TallyDb) {}
 
   async activePlans(): Promise<PlanRow[]> {

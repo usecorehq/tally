@@ -2,14 +2,14 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query } from "@nestjs/com
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { BusinessParams } from "../businesses/businesses.dto";
-import { SubscribeBody, UsageQuery } from "./usage.dto";
-import { UsageService } from "./usage.service";
+import { SubscribeBody, UsageQuery } from "./billing.dto";
+import { BillingService } from "./billing.service";
 
-@ApiTags("usage")
+@ApiTags("billing")
 @ApiBearerAuth("bearer")
 @Controller()
-export class UsageController {
-  constructor(private readonly usage: UsageService) {}
+export class BillingController {
+  constructor(private readonly usage: BillingService) {}
 
   @Get("plans")
   @ApiOperation({ summary: "The plans a business can be on, in display order. Prices are for display only." })
