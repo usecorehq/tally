@@ -60,8 +60,10 @@ export function PlanView({
             <p className="mt-0.5 text-sm text-gray-500">Plans are simulated while Connect Tally is in preview. You won't be charged.</p>
           </div>
           <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-            {plans.map((plan) => {
+            {plans.map((plan, i) => {
               const isCurrent = plan.code === current?.code;
+              // Plans come in display order, cheapest first: only an upgrade gets the brand fill.
+              const isUpgrade = i > plans.findIndex((p) => p.code === current?.code);
               return (
                 <TraySheet key={plan.code} className={cn("flex flex-col gap-5", isCurrent && "ring-2 ring-primary-ink/40")}>
                   <div className="flex items-start justify-between gap-3">
@@ -83,7 +85,7 @@ export function PlanView({
                     ))}
                   </ul>
                   <Button
-                    variant={isCurrent ? "soft" : "primary"}
+                    variant={isCurrent ? "soft" : isUpgrade ? "primary" : "quiet"}
                     size="lg"
                     block
                     className="mt-auto"
