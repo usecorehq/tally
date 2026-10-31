@@ -109,6 +109,7 @@ mp owns the screens; apps/api owns the codes, grants, tokens, usage, plans and s
   - Integrations: the business's connected apps (`GET /clients/v1/grants`), with scopes, dates, this month's share of stock-takes and Revoke (`DELETE /clients/v1/grants/:id`). Owners only.
   - Usage: today's stock-takes and quick scans against the plan's daily limit (it counts both), this month's totals, 30 days of stock-takes and quick scans, and stock-takes by source.
   - Plan: the current plan and the plans to compare. Subscribing is simulated: a confirm titled "Simulated subscription: no charge", no payment details, no charge. Plan prices are display-only and never revenue.
+  - Developers (`app/settings/developers/`, per user, not per business): the user's own Connect Tally apps (`/clients/v1/apps`). Create takes a name, logo, redirect URIs, allowed sites and permissions, then shows the client secret once with a ready `.env` (production hosts, `TALLY_CLIENT_ID`, and `TALLY_CLIENT_SECRET` only while it is on screen). An app's page has the client ID, activity against its caps, editors for details, redirect URIs and allowed sites, a `TallyEmbed.mount` quickstart, Rotate secret and Suspend (both confirmed). The secret lives only in the page's state: a reload forgets it.
   - `LimitReached` (`app/settings/limit-reached.tsx`) explains a 429 (`plan_limit`, `client_cap`, `concurrent_runs`) and links to Plan.
 
 ## Not built yet

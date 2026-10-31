@@ -17,5 +17,16 @@ export const VARIANTS = [
   "plan-loading",
   "plan-staff",
   "limit-reached",
+  "developers",
+  "developers-empty",
+  "developers-failed",
+  "developers-loading",
+  "developers-create",
+  "developers-created",
+  "developers-app",
+  "developers-app-rotated",
+  "developers-app-activity-failed",
+  "developers-app-suspended",
+  "developers-app-loading",
 ] as const;
 export type Variant = (typeof VARIANTS)[number];
