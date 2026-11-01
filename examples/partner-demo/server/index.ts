@@ -1,11 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
+import { deleteCookie, getCookie, getSignedCookie, setCookie, setSignedCookie } from "hono/cookie";
 
 function env(name: string): string {
   const value = process.env[name];
@@ -25,16 +25,59 @@ const REDIRECT_URI = `${BASE_URL}/callback`;
 const SCOPE = "stocktake:write stocktake:read inventory:read";
 const WEB_ROOT = fileURLToPath(new URL("./web", import.meta.url));
 const COOKIE = "demo_session";
+const TOKENS_COOKIE = "demo_tally";
+const MONTH = 60 * 60 * 24 * 30;
 
 type Pending = { verifier: string; state: string; mode: "redirect" | "popup" };
 type Session = { sid: string; pending?: Pending };
 type Tokens = { access: string; refresh: string; expiresAt: number; businessId: string };
+type Stored = { refresh: string; businessId: string };
 
-// Tokens stay in server memory, keyed by the cookie's session id; a restart disconnects everyone.
-const tokens = new Map<string, Tokens>();
+// The refresh token lives in an encrypted httpOnly cookie, so a restart keeps everyone connected.
+// Access tokens are only cached in memory; a missing one is minted again from the cookie.
+const access = new Map<string, { token: string; expiresAt: number }>();
+const refreshing = new Map<string, Promise<Tokens | null>>();
+const KEY = createHash("sha256").update(`demo-tally-tokens:${SESSION_SECRET}`).digest();
 
 const b64url = (buf: Buffer) => buf.toString("base64url");
 const basic = `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64")}`;
+
+function seal(value: Stored): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", KEY, iv);
+  const body = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
+  return b64url(Buffer.concat([iv, cipher.getAuthTag(), body]));
+}
+
+function unseal(raw: string | undefined): Stored | null {
+  if (!raw) return null;
+  try {
+    const buf = Buffer.from(raw, "base64url");
+    const decipher = createDecipheriv("aes-256-gcm", KEY, buf.subarray(0, 12));
+    decipher.setAuthTag(buf.subarray(12, 28));
+    return JSON.parse(Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString("utf8")) as Stored;
+  } catch {
+    return null;
+  }
+}
+
+const readStored = (c: Context) => unseal(getCookie(c, TOKENS_COOKIE));
+
+function store(c: Context, sid: string, next: Tokens | null) {
+  if (!next) {
+    access.delete(sid);
+    deleteCookie(c, TOKENS_COOKIE, { path: "/" });
+    return;
+  }
+  access.set(sid, { token: next.access, expiresAt: next.expiresAt });
+  setCookie(c, TOKENS_COOKIE, seal({ refresh: next.refresh, businessId: next.businessId }), {
+    httpOnly: true,
+    secure: BASE_URL.startsWith("https://"),
+    sameSite: "Lax",
+    path: "/",
+    maxAge: MONTH,
+  });
+}
 
 async function readSession(c: Context): Promise<Session> {
   const raw = await getSignedCookie(c, SESSION_SECRET, COOKIE);
@@ -52,7 +95,7 @@ async function writeSession(c: Context, session: Session) {
     secure: BASE_URL.startsWith("https://"),
     sameSite: "Lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: MONTH,
   });
 }
 
@@ -77,26 +120,32 @@ async function tokenRequest(body: Record<string, string>): Promise<Tokens | null
   };
 }
 
-// Refresh 30 s early; a failed refresh (rotated or revoked grant) means disconnected.
-async function accessToken(sid: string): Promise<string | null> {
-  const current = tokens.get(sid);
-  if (!current) return null;
-  if (current.expiresAt - 30_000 > Date.now()) return current.access;
-  const next = await tokenRequest({ grant_type: "refresh_token", refresh_token: current.refresh });
-  if (next) tokens.set(sid, next);
-  else tokens.delete(sid);
+// Refresh 30 s early. Refresh tokens rotate, so one refresh per session at a time and the new one is
+// written back; a failed refresh (revoked grant) means disconnected.
+async function accessToken(c: Context, sid: string): Promise<string | null> {
+  const cached = access.get(sid);
+  if (cached && cached.expiresAt - 30_000 > Date.now()) return cached.token;
+  const stored = readStored(c);
+  if (!stored) return null;
+  let pending = refreshing.get(sid);
+  if (!pending) {
+    pending = tokenRequest({ grant_type: "refresh_token", refresh_token: stored.refresh }).finally(() => refreshing.delete(sid));
+    refreshing.set(sid, pending);
+  }
+  const next = await pending;
+  store(c, sid, next);
   return next?.access ?? null;
 }
 
 async function tally(c: Context, path: string, init: RequestInit = {}) {
   const { sid } = await readSession(c);
-  const token = await accessToken(sid);
+  const token = await accessToken(c, sid);
   if (!token) return c.json({ error: "not_connected" }, 401);
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: { ...init.headers, authorization: `Bearer ${token}` },
   });
-  if (res.status === 401) tokens.delete(sid);
+  if (res.status === 401) store(c, sid, null);
   return { res, json: (await res.json().catch(() => ({}))) as Record<string, unknown> };
 }
 
@@ -136,7 +185,7 @@ app.get("/callback", async (c) => {
       redirect_uri: REDIRECT_URI,
       code_verifier: pending.verifier,
     });
-    if (next) tokens.set(session.sid, next);
+    if (next) store(c, session.sid, next);
   }
   await writeSession(c, { sid: session.sid });
   if (pending?.mode !== "popup") return c.redirect("/");
@@ -160,8 +209,7 @@ app.post("/api/session", async (c) => {
 type ScanLine = { decision: { action: string; itemName: string | null; quantity: number | null } | null };
 
 app.get("/api/stocktake/:scanId", async (c) => {
-  const { sid } = await readSession(c);
-  const businessId = tokens.get(sid)?.businessId;
+  const businessId = readStored(c)?.businessId;
   if (!businessId) return c.json({ error: "not_connected" }, 401);
   const scanId = encodeURIComponent(c.req.param("scanId"));
   const result = await tally(c, `/businesses/${businessId}/vision/shelf-scans/${scanId}`);
@@ -177,8 +225,8 @@ app.get("/api/stocktake/:scanId", async (c) => {
 
 app.post("/api/disconnect", async (c) => {
   const session = await readSession(c);
-  const current = tokens.get(session.sid);
-  tokens.delete(session.sid);
+  const current = readStored(c);
+  store(c, session.sid, null);
   if (current) {
     await fetch(`${API}/clients/v1/oauth/revoke`, {
       method: "POST",
