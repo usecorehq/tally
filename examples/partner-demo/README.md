@@ -18,7 +18,7 @@ web/              Vite, vanilla TS: the page (index.html, main.ts) and the popup
 Dockerfile        Multi-stage; the runtime image runs dist/server.mjs, which also serves dist/web
 ```
 
-- The client secret, access token and refresh token never leave the server. Tokens sit in an in-memory map keyed by the session id; a restart disconnects everyone, which is fine for a demo.
+- The client secret and access token never leave the server. The refresh token and business id sit in an AES-256-GCM encrypted, httpOnly cookie (keyed from `SESSION_SECRET`), so a redeploy keeps everyone connected; access tokens are only cached in memory and minted again from the cookie. Refresh tokens rotate, so each refresh writes the new one back. A real partner would keep tokens in its own database against its own user.
 - The PKCE verifier, `state` and the connect mode travel in a signed, httpOnly, SameSite=Lax cookie.
 - The page only ever gets an embed session token (`POST /api/session`), and the launcher hands it to the iframe over `postMessage`.
 
