@@ -8,7 +8,8 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
   return {
     nodeEnv: (env.NODE_ENV ?? "development") as "development" | "production" | "test",
     port: parseInt(env.PORT ?? "4100", 10),
-    corsOrigins: env.CORS_ORIGINS!,
+    // process.env holds the raw comma list; one string would go out as a single invalid Allow-Origin.
+    corsOrigins: (env.CORS_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean),
 
     supabase: {
       url: env.SUPABASE_URL!,
