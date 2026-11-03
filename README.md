@@ -40,6 +40,7 @@ This repository was created for the **Meta Global AI Developer Hackathon**. The 
 |---|---|
 | Web | Next.js 16 (App Router), Tailwind 4, NextAuth v5 (Credentials → Supabase) — `apps/mp` |
 | Mobile | Flutter, clean architecture, flutter_bloc (bloc + cubit), dartz `Either`, get_it, supabase_flutter, Dio — `apps/mobile` |
+| Landing | Vite 7, React 19, Tailwind 4, the `@tally/ui` V2 theme — `apps/landing` |
 | Backend | NestJS 11, Drizzle on `postgres.js`, class-validator env, Swagger at `/docs` — `apps/api` |
 | DB | Shared Qorelly Supabase Postgres, `tally` schema only; ledger `tally.__drizzle_migrations` |
 | Auth | Qorelly Supabase Auth. API verifies JWTs (HS256 or JWKS), `audience: authenticated` enforced |
@@ -74,6 +75,7 @@ Full walkthrough: **[docs/guides/local-development.md](docs/guides/local-develop
 apps/
   api/               NestJS + Drizzle. Global SupabaseJwtGuard, health, catalog.   README + .env.example
   mp/                Next.js. Merchant portal: signup, onboarding, stock-take, inventory. README + .env.example
+  landing/           Vite static site: the public landing page (port 3002).          README + .env.example
   mobile/            Flutter app qore_tally: android + ios, dev/staging/prod flavors. README + .env.example
 packages/
   db/                Drizzle schema + client for the tally schema, migrations/.
@@ -132,6 +134,7 @@ More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (we
 pnpm dev                              # every app (packages built first)
 pnpm --filter @tally/api dev
 pnpm --filter @tally/mp dev
+pnpm --filter @tally/landing dev      # http://localhost:3002
 (cd apps/mobile && flutter run --flavor dev -t lib/main_dev.dart --dart-define-from-file=.env.dev)   # flavors: apps/mobile/README.md
 
 # Quality (same as CI)

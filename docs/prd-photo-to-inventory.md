@@ -295,7 +295,7 @@ Each slice starts with a read-only audit and stops on contradictions. Testing is
 | 6 | **Mobile: capture → processing → confirm (S2–S5)** — built on `feat/photo-to-inventory`: agent and quick scan both offered (default still open); S5 lists the scan's plausible matches, whole-catalogue search not yet. | Screen recording of a real scan on staging |
 | 7 | **Identify one product**: `identify` endpoint + S10. | Latency measured on staging, screenshots |
 | 8 | **Ask your stock** (§6.3) + S6. | Test prompts pass, screenshots |
-| 9 | **Landing page** `apps/landing` (Vite). | Deployed preview + mobile/desktop screenshots |
+| 9 | **Landing page** `apps/landing` (Vite) — first draft built: hero, three steps, what it reads, powered by, waitlist (link via `VITE_WAITLIST_URL`, Q7 still open). | Deployed preview + mobile/desktop screenshots |
 | 10 | **Demo polish**: scan history (S8), item detail (S7), demo script. | Dry run under 2 minutes |
 | 11 | Stretch: count mode, voice (§6.4). | — |
 
