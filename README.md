@@ -107,6 +107,8 @@ docs/
   architecture/      Why we built it this way.
   guides/            How to run, migrate, and keep docs current.
   diagrams/          Process and agent overviews (.webp), plus C4, sequences, flows and journeys (images/).
+samples/
+  shelf-photos/      Twelve real shelf photos for trying a stock-take.
 scripts/
   check-secrets.sh   Secret guard (pre-commit hook + CI). See "Secret guard" below.
 .githooks/           pre-commit → scripts/check-secrets.sh --staged.
