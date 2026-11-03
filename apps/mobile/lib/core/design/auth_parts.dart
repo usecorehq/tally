@@ -5,27 +5,20 @@ import 'v15_widgets.dart';
 // Design 1.5 pieces for the way in — sign in, sign up, the code and reset
 // screens, business setup. A subset of qorelly-mobile's
 // lib/screens/auth/widgets/auth_v15_parts.dart with the same look; the mark
-// is Tally's "T" (as apps/mp's onboarding shell) instead of the Qorelly logo.
+// is the Tally logo (as apps/mp) instead of the Qorelly logo.
 
-/// Tally's mark: a "T" on the accent, 48 / 14px corners in the card, 36 in
-/// a wizard's step strip.
+/// The Tally logo (assets/brand/, rendered from the brand SVG at 1x-3x):
+/// 48 in the card, 36 in a wizard's step strip.
 class TallyMark extends StatelessWidget {
   final double size;
   const TallyMark({super.key, this.size = 48});
 
   @override
   Widget build(BuildContext context) {
-    final c = V15.of(context);
     return Semantics(
       label: 'Tally',
       image: true,
-      child: Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: c.primary, borderRadius: BorderRadius.circular(size * 0.3)),
-        child: Text('T', style: V15.text(size * 0.42, FontWeight.w600, c.onPrimary, height: 1)),
-      ),
+      child: Image.asset('assets/brand/tally_mark.png', width: size, height: size, filterQuality: FilterQuality.medium),
     );
   }
 }

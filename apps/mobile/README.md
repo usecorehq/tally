@@ -19,6 +19,8 @@ tool/setup_ios_flavors.rb    wires iOS build configs, xcconfigs, schemes and Pod
 
 ## Flavors
 
+The Tally logo is `assets/brand/tally_mark.png` (1x-3x, drawn by `TallyMark` in `lib/core/design/auth_parts.dart`) and the launcher icon in every Android mipmap and the iOS `AppIcon` set, all rendered from the sunflower mark (`apps/mp/public/tally-mark.svg`, the same tile as mp's favicon); regenerate them together if the mark changes. `assets/icon/` holds an older purple tile from before the sunflower rebrand.
+
 Three flavors, each with its own bundle / application ID and launcher name so they install side by side. Why it's built this way, the diagram, and troubleshooting: [docs/architecture/mobile-flavors.md](../../docs/architecture/mobile-flavors.md).
 
 | Flavor | Entrypoint | Android application ID | iOS bundle ID | Launcher name | Banner | API |
