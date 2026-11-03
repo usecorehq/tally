@@ -6,13 +6,12 @@ import { SolarIcon, cn, type SolarIconName } from "@tally/ui";
 import { FOCUS, SEGMENT_THUMB, SEGMENT_TRACK } from "./segment";
 
 export const NAV: { href: string; label: string; icon: SolarIconName }[] = [
-  { href: "/", label: "Businesses", icon: "Shop" },
   { href: "/inventory", label: "Inventory", icon: "Box" },
   { href: "/stocktake", label: "Stock-take", icon: "Gallery-Add" },
+  { href: "/settings", label: "Settings", icon: "Settings" },
 ];
 
-const isActive = (pathname: string, href: string) =>
-  href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
 /** Sidebar nav (Qorelly DashboardLayout under V2): idle grey text, the active item a sheet with a Fill glyph. */
 export function SidebarNav() {
@@ -32,7 +31,7 @@ export function SidebarNav() {
               on ? "bg-surface text-gray-900 ring-1 ring-hairline/[0.06] dark:ring-hairline/10" : "text-gray-600 hover:bg-gray-200/60 hover:text-gray-900",
             )}
           >
-            <SolarIcon name={item.icon} iconStyle={on ? "Fill" : "Outline"} size={20} className={on ? "text-primary" : undefined} />
+            <SolarIcon name={item.icon} iconStyle={on ? "Fill" : "Outline"} size={20} className={on ? "text-primary-ink" : undefined} />
             {item.label}
           </Link>
         );
@@ -66,7 +65,7 @@ export function MobileNav() {
                 name={item.icon}
                 iconStyle={on ? "Fill" : "Outline"}
                 size={18}
-                className={cn("max-[479px]:hidden", on && "text-primary")}
+                className={cn("max-[479px]:hidden", on && "text-primary-ink")}
               />
               {item.label}
             </span>

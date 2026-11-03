@@ -6,7 +6,25 @@
 - **Qore Catalog** (a separate product) owns product images and recognition training; Tally sends it confirmed shelf crops and feedback.
 - **Tally** lives in the `tally` schema of the shared Qorelly Supabase project and reuses Qorelly's `auth.users`.
 
-Status: sign-in on every surface; web onboarding (business + starter inventory from Qore Catalog templates); barcode scan-to-find on mobile; shelf photo → inventory (see [vision recognition](docs/architecture/vision-recognition.md) and the [system flowchart](docs/diagrams/images/system-flowchart.svg)).
+Status: **web portal (`mp`)**: sign-in, onboarding from Qore Catalog templates, and photo-to-inventory stock-taking (photo check, quick scan or the stock-take agent with a live trace, review with flagged lines first, confirm), with stock-take history, rerun and discard. **Mobile (`qore_tally`)**: sign-in, onboarding, barcode scan-to-find, and stock-take (quick scan or agent, review, confirm). **Qore Catalog loop**: every decision goes back as feedback, product crops (including new items) as training samples, and curator resolutions sync back every 15 minutes. Planned: an on-device recognition model. See [vision recognition](docs/architecture/vision-recognition.md) and [how a stock-take works](docs/diagrams/2.stock-take-agent-highlevel.webp).
+
+## Why Tally: stock-taking, before and after
+
+The same job, from counting by hand and typing every item to one photo per shelf and a yes from the merchant.
+
+<img src="docs/diagrams/1.process-reengineering.webp" alt="Stock-taking before and after Tally: a manual count across owner, staff, notebook and inventory app, versus one photo per shelf checked by the stock-take agent and confirmed by the merchant" width="100%">
+
+## How the stock-take agent counts a shelf
+
+Muse Spark reads and plans, SAM 3.1 counts, Qore Catalog names and prices. Tally checks every answer, and the merchant has the final say. Details: [stock-take agent](docs/architecture/stocktake-agent.md) and [vision recognition](docs/architecture/vision-recognition.md).
+
+<img src="docs/diagrams/2.stock-take-agent-highlevel.webp" alt="How the stock-take agent counts a shelf: a first pass (Muse Spark reads, SAM 3.1 counts, Qore Catalog matches), an agent loop with zoom, search, store check and recount tools, merchant review, confirm, and the catalogue learning from each decision" width="100%">
+
+## Three ways merchants use Tally
+
+One stock-take agent and one API, reached three ways: embedded in a partner's app, standalone on Tally, and inside Qorelly. Each way uses the same Qore Catalog, and nothing changes without the merchant's yes. Standalone is built. Partner embedding (Connect Tally with OAuth, the `@qorelly/tally-embed` iframe) and the Qorelly Inventory button are planned.
+
+<img src="docs/diagrams/7.use-cases.webp" alt="Three ways merchants use Tally: embedded in a partner's app through Connect Tally and an iframe, standalone on tally.qorelly.com, and inside Qorelly Inventory, all on one Tally API, stock-take agent, Qore Catalog and Qorelly account" width="100%">
 
 ---
 
@@ -18,18 +36,22 @@ This repository was created for the **Meta Global AI Developer Hackathon**. The 
 
 | Area | What | PRs |
 |---|---|---|
-| Platform | pnpm + turbo monorepo (api, mp, mobile), CI (path-filtered jobs, tests, schema-drift check), secret-scanning guard, architecture docs and diagrams | [#1](https://github.com/usecorehq/tally/pull/1), [#6](https://github.com/usecorehq/tally/pull/6), [#11](https://github.com/usecorehq/tally/pull/11), [#14](https://github.com/usecorehq/tally/pull/14) |
-| Database | `tally` schema: businesses, inventory, append-only stock movements, with triggers that keep stock on hand consistent | [#9](https://github.com/usecorehq/tally/pull/9), [#10](https://github.com/usecorehq/tally/pull/10) |
-| Catalogue integration | Typed client for the Qore Catalog v1 API; Tally's API is the only place holding the catalogue key | [#3](https://github.com/usecorehq/tally/pull/3), [#12](https://github.com/usecorehq/tally/pull/12), [#13](https://github.com/usecorehq/tally/pull/13) |
-| Onboarding | Create a business from a catalogue business type; turn its template into a starter inventory; every keep/swap/remove decision is sent back to the catalogue as feedback | [#15](https://github.com/usecorehq/tally/pull/15), [#16](https://github.com/usecorehq/tally/pull/16) |
+| Platform | pnpm + turbo monorepo (api, mp, mobile), CI (path-filtered jobs, tests, schema-drift check), secret-scanning guard, Docker image for Coolify, Postman collection, architecture docs and diagrams | [#1](https://github.com/usecorehq/tally/pull/1), [#6](https://github.com/usecorehq/tally/pull/6), [#11](https://github.com/usecorehq/tally/pull/11), [#14](https://github.com/usecorehq/tally/pull/14), [#32](https://github.com/usecorehq/tally/pull/32), [#39](https://github.com/usecorehq/tally/pull/39) |
+| Database | `tally` schema: businesses, inventory, append-only stock movements, with triggers that keep stock on hand consistent; vision tables for scans, lines, readings and agent runs | [#9](https://github.com/usecorehq/tally/pull/9), [#10](https://github.com/usecorehq/tally/pull/10), [#24](https://github.com/usecorehq/tally/pull/24), [#31](https://github.com/usecorehq/tally/pull/31) |
+| Catalogue integration | Typed client for the Qore Catalog v1 API; Tally's API is the only place holding the catalogue key; match strength and catalogue image on every candidate | [#3](https://github.com/usecorehq/tally/pull/3), [#12](https://github.com/usecorehq/tally/pull/12), [#13](https://github.com/usecorehq/tally/pull/13), [#47](https://github.com/usecorehq/tally/pull/47) |
+| Onboarding | Create a business from a catalogue business type; turn its template into a starter inventory; every keep/swap/remove decision is sent back to the catalogue as feedback | [#15](https://github.com/usecorehq/tally/pull/15), [#16](https://github.com/usecorehq/tally/pull/16), [#41](https://github.com/usecorehq/tally/pull/41) |
 | Barcode scan | Scan to find an item in the merchant's stock; on-device cache, link unknown barcodes once | [#17](https://github.com/usecorehq/tally/pull/17), [#18](https://github.com/usecorehq/tally/pull/18) |
-| Mobile | Flutter app for Android and iOS with dev / staging / prod builds | [#2](https://github.com/usecorehq/tally/pull/2), [#4](https://github.com/usecorehq/tally/pull/4), [#5](https://github.com/usecorehq/tally/pull/5) |
+| Vision recognition | Shelf photo → Muse Spark 1.3 reads every product, SAM 3.1 counts the units, Qore Catalog matches with ₦ prices, checked against the shop's own stock. The merchant reviews (flagged lines first, nothing written without a yes) and confirms in one transaction. Photo check before scanning, count-agreement rule, unread-area shading, product picker, identify one product | [#22](https://github.com/usecorehq/tally/pull/22), [#23](https://github.com/usecorehq/tally/pull/23), [#24](https://github.com/usecorehq/tally/pull/24), [#25](https://github.com/usecorehq/tally/pull/25), [#26](https://github.com/usecorehq/tally/pull/26), [#27](https://github.com/usecorehq/tally/pull/27), [#28](https://github.com/usecorehq/tally/pull/28), [#35](https://github.com/usecorehq/tally/pull/35), [#45](https://github.com/usecorehq/tally/pull/45), [#51](https://github.com/usecorehq/tally/pull/51), [#53](https://github.com/usecorehq/tally/pull/53), [#64](https://github.com/usecorehq/tally/pull/64), [#71](https://github.com/usecorehq/tally/pull/71), [#73](https://github.com/usecorehq/tally/pull/73), [#75](https://github.com/usecorehq/tally/pull/75), [#76](https://github.com/usecorehq/tally/pull/76) |
+| Stock-take agent | Muse Spark tool calling (zoom, catalogue search, store check, SAM recount, record) with Tally verifying every record (real Qore ID; brand, size and flavour agree), escalation of what it can't settle, a live step trace, fallback to the quick scan, and a benchmark harness (with an experimental shelf sweep) | [#31](https://github.com/usecorehq/tally/pull/31), [#33](https://github.com/usecorehq/tally/pull/33), [#36](https://github.com/usecorehq/tally/pull/36), [#43](https://github.com/usecorehq/tally/pull/43), [#63](https://github.com/usecorehq/tally/pull/63), [#67](https://github.com/usecorehq/tally/pull/67), [#68](https://github.com/usecorehq/tally/pull/68), [#83](https://github.com/usecorehq/tally/pull/83) |
+| Stock-take history | Every stock-take is a session at its own URL, reopenable on any device; the shelf photo is kept for audit; rerun on the stored photo, discard, and only one confirmed run per photo | [#56](https://github.com/usecorehq/tally/pull/56), [#59](https://github.com/usecorehq/tally/pull/59), [#66](https://github.com/usecorehq/tally/pull/66), [#70](https://github.com/usecorehq/tally/pull/70) |
+| Qore Catalog feedback loop | Every confirmed decision goes back as feedback; product crops go as training samples (from 96 px, with the label and box); new-item crops too; curator resolutions sync back every 15 minutes | [#25](https://github.com/usecorehq/tally/pull/25), [#30](https://github.com/usecorehq/tally/pull/30), [#57](https://github.com/usecorehq/tally/pull/57), [#81](https://github.com/usecorehq/tally/pull/81), [#84](https://github.com/usecorehq/tally/pull/84) |
+| Mobile | Flutter app for Android and iOS with dev / staging / prod builds; stock-take from a shelf photo on the Qorelly design system | [#2](https://github.com/usecorehq/tally/pull/2), [#4](https://github.com/usecorehq/tally/pull/4), [#5](https://github.com/usecorehq/tally/pull/5), [#49](https://github.com/usecorehq/tally/pull/49) |
 
 **Existing before the hackathon (used, not built here)**
 
 | | Role in Tally |
 |---|---|
-| **Qore Catalog** (Core Technologies) | Separate product and repository: the Nigerian product catalogue Tally calls for business types, templates, product search, matching and feedback |
+| **Qore Catalog** (Core Technologies) | Separate product and repository: the Nigerian product catalogue Tally calls for business types, templates, product search, matching, feedback, product images and training samples, and curation |
 | **Qorelly** (Core Technologies) | Merchants' existing accounts (shared Supabase Auth), and the design system: Tally's `@tally/ui` components and icons are ported from Qorelly's |
 
 ---
@@ -84,10 +106,9 @@ packages/
 docs/
   architecture/      Why we built it this way.
   guides/            How to run, migrate, and keep docs current.
-  diagrams/          C4 model, sequences, flows, journeys (mermaid/ source, images/ SVG).
+  diagrams/          Process and agent overviews (.webp), plus C4, sequences, flows and journeys (images/).
 scripts/
   check-secrets.sh   Secret guard (pre-commit hook + CI). See "Secret guard" below.
-  render-diagrams.sh pnpm docs:diagrams.
 .githooks/           pre-commit → scripts/check-secrets.sh --staged.
 ```
 
@@ -104,7 +125,7 @@ Everything lives under [`docs/`](docs/README.md). Docs ship in the same PR as th
 </tr>
 </table>
 
-More in **[Architecture diagrams](docs/diagrams/README.md)**: auth sequences (web + mobile), database isolation, migration flow, mobile layers and flavors, system flowchart, merchant journey.
+More in **[Architecture diagrams](docs/diagrams/README.md)**: the stock-take agent run, quick scan, stock-take history, identify one product, onboarding, database (ERD, migration flow), mobile layers and flavors.
 
 ### Architecture
 
@@ -145,10 +166,6 @@ pnpm build
 pnpm db:generate --name=<what_changed>
 pnpm db:migrate
 pnpm db:studio
-
-# Docs
-pnpm docs:diagrams                    # re-render every Mermaid diagram
-pnpm docs:diagrams c4-container       # just one
 
 # Secrets
 pnpm check:secrets                    # scan every tracked file for keys

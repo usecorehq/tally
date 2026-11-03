@@ -296,7 +296,7 @@ export function StarterLoading() {
   return (
     <div aria-busy="true">
       <div className="mb-4 flex items-center gap-3 rounded-[14px] bg-gray-100 px-4 py-3 text-[13px] text-gray-600">
-        <QorellyLoader className="h-5 w-5 shrink-0 text-primary" />
+        <QorellyLoader className="h-5 w-5 shrink-0 text-primary-ink" />
         Finding products shops like yours stock. This takes a few seconds the first time.
       </div>
       <div className="space-y-4">
@@ -345,7 +345,7 @@ export function StarterDone({ businessName, result }: { businessName: string; re
   const added = result.created + result.skipped;
   return (
     <div className="q-rise flex flex-col items-center py-10 text-center sm:py-16">
-      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-light text-primary">
+      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-light text-primary-ink">
         <SolarIcon name="Check-Circle" iconStyle="Bold" size={32} />
       </span>
       <h1 className="mt-6 text-[24px] font-medium leading-tight tracking-tight text-gray-900 sm:text-[28px]">{businessName} is ready</h1>

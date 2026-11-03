@@ -19,7 +19,7 @@ export type StocktakeDeps = {
   zoom(box: Box): Promise<string | null>;
 };
 
-export const STOCKTAKE_LIMITS = { maxZooms: 20, maxSearchesPerLine: 3, maxCountsPerLine: 2 } as const;
+export const STOCKTAKE_LIMITS = { maxZooms: 30, maxSearchesPerLine: 3, maxCountsPerLine: 2 } as const;
 
 /** Refusals before a line (or the submit) is escalated to the merchant instead of retried. */
 export const MAX_REFUSALS = 3;

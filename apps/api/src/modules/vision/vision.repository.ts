@@ -3,12 +3,16 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, notExists, or, 
 import { TALLY_DB, type TallyDb } from "../../drizzle/drizzle.module";
 import { outcomeFor, type DecidedDetection } from "./confirm-plan";
 import { readingKey, rememberable } from "./inventory-match";
+import type { Box } from "./shelf-reader";
 import type { Detection } from "./shelf-scan";
 import type { ConfirmDecision } from "./vision.dto";
 
 const { inventoryItemReadings, inventoryItems, stockMovements, visionAgentRuns, visionAgentSteps, visionDetections, visionScans } = schema;
 type Tx = Parameters<Parameters<TallyDb["transaction"]>[0]>[0];
 type Item = schema.InventoryItem;
+
+/** Where a line's crop came from: its boxes (0–1000 grid), what counted it, and the scan's time and models. */
+export type PendingSample = { boxes: Box[]; countSource: string; capturedAt: Date; readModel: string; countModel: string };
 
 export type ConfirmResult = {
   created: number;
@@ -21,8 +25,8 @@ export type ConfirmResult = {
   scanConfirmed: boolean;
   /** Other runs of the same photo marked superseded by this confirm. */
   superseded: number;
-  /** Decided detections whose catalogue feedback hasn't been sent yet (this request's and earlier ones'). */
-  pendingFeedback: (DecidedDetection & { detectionId: string })[];
+  /** Decided detections whose feedback hasn't been sent yet, with the context a crop upload sends as a training sample. */
+  pendingFeedback: (DecidedDetection & { detectionId: string; sample: PendingSample })[];
 };
 
 /** Vision tables only. Callers have already checked business membership. */
@@ -91,10 +95,10 @@ export class VisionRepository {
 
   // ── Stock-take agent runs ──
 
-  async createRun(businessId: string, startedBy: string, model: string, rerunOfScanId: string | null = null): Promise<string> {
+  async createRun(businessId: string, startedBy: string, model: string, rerunOfScanId: string | null = null, clientId: string | null = null): Promise<string> {
     const [row] = await this.db
       .insert(visionAgentRuns)
-      .values({ businessId, startedBy, model, rerunOfScanId })
+      .values({ businessId, startedBy, model, rerunOfScanId, clientId })
       .returning({ id: visionAgentRuns.id });
     return row!.id;
   }
@@ -492,6 +496,43 @@ export class VisionRepository {
     });
   }
 
+  // ── Qore Catalog resolutions of new-item lines ──
+
+  /** The latest resolution applied: the next poll's (inclusive) since. */
+  async resolutionCursor(): Promise<Date | null> {
+    const [row] = await this.db.select({ at: sql<Date | null>`max(${visionDetections.catalogResolvedAt})` }).from(visionDetections);
+    return row?.at ? new Date(row.at) : null;
+  }
+
+  /**
+   * Records what curators did with a line, once; on created or linked, links the merchant's item to the Qore ID,
+   * keeping its name and price. Skips the link when the item has one, or another active item already uses it.
+   */
+  async applyResolution(
+    scanId: string,
+    position: number,
+    r: { resolution: "created" | "linked" | "dismissed"; qid: string | null; resolvedAt: Date },
+  ): Promise<"unknown" | "duplicate" | "recorded" | "linked" | "kept"> {
+    return this.db.transaction(async (tx) => {
+      const [det] = await tx
+        .select({ id: visionDetections.id, businessId: visionDetections.businessId, itemId: visionDetections.itemId, at: visionDetections.catalogResolvedAt })
+        .from(visionDetections)
+        .where(and(eq(visionDetections.scanId, scanId), eq(visionDetections.position, position)))
+        .for("update");
+      if (!det) return "unknown";
+      if (det.at) return "duplicate";
+      await tx
+        .update(visionDetections)
+        .set({ catalogResolution: r.resolution, catalogResolvedAt: r.resolvedAt })
+        .where(eq(visionDetections.id, det.id));
+      if (r.resolution === "dismissed" || !r.qid || !det.itemId) return "recorded";
+      const item = await this.item(tx, det.businessId, det.itemId);
+      if (!item || item.coreQid || (!item.archivedAt && (await this.activeByQid(tx, det.businessId, r.qid, item.id)))) return "kept";
+      await tx.update(inventoryItems).set({ coreQid: r.qid, updatedAt: new Date() }).where(eq(inventoryItems.id, item.id));
+      return "linked";
+    });
+  }
+
   async markFeedbackSent(detectionIds: string[]): Promise<void> {
     if (detectionIds.length === 0) return;
     await this.db.update(visionDetections).set({ feedbackSentAt: new Date() }).where(inArray(visionDetections.id, detectionIds));
@@ -623,14 +664,20 @@ export class VisionRepository {
 
   private async pendingFeedback(tx: Tx, scanId: string): Promise<ConfirmResult["pendingFeedback"]> {
     const rows = await tx
-      .select({ det: visionDetections, itemName: inventoryItems.name, price: inventoryItems.price })
+      .select({
+        det: visionDetections,
+        itemName: inventoryItems.name,
+        price: inventoryItems.price,
+        scan: { createdAt: visionScans.createdAt, readModel: visionScans.readModel, countModel: visionScans.countModel },
+      })
       .from(visionDetections)
+      .innerJoin(visionScans, and(eq(visionScans.businessId, visionDetections.businessId), eq(visionScans.id, visionDetections.scanId)))
       .leftJoin(
         inventoryItems,
         and(eq(inventoryItems.businessId, visionDetections.businessId), eq(inventoryItems.id, visionDetections.itemId)),
       )
       .where(and(eq(visionDetections.scanId, scanId), isNotNull(visionDetections.decidedAt), isNull(visionDetections.feedbackSentAt)));
-    return rows.map(({ det, itemName, price }) => ({
+    return rows.map(({ det, itemName, price, scan }) => ({
       detectionId: det.id,
       scanId: det.scanId,
       position: det.position,
@@ -643,6 +690,7 @@ export class VisionRepository {
       quantity: det.quantity,
       itemName,
       price,
+      sample: { boxes: det.boxes, countSource: det.countSource, capturedAt: scan.createdAt, readModel: scan.readModel, countModel: scan.countModel },
     }));
   }
 }

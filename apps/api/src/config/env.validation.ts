@@ -7,6 +7,8 @@ import {
   IsString,
   Max,
   Min,
+  MinLength,
+  ValidateIf,
   validateSync,
 } from "class-validator";
 
@@ -45,6 +47,12 @@ class EnvVars {
   @Max(20)
   @IsOptional()
   DB_POOL_MAX?: number;
+
+  /** Signs Connect Tally access and embed tokens (HS256). Required in production; unset elsewhere = token endpoint 503. */
+  @ValidateIf((env: EnvVars) => env.NODE_ENV === NodeEnv.Production || env.TALLY_CLIENT_JWT_SECRET !== undefined)
+  @IsString()
+  @MinLength(32)
+  TALLY_CLIENT_JWT_SECRET?: string;
 
   // ── Qore Catalog ──
   @IsString()

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, FormMessage, Pill, QorellyLoader, SearchWell, SolarIcon, cn } from "@tally/ui";
-import { catalogueProduct, searchCatalogue } from "./actions";
+import { useStocktakeApi } from "./api-context";
 import type { Candidate, CatalogImage, CatalogProduct, CatalogProductDetail, Detection, MatchStrength } from "./types";
 import { ThumbImage, type Thumb } from "./thumb";
 
@@ -54,6 +54,7 @@ export function ProductPicker({
   thumb: Thumb | undefined;
   onPick: (pick: Pick) => void;
 }) {
+  const { catalogueProduct, searchCatalogue } = useStocktakeApi();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<CatalogProduct[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -72,7 +73,7 @@ export function ProductPicker({
     return () => {
       live = false;
     };
-  }, [open, currentQid]);
+  }, [open, currentQid, catalogueProduct]);
 
   // Debounced catalogue search; only the latest answer counts.
   useEffect(() => {
@@ -92,7 +93,7 @@ export function ProductPicker({
       else setError(res.error);
     }, 300);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, searchCatalogue]);
 
   function close(next: boolean) {
     if (!next) {
@@ -241,7 +242,7 @@ function Option({
       aria-pressed={selected}
       className={cn(
         "flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors",
-        selected ? "bg-primary-light/60 ring-1 ring-primary" : "hover:bg-gray-50",
+        selected ? "bg-primary-light/60 ring-1 ring-primary-ink" : "hover:bg-gray-50",
       )}
     >
       <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gray-100 text-gray-400 ring-1 ring-hairline/[0.05]">
@@ -273,7 +274,7 @@ function Option({
               {MATCH_PILL[match].label}
             </Pill>
           )}
-          {selected && <SolarIcon name="Check-Circle" iconStyle="Fill" size={18} className="shrink-0 text-primary" />}
+          {selected && <SolarIcon name="Check-Circle" iconStyle="Fill" size={18} className="shrink-0 text-primary-ink" />}
         </>
       )}
     </button>

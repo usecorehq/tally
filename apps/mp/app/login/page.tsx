@@ -1,8 +1,9 @@
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
-import { Button, FieldLabel, FormMessage, Input, Tray, TraySheet, cn } from "@tally/ui";
+import { FieldLabel, FormMessage, Input, Tray, TraySheet, cn } from "@tally/ui";
 import { signIn } from "@/auth";
 import { TallyMark } from "../_components/tally-mark";
+import { SignInButton } from "./submit-button";
 
 // The kit field lifts to bg-white on focus, which turns its near-white dark ink invisible.
 
@@ -70,9 +71,7 @@ export default async function LoginPage({
                 aria-invalid={error ? true : undefined}
               />
             </div>
-            <Button type="submit" size="xl" block className="mt-1">
-              Sign in
-            </Button>
+            <SignInButton />
           </form>
         </TraySheet>
       </Tray>

@@ -8,7 +8,8 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
   return {
     nodeEnv: (env.NODE_ENV ?? "development") as "development" | "production" | "test",
     port: parseInt(env.PORT ?? "4100", 10),
-    corsOrigins: env.CORS_ORIGINS!,
+    // process.env holds the raw comma list; one string would go out as a single invalid Allow-Origin.
+    corsOrigins: (env.CORS_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean),
 
     supabase: {
       url: env.SUPABASE_URL!,
@@ -16,6 +17,11 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
       dbUrl: env.SUPABASE_DB_URL!,
       /** Connections this API process may hold; the Supabase pooler is shared (see docs/architecture/database.md). */
       dbPoolMax: env.DB_POOL_MAX ? parseInt(env.DB_POOL_MAX, 10) : undefined,
+    },
+
+    clients: {
+      /** Signs Connect Tally client and embed tokens; never the Supabase secret. Server-only. */
+      jwtSecret: env.TALLY_CLIENT_JWT_SECRET,
     },
 
     catalog: {

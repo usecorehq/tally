@@ -10,12 +10,13 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { createHash } from "node:crypto";
-import type { MatchResult } from "@tally/catalog-client";
+import type { ImageSampleContext, MatchResult } from "@tally/catalog-client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { CatalogService } from "../catalog/catalog.service";
 import { R2Storage } from "../media/r2-storage";
+import { BillingService } from "../billing/billing.service";
 import { feedbackFor, feedbackRef } from "./confirm-plan";
-import { bestBox, cropKey, cropSize, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, shelfPhotoKey, storablePhoto } from "./crops";
+import { bestBox, boxPixels, cropKey, cropSize, cutCrops, makeCrops, MIN_CROP_SIDE, MIN_STORED_CROP_SIDE, modelCopy, PAD, shelfPhotoKey, storablePhoto } from "./crops";
 import { indexInventory, matchInventory, readingKey, rememberable, type InventoryMatch, type Reading } from "./inventory-match";
 import { LABEL_MODEL, labelRequest, parseLabel } from "./label-reader";
 import { MetaModelClient } from "./meta-model.client";
@@ -73,6 +74,12 @@ const STALE_RUN_MS = STOCKTAKE_DEADLINES.runMs + 60_000;
 const DETAIL_CONCURRENCY = 8;
 const DETAIL_TTL_MS = 10 * 60 * 1000;
 const CROP_URL_SECONDS = 60 * 60;
+/** New-item resolutions from Qore Catalog: how often, and how much per run. */
+const RESOLUTIONS_EVERY_MS = 15 * 60 * 1000;
+const RESOLUTIONS_PAGE = 200;
+const RESOLUTIONS_MAX_PAGES = 20;
+/** A scan line's feedback clientRef, `<scanId>:<position>`. */
+const SCAN_LINE_REF = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d+)$/;
 
 export type IdentifyResult = {
   model: string;
@@ -100,13 +107,29 @@ export type ConfirmResponse = Omit<ConfirmResult, "pendingFeedback"> & {
   /** Best-effort: a catalogue outage never undoes the stock changes; feedback is retried on the next confirm. */
   feedback: { sent: number; recorded: number; duplicates: number } | { sent: 0; error: string };
   /**
-   * Crops sent to Qore Catalog for lines confirmed with a Qore ID. Best-effort; skippedBy says why lines sent
-   * nothing: no Qore ID (new item, skip), no stored crop (R2 off, box too small to store), or under 160 px.
+   * Crops sent to Qore Catalog as training samples for lines confirmed with a Qore ID. Best-effort; skippedBy says why
+   * lines sent nothing (skipped lines, no stored crop, under 96 px); samples are what Qore Catalog stored.
    */
-  images: { uploaded: number; skipped: number; failed: number; skippedBy: { noProduct: number; noCrop: number; tooSmall: number } };
+  images: {
+    uploaded: number;
+    skipped: number;
+    failed: number;
+    skippedBy: { noProduct: number; noCrop: number; tooSmall: number };
+    /**
+     * qid null: a new item's crop, pending until a curator creates, links or dismisses it. cropWidth × cropHeight is
+     * the product's own size in the full-resolution photo, before the context margin (null when the photo wasn't kept).
+     */
+    samples: { ref: string; qid: string | null; sampleId: string | null; status: string; cropWidth: number | null; cropHeight: number | null }[];
+  };
 };
 
-const NO_IMAGES = (): ConfirmResponse["images"] => ({ uploaded: 0, skipped: 0, failed: 0, skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 } });
+const NO_IMAGES = (): ConfirmResponse["images"] => ({
+  uploaded: 0,
+  skipped: 0,
+  failed: 0,
+  skippedBy: { noProduct: 0, noCrop: 0, tooSmall: 0 },
+  samples: [],
+});
 
 export type ShelfScanResult = {
   /** The stored scan; confirm it to stock the detections. */
@@ -212,6 +235,7 @@ export class VisionService implements OnApplicationBootstrap {
     private readonly catalog: CatalogService,
     private readonly repo: VisionRepository,
     private readonly media: R2Storage,
+    private readonly billing: BillingService,
   ) {
     const apiKey = config.get<string>("meta.apiKey");
     this.meta = apiKey ? new MetaModelClient(config.getOrThrow<string>("meta.baseUrl"), apiKey) : null;
@@ -222,15 +246,20 @@ export class VisionService implements OnApplicationBootstrap {
    * Shelf photo → products (Spark) → unit counts (SAM) and catalogue candidates in parallel → in-stock flags.
    * The scan and detections are stored for confirm; the image is not (only its sha256).
    */
-  async recogniseShelf(businessId: string, userId: string, image: Buffer): Promise<ShelfScanResult> {
+  async recogniseShelf(businessId: string, userId: string, image: Buffer, clientId: string | null = null): Promise<ShelfScanResult> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
     const type = sniffImageType(image);
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
+    // Membership first, so a non-member gets 403 rather than a limit.
+    await this.businesses.getForMember(businessId, userId);
+    await this.billing.limitCheck(businessId, clientId);
 
     const started = Date.now();
-    const a = await this.analyse(businessId, userId, image, type);
+    // Models read a copy capped at 2560 px; crops and the stored photo come from the full-resolution image.
+    const forModels = await modelCopy(image, type);
+    const a = await this.analyse(businessId, userId, forModels.image, forModels.type);
     const detections = buildDetections(a.products, a.matches, a.index, a.samBoxes);
-    const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections);
+    const scanId = await this.repo.saveScan(this.scanRow(businessId, userId, clientId, image, a), detections);
     const [cropsStored, photoStored] = await Promise.all([this.storeCrops(scanId, image, detections), this.storePhoto(scanId, image)]);
     return {
       scanId,
@@ -293,7 +322,7 @@ export class VisionService implements OnApplicationBootstrap {
     };
   }
 
-  private scanRow(businessId: string, userId: string, image: Buffer, a: { catalogueAvailable: boolean; timings: { readMs: number; samMs: number; matchMs: number } }) {
+  private scanRow(businessId: string, userId: string, clientId: string | null, image: Buffer, a: { catalogueAvailable: boolean; timings: { readMs: number; samMs: number; matchMs: number } }) {
     return {
       businessId,
       imageSha256: createHash("sha256").update(image).digest("hex"),
@@ -303,6 +332,7 @@ export class VisionService implements OnApplicationBootstrap {
       catalogueAvailable: a.catalogueAvailable,
       ...a.timings,
       createdBy: userId,
+      clientId,
     };
   }
 
@@ -312,27 +342,75 @@ export class VisionService implements OnApplicationBootstrap {
   async onApplicationBootstrap(): Promise<void> {
     const n = await this.repo.failStaleRuns(new Date(Date.now() - STALE_RUN_MS)).catch(() => 0);
     if (n) this.logger.warn(`Marked ${n} interrupted stock-take run(s) failed`);
+    // Shortly after boot, then on a timer; unref'd so it never keeps the process alive.
+    setTimeout(() => void this.syncResolutions(), 30_000).unref?.();
+    setInterval(() => void this.syncResolutions(), RESOLUTIONS_EVERY_MS).unref?.();
+  }
+
+  private syncing = false;
+
+  /**
+   * Applies what Qore Catalog's curators did with new-item lines since the last one applied (the cursor is inclusive,
+   * so already-applied lines are skipped). Lines that aren't a scan's (onboarding) are counted and ignored.
+   */
+  async syncResolutions(): Promise<{ applied: number; linked: number; ignored: number } | null> {
+    if (this.syncing) return null;
+    this.syncing = true;
+    const totals = { applied: 0, linked: 0, ignored: 0 };
+    try {
+      let since = (await this.repo.resolutionCursor())?.toISOString();
+      for (let page = 0; page < RESOLUTIONS_MAX_PAGES; page++) {
+        const { items } = await this.catalog.client.feedbackResolutions({ ...(since && { since }), limit: RESOLUTIONS_PAGE });
+        for (const item of items) {
+          const ref = SCAN_LINE_REF.exec(item.clientRef);
+          if (!ref) {
+            totals.ignored++;
+            continue;
+          }
+          const outcome = await this.repo.applyResolution(ref[1]!, Number(ref[2]), { ...item, resolvedAt: new Date(item.resolvedAt) });
+          if (outcome === "unknown") totals.ignored++;
+          if (outcome === "recorded" || outcome === "linked" || outcome === "kept") totals.applied++;
+          if (outcome === "linked") totals.linked++;
+          if (outcome === "kept") this.logger.log(`Resolution for ${item.clientRef} recorded; the item keeps its own Qore ID or another item has ${item.qid}`);
+        }
+        const last = items.at(-1)?.resolvedAt;
+        // A full page that doesn't move the cursor would repeat forever: stop and try again next time.
+        if (items.length < RESOLUTIONS_PAGE || !last || last === since) break;
+        since = last;
+      }
+      if (totals.applied || totals.ignored) {
+        this.logger.log(`Catalogue resolutions: ${totals.applied} applied (${totals.linked} items linked), ${totals.ignored} ignored`);
+      }
+      return totals;
+    } catch (err) {
+      this.logger.warn(`Catalogue resolutions not synced: ${(err as Error).message}`);
+      return null;
+    } finally {
+      this.syncing = false;
+    }
   }
 
   /**
    * Starts a stock-take and returns a run id at once; the work runs in the background, polled via getStocktake.
    * The quick scan runs first as the agent's starting checklist and as the fallback.
    */
-  async startStocktake(businessId: string, userId: string, image: Buffer): Promise<{ runId: string; status: "running" }> {
+  async startStocktake(businessId: string, userId: string, image: Buffer, clientId: string | null = null): Promise<{ runId: string; status: "running" }> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
     const type = sniffImageType(image);
     if (!type) throw new BadRequestException("Image must be a JPEG, PNG or WebP");
     await this.businesses.getForMember(businessId, userId);
-    return this.launch(businessId, userId, image, type, null);
+    await this.billing.limitCheck(businessId, clientId);
+    return this.launch(businessId, userId, clientId, image, type, null);
   }
 
   /**
    * Rerun a stored stock-take: a new agent run on the photo kept in R2, grouped under the photo's first scan.
    * 409 when no photo was kept, or when a run of this photo has already moved stock.
    */
-  async rerun(businessId: string, userId: string, scanId: string): Promise<{ runId: string; status: "running"; rerunOf: string }> {
+  async rerun(businessId: string, userId: string, scanId: string, clientId: string | null = null): Promise<{ runId: string; status: "running"; rerunOf: string }> {
     if (!this.meta) throw new ServiceUnavailableException("Recognition is not configured");
     await this.businesses.getForMember(businessId, userId);
+    await this.billing.limitCheck(businessId, clientId);
     const { root, scanIds } = await this.repo.group(businessId, scanId);
     if (await this.repo.groupSettled(scanIds)) {
       throw new ConflictException("A run of this photo is already confirmed. Take new stock to count again.");
@@ -340,13 +418,20 @@ export class VisionService implements OnApplicationBootstrap {
     const image = this.media.enabled ? await this.media.get(shelfPhotoKey(scanId)).catch(() => null) : null;
     const type = image ? sniffImageType(Buffer.from(image)) : null;
     if (!image || !type) throw new ConflictException("This stock-take's photo wasn't kept, so it can't be rerun. Take new stock instead.");
-    const { runId } = await this.launch(businessId, userId, Buffer.from(image), type, root);
+    const { runId } = await this.launch(businessId, userId, clientId, Buffer.from(image), type, root);
     return { runId, status: "running", rerunOf: root };
   }
 
-  private async launch(businessId: string, userId: string, image: Buffer, type: ImageType, rerunOf: string | null): Promise<{ runId: string; status: "running" }> {
-    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL, rerunOf);
-    void this.runStocktake(runId, businessId, userId, image, type, rerunOf).catch(async (err: unknown) => {
+  private async launch(
+    businessId: string,
+    userId: string,
+    clientId: string | null,
+    image: Buffer,
+    type: ImageType,
+    rerunOf: string | null,
+  ): Promise<{ runId: string; status: "running" }> {
+    const runId = await this.repo.createRun(businessId, userId, STOCKTAKE_MODEL, rerunOf, clientId);
+    void this.runStocktake(runId, businessId, userId, image, type, rerunOf, clientId).catch(async (err: unknown) => {
       this.logger.error(`Stock-take ${runId} crashed: ${(err as Error).message}`);
       await this.finish(runId, { status: "failed", error: `Stock-take crashed: ${(err as Error).message}` });
     });
@@ -387,16 +472,26 @@ export class VisionService implements OnApplicationBootstrap {
   /** Finished results in the quick-scan shape (with candidate names and prices), kept an hour for polling. */
   private readonly stocktakeResults = new TtlCache<ShelfScanResult>(60 * 60 * 1000);
 
-  private async runStocktake(runId: string, businessId: string, userId: string, image: Buffer, type: ImageType, rerunOf: string | null = null): Promise<void> {
+  private async runStocktake(
+    runId: string,
+    businessId: string,
+    userId: string,
+    image: Buffer,
+    type: ImageType,
+    rerunOf: string | null = null,
+    clientId: string | null = null,
+  ): Promise<void> {
     const step = (s: AgentStep | { turn: number; kind: "baseline"; summary: string; ms?: number }) =>
       this.repo.addStep(businessId, runId, s).catch(() => undefined);
     const started = Date.now();
 
     const limits = STOCKTAKE_DEADLINES;
+    // Models read a copy capped at 2560 px; zooms, crops and the stored photo use the full-resolution image.
+    const forModels = await modelCopy(image, type);
 
     let a: Awaited<ReturnType<VisionService["analyse"]>>;
     try {
-      a = await withDeadline(this.analyse(businessId, userId, image, type), limits.firstPassMs, `First pass took longer than ${limits.firstPassMs / 1000} s`);
+      a = await withDeadline(this.analyse(businessId, userId, forModels.image, forModels.type), limits.firstPassMs, `First pass took longer than ${limits.firstPassMs / 1000} s`);
     } catch (err) {
       await this.finish(runId, { status: "failed", error: `First pass failed: ${(err as Error).message}` });
       return;
@@ -410,7 +505,7 @@ export class VisionService implements OnApplicationBootstrap {
         return (res.items[0]?.candidates ?? []).filter((c) => plausible(reading, c));
       },
       countUnits: async (look, line) => {
-        const res = await this.meta!.respond(samRequest(image, type, look), SAM_TIMEOUT_MS);
+        const res = await this.meta!.respond(samRequest(forModels.image, forModels.type, look), SAM_TIMEOUT_MS);
         const products = session.lines.map((l, i) => (i === line ? { ...l.product, look } : l.product));
         return assignInstances(products, new Map([[look, parseSamInstances(res.text)]])).get(line) ?? [];
       },
@@ -425,7 +520,7 @@ export class VisionService implements OnApplicationBootstrap {
     try {
       const left = Math.max(0, limits.runMs - (Date.now() - started));
       const outcome = await withDeadline(
-        runStocktakeAgent({ client: this.meta!, session, photo: `data:${type};base64,${image.toString("base64")}`, onStep: step }),
+        runStocktakeAgent({ client: this.meta!, session, photo: `data:${forModels.type};base64,${forModels.image.toString("base64")}`, onStep: step }),
         left,
         "Run deadline reached",
       );
@@ -438,7 +533,7 @@ export class VisionService implements OnApplicationBootstrap {
 
     let scanId: string;
     try {
-      scanId = await withDeadline(this.repo.saveScan(this.scanRow(businessId, userId, image, a), detections), limits.writeMs, "Saving the scan timed out");
+      scanId = await withDeadline(this.repo.saveScan(this.scanRow(businessId, userId, clientId, image, a), detections), limits.writeMs, "Saving the scan timed out");
     } catch (err) {
       await this.finish(runId, { status: "failed", error: `Could not save the result: ${(err as Error).message}` });
       return;
@@ -499,7 +594,10 @@ export class VisionService implements OnApplicationBootstrap {
     if (!this.media.enabled || detections.length === 0) return 0;
     try {
       const boxes = detections.map((d) => bestBox(d.boxes));
-      const crops = await makeCrops(image, boxes, { minSide: MIN_STORED_CROP_SIDE });
+      // Cut from the full-resolution photo (same pixels as the stored one), never padded or enlarged to pass a minimum.
+      const { source, crops: cut } = await cutCrops(image, boxes, { minSide: MIN_STORED_CROP_SIDE });
+      const crops = cut.map((c) => c?.crop ?? null);
+      const catalogueSized = cut.filter((c) => c && Math.min(c.boxWidth, c.boxHeight) >= MIN_CROP_SIDE).length;
       const results = await Promise.allSettled(
         crops.map((crop, position) => (crop ? this.media.put(cropKey(scanId, position), crop, "image/webp").then(() => 1) : 0)),
       );
@@ -508,7 +606,8 @@ export class VisionService implements OnApplicationBootstrap {
       // A product under 48 px in the photo gets no crop, so it can never become a catalogue picture.
       const tooSmall = crops.filter((c, i) => !c && boxes[i]).length;
       this.logger.log(
-        `Scan ${scanId}: ${stored} of ${detections.length} crops stored` +
+        `Scan ${scanId}: ${stored} of ${detections.length} crops stored from a ${source.width}×${source.height} photo, ` +
+          `${catalogueSized} at ${MIN_CROP_SIDE}+ px before the margin` +
           (tooSmall ? `, ${tooSmall} too small to store (< ${MIN_STORED_CROP_SIDE} px)` : "") +
           (crops.length - tooSmall - stored - failed > 0 ? `, ${crops.length - tooSmall - stored - failed} without a box` : ""),
       );
@@ -839,10 +938,25 @@ export class VisionService implements OnApplicationBootstrap {
 
   /**
    * Sends each confirmed line's crop to Qore Catalog as an on_shelf picture, linked by clientRef. Lines without a
-   * Qore ID or under the 160 px minimum send nothing; stored by sha256, so resends are harmless.
+   * Qore ID or under the 96 px minimum send nothing; stored by sha256, so resends are harmless.
    */
   private async uploadCrops(lines: ConfirmResult["pendingFeedback"]): Promise<ConfirmResponse["images"]> {
     const images = NO_IMAGES();
+    // The stored shelf photo's size, read once per scan: boxes are sent in its pixels.
+    const photoSizes = new Map<string, Promise<{ width: number; height: number } | null>>();
+    const photoSize = (scanId: string) => {
+      if (!photoSizes.has(scanId)) {
+        photoSizes.set(
+          scanId,
+          this.media
+            .get(shelfPhotoKey(scanId))
+            .then(async (photo) => (photo ? await cropSize(photo) : null))
+            .then((size) => (size && size.width > 0 && size.height > 0 ? size : null))
+            .catch(() => null),
+        );
+      }
+      return photoSizes.get(scanId)!;
+    };
     const skip = (line: (typeof lines)[number], why: keyof ConfirmResponse["images"]["skippedBy"], detail: string) => {
       images.skipped++;
       images.skippedBy[why]++;
@@ -851,7 +965,8 @@ export class VisionService implements OnApplicationBootstrap {
     await Promise.all(
       lines.map(async (line) => {
         const qid = line.outcome === "accepted" || line.outcome === "corrected" ? line.confirmedQid : null;
-        if (!qid) return skip(line, "noProduct", `no catalogue product (${line.outcome})`);
+        // A new item's crop goes without a qid, so curators can see it and decide whether to catalogue it.
+        if (!qid && line.outcome !== "new_item") return skip(line, "noProduct", `no catalogue product (${line.outcome})`);
         if (!this.media.enabled) return skip(line, "noCrop", "R2 is not configured");
         const crop = await this.media.get(cropKey(line.scanId, line.position)).catch((err: unknown) => {
           this.logger.warn(`Crop ${feedbackRef(line.scanId, line.position)} could not be read from R2: ${(err as Error).message}`);
@@ -859,18 +974,34 @@ export class VisionService implements OnApplicationBootstrap {
         });
         if (!crop) return skip(line, "noCrop", "no stored crop (box too small to store, or the scan predates R2)");
         const size = await cropSize(crop);
-        if (Math.min(size.width, size.height) < MIN_CROP_SIDE) {
-          return skip(line, "tooSmall", `crop ${size.width}×${size.height} is under Qore Catalog's ${MIN_CROP_SIDE} px minimum`);
+        const photo = await photoSize(line.scanId);
+        // The product's own size before the context margin: a small product padded past 96 px is still too small.
+        const box = bestBox(line.sample.boxes);
+        const own = box && photo ? boxPixels(box, photo.width, photo.height) : null;
+        // Without the photo, the stored crop less its margin (an underestimate at the photo's edge, never an overestimate).
+        const ownShort = own ? Math.min(own.width, own.height) : Math.floor(Math.min(size.width, size.height) / (1 + 2 * PAD));
+        if (ownShort < MIN_CROP_SIDE || Math.min(size.width, size.height) < MIN_CROP_SIDE) {
+          const before = own ? `${own.width}×${own.height} before the margin, ` : "";
+          return skip(line, "tooSmall", `crop ${before}${size.width}×${size.height} stored, is under Qore Catalog's ${MIN_CROP_SIDE} px minimum`);
         }
+        const ref = feedbackRef(line.scanId, line.position);
         try {
-          await this.catalog.client.uploadImage({
+          const res = await this.catalog.client.uploadImage({
             file: crop,
             filename: `${line.position}.webp`,
-            qid,
+            ...(qid && { qid }),
             view: "on_shelf",
-            feedbackClientRef: feedbackRef(line.scanId, line.position),
+            feedbackClientRef: ref,
+            sample: sampleContext(line, photo),
           });
           images.uploaded++;
+          images.samples.push({ ref, qid, sampleId: res.sampleId ?? null, status: res.status, cropWidth: own?.width ?? null, cropHeight: own?.height ?? null });
+          this.logger.log(
+            `Crop ${ref} sent: sample ${res.sampleId ?? "none"} (${res.status}), ` +
+              (own ? `${own.width}×${own.height} before the margin, ` : "") +
+              `${size.width}×${size.height} stored` +
+              (photo ? ` from a ${photo.width}×${photo.height} photo` : ""),
+          );
         } catch (err) {
           images.failed++;
           // CatalogError's message carries the status and Qore Catalog's reason, with the key redacted.
@@ -880,7 +1011,8 @@ export class VisionService implements OnApplicationBootstrap {
     );
     this.logger.log(
       `Crops to Qore Catalog: ${images.uploaded} uploaded, ${images.failed} failed, ${images.skipped} skipped ` +
-        `(${images.skippedBy.noProduct} no product, ${images.skippedBy.noCrop} no crop, ${images.skippedBy.tooSmall} too small)`,
+        `(${images.skippedBy.noProduct} no product, ${images.skippedBy.noCrop} no crop, ${images.skippedBy.tooSmall} too small); ` +
+        `samples ${images.samples.filter((x) => x.status === "accepted").length} accepted, ${images.samples.filter((x) => x.status === "pending").length} pending`,
     );
     return images;
   }
@@ -932,4 +1064,28 @@ export function withDeadline<T>(promise: Promise<T>, ms: number, message: string
     timer.unref?.();
   });
   return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+/** A crop upload's training context: its box in the stored photo's pixels (none without the photo), what counted it,
+ *  when it was scanned and the label as read. Tally keeps no numeric detector confidence, so none is sent. */
+export function sampleContext(
+  line: ConfirmResult["pendingFeedback"][number],
+  photo: { width: number; height: number } | null,
+): ImageSampleContext {
+  const box = bestBox(line.sample.boxes);
+  const px = (v: number, side: number) => Math.round((v / 1000) * side);
+  const wh = (size: { width: number; height: number }) => ({ w: size.width, h: size.height });
+  return {
+    ...(box &&
+      photo && {
+        box: { x: px(box.x1, photo.width), y: px(box.y1, photo.height), ...wh(boxPixels(box, photo.width, photo.height)) },
+        sourceWidth: photo.width,
+        sourceHeight: photo.height,
+      }),
+    detectorModel: line.sample.countSource === "sam" ? line.sample.countModel : line.sample.readModel,
+    capturedAt: line.sample.capturedAt.toISOString(),
+    labelBrand: line.brand,
+    labelName: line.name,
+    labelPack: line.pack,
+  };
 }

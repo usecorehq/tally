@@ -15,6 +15,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/current-user.decorator";
+import { Scopes } from "../../common/decorators/scopes.decorator";
 import { BusinessParams } from "../businesses/businesses.dto";
 import { VisionExceptionFilter } from "./vision-errors";
 import { ConfirmBody, HistoryQuery, IdentifyConfirmBody, RunParams, ScanParams } from "./vision.dto";
@@ -25,6 +26,9 @@ export const MAX_IDENTIFY_IMAGE_BYTES = 1024 * 1024;
 
 type UploadedImage = { buffer: Buffer; size: number };
 
+// Set for partner-app principals (Connect Tally); null for Tally's own apps.
+const clientIdOf = (user: AuthenticatedUser) => (user as { clientId?: string }).clientId ?? null;
+
 @ApiTags("vision")
 @ApiBearerAuth("bearer")
 @UseFilters(VisionExceptionFilter)
@@ -33,6 +37,7 @@ export class VisionController {
   constructor(private readonly vision: VisionService) {}
 
   @Post("shelf-scans")
+  @Scopes("stocktake:write")
   @HttpCode(200)
   // fileSize + 1 so an oversized upload reaches the pipe below and gets a 413, not multer's generic error.
   @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_SHELF_IMAGE_BYTES + 1, files: 1 } }))
@@ -75,10 +80,11 @@ export class VisionController {
     file: UploadedImage | undefined,
   ) {
     if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
-    return this.vision.recogniseShelf(businessId, user.sub, file.buffer);
+    return this.vision.recogniseShelf(businessId, user.sub, file.buffer, clientIdOf(user));
   }
 
   @Post("stocktakes")
+  @Scopes("stocktake:write")
   @HttpCode(202)
   @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_SHELF_IMAGE_BYTES + 1, files: 1 } }))
   @ApiConsumes("multipart/form-data")
@@ -99,10 +105,11 @@ export class VisionController {
     file: UploadedImage | undefined,
   ) {
     if (!file) throw new BadRequestException("Send the photo as multipart field 'image'");
-    return this.vision.startStocktake(businessId, user.sub, file.buffer);
+    return this.vision.startStocktake(businessId, user.sub, file.buffer, clientIdOf(user));
   }
 
   @Get("stocktakes")
+  @Scopes("stocktake:read")
   @ApiOperation({
     summary:
       "Stock-take history: the business's stock-take runs and quick scans, newest first. Status running, review (scan open), confirmed or failed; line count and decided lines by action. Open one with …/stocktakes/:runId or …/shelf-scans/:scanId.",
@@ -132,6 +139,7 @@ export class VisionController {
   }
 
   @Get("stocktakes/:runId")
+  @Scopes("stocktake:read")
   @ApiOperation({
     summary:
       "A stock-take run: status (running, done, fallback, failed), the agent's step trace so far, and once finished its stored scan (as GET …/shelf-scans/:scanId). Confirm it with …/shelf-scans/:scanId/confirm.",
@@ -141,6 +149,7 @@ export class VisionController {
   }
 
   @Post("photo-check")
+  @Scopes("stocktake:write")
   @HttpCode(200)
   @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_IDENTIFY_IMAGE_BYTES + 1, files: 1 } }))
   @ApiConsumes("multipart/form-data")
@@ -232,6 +241,7 @@ export class VisionController {
   }
 
   @Get("shelf-scans/:scanId")
+  @Scopes("stocktake:read")
   @ApiOperation({
     summary:
       "A stored shelf scan, reopened: status, detections in the shelf-scans shape (candidate names and prices fetched again from Qore Catalog, store state as of now), the agent's review reason, a crop URL and each line's decision.",
@@ -241,6 +251,7 @@ export class VisionController {
   }
 
   @Post("shelf-scans/:scanId/rerun")
+  @Scopes("stocktake:write")
   @HttpCode(202)
   @ApiOperation({
     summary:
@@ -248,10 +259,11 @@ export class VisionController {
   })
   @ApiOkResponse({ schema: { example: { runId: "7c21…", status: "running", rerunOf: "9a41…" } } })
   rerun(@CurrentUser() user: AuthenticatedUser, @Param() { businessId, scanId }: ScanParams) {
-    return this.vision.rerun(businessId, user.sub, scanId);
+    return this.vision.rerun(businessId, user.sub, scanId, clientIdOf(user));
   }
 
   @Post("shelf-scans/:scanId/discard")
+  @Scopes("stocktake:write")
   @HttpCode(200)
   @ApiOperation({
     summary:
@@ -263,6 +275,7 @@ export class VisionController {
   }
 
   @Post("shelf-scans/:scanId/confirm")
+  @Scopes("stocktake:write")
   @HttpCode(200)
   @ApiOperation({
     summary:

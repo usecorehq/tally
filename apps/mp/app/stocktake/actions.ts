@@ -1,5 +1,6 @@
 "use server";
 
+import { pickBusiness } from "@/lib/businesses";
 import { api, ApiError } from "@/lib/api";
 import type {
   ActionResult,
@@ -97,7 +98,7 @@ export async function discardScan(businessId: string, scanId: string): Promise<A
 export async function recentStocktakes(business: string | null): Promise<ActionResult<{ businessId: string; entries: HistoryEntry[] }>> {
   try {
     const businesses = await api<{ id: string }[]>("/businesses");
-    const businessId = businesses.find((b) => b.id === business)?.id ?? businesses[0]?.id;
+    const businessId = (await pickBusiness(businesses, business))?.id;
     if (!businessId) return { ok: true, data: { businessId: "", entries: [] } };
     const entries = await api<HistoryEntry[]>(`${vision(businessId)}/stocktakes?limit=30`);
     return { ok: true, data: { businessId, entries } };

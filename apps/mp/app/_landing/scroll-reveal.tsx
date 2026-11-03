@@ -82,7 +82,7 @@ export function ScrollReveal() {
                 <span
                   key={i}
                   aria-hidden
-                  className={w.accent && lit > 0.5 ? "text-primary" : "text-gray-900"}
+                  className={w.accent && lit > 0.5 ? "text-primary-ink" : "text-gray-900"}
                   style={{ opacity: 0.16 + 0.84 * lit, transition: "opacity 120ms linear, color 200ms" }}
                 >
                   {w.text}{" "}

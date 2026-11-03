@@ -23,6 +23,7 @@ export class CatalogService {
   readonly client: CatalogClient;
   private readonly verticalsCache = new TtlCache<BusinessVertical[]>(TEN_MINUTES);
   private readonly templatesCache = new TtlCache<SubtypeTemplates>(TEN_MINUTES);
+  private readonly keyCache = new TtlCache<"valid" | "rejected">(5 * 60 * 1000);
 
   constructor(config: ConfigService) {
     this.client = new CatalogClient(
@@ -49,6 +50,25 @@ export class CatalogService {
     );
     this.templatesCache.set(key, value);
     return value;
+  }
+
+  /**
+   * Whether Qore Catalog accepts Tally's key (GET /v1/keys/me), for the health check: never the key or its details.
+   * A rejection (401/403) or success is cached 5 minutes; an outage is "unknown" and retried next time.
+   */
+  async keyStatus(): Promise<"valid" | "rejected" | "unknown"> {
+    const cached = this.keyCache.get("key");
+    if (cached) return cached;
+    try {
+      await this.client.whoAmI();
+      this.keyCache.set("key", "valid");
+      return "valid";
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status !== 401 && status !== 403) return "unknown";
+      this.keyCache.set("key", "rejected");
+      return "rejected";
+    }
   }
 
   searchProducts(params: ProductSearchParams): Promise<ProductSearchResult> {

@@ -41,7 +41,6 @@ export function HistoryView({
   businessId,
   entries,
   error,
-  onBusiness,
   onRetry,
   retrying = false,
   discard,
@@ -51,7 +50,6 @@ export function HistoryView({
   /** null while it failed to load. */
   entries: HistoryEntry[] | null;
   error?: string;
-  onBusiness: (id: string) => void;
   onRetry: () => void;
   retrying?: boolean;
   /** /design passes a fixture instead of the server action. */
@@ -67,18 +65,6 @@ export function HistoryView({
         actions={<NewStocktakeButton href={newHref(businessId)} />}
       />
 
-      {businesses.length > 1 && (
-        <div className="mb-5 max-w-sm">
-          <FieldLabel htmlFor="history-business">Business</FieldLabel>
-          <NativeSelect id="history-business" value={businessId} onChange={(e) => onBusiness(e.target.value)}>
-            {businesses.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
-      )}
 
       {entries === null ? (
         <LoadFailed title="We couldn't load your stock-takes" body={error ?? "Check your connection and try again."} onRetry={onRetry} retrying={retrying} />

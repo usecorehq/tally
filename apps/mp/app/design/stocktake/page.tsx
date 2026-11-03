@@ -19,7 +19,7 @@ export default async function StocktakeDesignPage({ searchParams }: { searchPara
         <ul className="space-y-2 text-sm">
           {VARIANTS.map((x) => (
             <li key={x}>
-              <Link className="text-primary hover:underline" href={`/design/stocktake?v=${x}`}>
+              <Link className="text-primary-ink hover:underline" href={`/design/stocktake?v=${x}`}>
                 {x}
               </Link>
             </li>

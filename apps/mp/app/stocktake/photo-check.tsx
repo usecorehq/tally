@@ -38,7 +38,7 @@ export function PhotoCheckPanel({ check, onRetake }: { check: CheckState; onReta
   if (check.status === "checking") {
     return (
       <div className="flex items-center gap-2 text-sm text-gray-500" role="status">
-        <SolarIcon name="Stars" iconStyle="Outline" size={16} className="animate-pulse text-primary" />
+        <SolarIcon name="Stars" iconStyle="Outline" size={16} className="animate-pulse text-primary-ink" />
         Checking the photo with Muse Spark…
       </div>
     );

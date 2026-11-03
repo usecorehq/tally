@@ -6,8 +6,10 @@ import type {
   Category,
   FeedbackItem,
   FeedbackResponse,
+  FeedbackResolutions,
   FeedbackStats,
   HealthResponse,
+  ImageSampleContext,
   ImageView,
   MatchRequest,
   MatchResponse,
@@ -181,21 +183,39 @@ export class CatalogClient {
    * feedbackClientRef (send feedback first). Stored per sha256, so resends are safe; pending until approved.
    */
   async uploadImage(
-    upload: { file: Blob | Uint8Array; filename: string; qid: string; view?: ImageView; feedbackClientRef?: string },
+    /** No qid for a line confirmed as a new item: then feedbackClientRef is required. */
+    upload: { file: Blob | Uint8Array; filename: string; qid?: string; view?: ImageView; feedbackClientRef?: string; sample?: ImageSampleContext },
     init?: RequestInit,
   ) {
     const size = upload.file instanceof Blob ? upload.file.size : upload.file.byteLength;
     if (size === 0 || size > MAX_IMAGE_BYTES) {
       throw guardError("/v1/images", `image must be 1 byte to 8 MB, got ${size}`);
     }
-    if (!QID_PATTERN.test(upload.qid)) throw guardError("/v1/images", `invalid qid ${upload.qid}`);
+    if (upload.qid !== undefined && !QID_PATTERN.test(upload.qid)) throw guardError("/v1/images", `invalid qid ${upload.qid}`);
+    if (upload.qid === undefined && !upload.feedbackClientRef) throw guardError("/v1/images", "a new-item crop needs feedbackClientRef");
     const form = new FormData();
     const blob = upload.file instanceof Blob ? upload.file : new Blob([upload.file as Uint8Array<ArrayBuffer>]);
     form.set("file", blob, upload.filename);
-    form.set("qid", upload.qid);
+    if (upload.qid !== undefined) form.set("qid", upload.qid);
     if (upload.view) form.set("view", upload.view);
     if (upload.feedbackClientRef) form.set("feedbackClientRef", upload.feedbackClientRef);
+    const { box, ...rest } = upload.sample ?? {};
+    // All four box fields or none; a box without area is dropped rather than rejected.
+    if (box && box.w > 0 && box.h > 0) {
+      form.set("boxX", String(box.x));
+      form.set("boxY", String(box.y));
+      form.set("boxW", String(box.w));
+      form.set("boxH", String(box.h));
+    }
+    for (const [key, value] of Object.entries(rest)) {
+      if (value !== undefined && value !== "") form.set(key, String(value));
+    }
     return this.request<UploadImageResponse>("POST", "/v1/images", { body: form, init, timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
+  /** What curators decided for new-item feedback lines, oldest first. The since cursor is inclusive: dedupe by clientRef. */
+  feedbackResolutions(params: { since?: string; limit?: number } = {}, init?: RequestInit) {
+    return this.request<FeedbackResolutions>("GET", "/v1/feedback/resolutions", { query: params, init });
   }
 
   /** since: ISO date. */

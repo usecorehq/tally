@@ -1,18 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Button, ConfirmDialog, FormMessage, IconButton, SolarIcon } from "@tally/ui";
-import { discardScan, rerunScan } from "./actions";
+import { useStocktakeApi, useStocktakeNav } from "./api-context";
 import { STOCKTAKE_CHANGED } from "./recents";
-import { sessionHref } from "./urls";
 import type { ActionResult } from "./types";
 
 type Override<T> = () => Promise<ActionResult<T>>;
 
 /** Runs the agent again on the stored photo; the new run opens at its own URL, grouped with this one. */
 export function RerunButton({ businessId, scanId, run }: { businessId: string; scanId: string; run?: Override<{ runId: string }> }) {
-  const router = useRouter();
+  const { rerunScan } = useStocktakeApi();
+  const nav = useStocktakeNav();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -26,7 +25,7 @@ export function RerunButton({ businessId, scanId, run }: { businessId: string; s
             const res = await (run ? run() : rerunScan(businessId, scanId));
             if (!res.ok) return setError(res.error);
             window.dispatchEvent(new Event(STOCKTAKE_CHANGED));
-            router.push(sessionHref(businessId, res.data.runId));
+            nav.openSession(businessId, res.data.runId);
           })
         }
       >
@@ -53,7 +52,8 @@ export function DiscardButton({
   discard?: Override<{ status: "discarded" }>;
   onDone?: () => void;
 }) {
-  const router = useRouter();
+  const { discardScan } = useStocktakeApi();
+  const nav = useStocktakeNav();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
@@ -85,7 +85,7 @@ export function DiscardButton({
           }
           window.dispatchEvent(new Event(STOCKTAKE_CHANGED));
           if (onDone) onDone();
-          else router.refresh();
+          else nav.refresh();
         }}
       >
         {error && <FormMessage message={error} />}

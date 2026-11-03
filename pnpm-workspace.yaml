@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "examples/*"
 
 # esbuild (drizzle-kit) needs its postinstall; @scarf/scarf is telemetry — denied.
 allowBuilds:

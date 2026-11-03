@@ -266,7 +266,7 @@ export function Landing() {
                     {col.links.map((l) => (
                       <li key={l.label} className="text-[16px] text-gray-900">
                         {l.href ? (
-                          <a href={l.href} className="transition-colors hover:text-primary">
+                          <a href={l.href} className="transition-colors hover:text-primary-ink">
                             {l.label}
                           </a>
                         ) : (

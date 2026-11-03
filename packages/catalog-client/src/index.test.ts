@@ -234,6 +234,64 @@ describe("uploadImage", () => {
     expect(form.has("feedbackClientRef")).toBe(false);
   });
 
+  it("sends the training sample context as strings, and returns the sample", async () => {
+    nextResponse = () =>
+      json({ sha256: "ab".repeat(32), qid: "QC-0A1B-2C3D-4", view: "on_shelf", status: "accepted", width: 200, height: 300, role: "training", sampleId: "smp_1" });
+    const res = await client.uploadImage({
+      file: jpeg,
+      filename: "c.webp",
+      qid: "QC-0A1B-2C3D-4",
+      sample: {
+        box: { x: 120, y: 40, w: 96, h: 210 },
+        sourceWidth: 2560,
+        sourceHeight: 1920,
+        detectorModel: "sam-3.1",
+        capturedAt: "2026-10-29T09:00:00.000Z",
+        labelBrand: "Peak",
+        labelName: "Milk",
+        labelPack: "",
+      },
+    });
+    expect(res).toMatchObject({ status: "accepted", role: "training", sampleId: "smp_1" });
+    const form = last().init.body as FormData;
+    expect(["boxX", "boxY", "boxW", "boxH"].map((k) => form.get(k))).toEqual(["120", "40", "96", "210"]);
+    expect(form.get("sourceWidth")).toBe("2560");
+    expect(form.get("detectorModel")).toBe("sam-3.1");
+    expect(form.get("capturedAt")).toBe("2026-10-29T09:00:00.000Z");
+    expect(form.get("labelBrand")).toBe("Peak");
+    // Empty strings and missing fields are left out.
+    expect(form.has("labelPack")).toBe(false);
+    expect(form.has("detectorConfidence")).toBe(false);
+  });
+
+  it("sends a new item's crop without a qid, linked by its feedback line", async () => {
+    nextResponse = () => json({ sha256: "ab".repeat(32), qid: null, view: "on_shelf", status: "pending", width: 200, height: 300, role: "training", sampleId: "smp_2" });
+    const res = await client.uploadImage({ file: jpeg, filename: "c.webp", view: "on_shelf", feedbackClientRef: "scan:3" });
+    expect(res).toMatchObject({ qid: null, status: "pending", sampleId: "smp_2" });
+    const form = last().init.body as FormData;
+    expect(form.has("qid")).toBe(false);
+    expect(form.get("feedbackClientRef")).toBe("scan:3");
+  });
+
+  it("refuses a new item's crop without its feedback line, before any request", async () => {
+    await expect(client.uploadImage({ file: jpeg, filename: "c.webp" })).rejects.toMatchObject({ status: 400 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("feedbackResolutions → GET /v1/feedback/resolutions with since and limit", async () => {
+    nextResponse = () => json({ items: [{ clientRef: "scan:3", resolution: "linked", qid: "QC-0A1B-2C3D-4", resolvedAt: "2026-10-29T10:00:00.000Z" }] });
+    const res = await client.feedbackResolutions({ since: "2026-10-29T09:00:00.000Z", limit: 200 });
+    expect(res.items[0]).toMatchObject({ resolution: "linked" });
+    expect(last().url).toBe("https://catalog.test/v1/feedback/resolutions?since=2026-10-29T09%3A00%3A00.000Z&limit=200");
+    expect(last().init.headers.get("x-api-key")).toBe(KEY);
+  });
+
+  it("drops a box without area: all four box fields or none", async () => {
+    await client.uploadImage({ file: jpeg, filename: "c.webp", qid: "QC-0A1B-2C3D-4", sample: { box: { x: 1, y: 1, w: 0, h: 5 } } });
+    const form = last().init.body as FormData;
+    expect(["boxX", "boxY", "boxW", "boxH"].some((k) => form.has(k))).toBe(false);
+  });
+
   it.each([
     ["an empty file", { file: new Uint8Array(), filename: "x", qid: "QC-0A1B-2C3D-4" }],
     ["a file over 8 MB", { file: new Uint8Array(8 * 1024 * 1024 + 1), filename: "x", qid: "QC-0A1B-2C3D-4" }],

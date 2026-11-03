@@ -1,0 +1,24 @@
+{
+  "name": "@tally/partner-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && tsup",
+    "start": "node dist/server.mjs",
+    "clean": "rm -rf dist .turbo",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "@qorelly/tally-embed": "workspace:*",
+    "hono": "4.13.13"
+  },
+  "devDependencies": {
+    "@tally/tsconfig": "workspace:*",
+    "@types/node": "^26.6.5",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5"
+  }
+}

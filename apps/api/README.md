@@ -26,13 +26,14 @@ Loaded from `apps/api/.env`, then the repo-root `.env` for any key not set. Vali
 | `SUPABASE_JWT_SECRET` | yes | HS256 secret for verifying user tokens |
 | `SUPABASE_DB_URL` | yes | Postgres URL for Drizzle (`tally` schema). Deployed: use the Supabase **transaction pooler, port 6543**. The session pooler (5432) has 15 client slots shared with the other Qorelly apps, and a full pool made stock-take runs hang. `pnpm db:migrate` may keep using 5432 |
 | `DB_POOL_MAX` | no | Connections this process may hold. Default `5`; keep it small (shared pooler) |
+| `TALLY_CLIENT_JWT_SECRET` | production | Signs Connect Tally access and embed tokens (HS256, at least 32 chars); server-only, never the Supabase secret. Unset outside production → `POST /api/clients/v1/oauth/token` returns 503 |
 | `QORE_CATALOG_API_KEY` | yes | Sent as `x-api-key`; server-only |
 | `QORE_CATALOG_BASE_URL` | no | Default `http://localhost:3100` |
 | `META_MODEL_API_KEY` | no | Meta Model API bearer key (Muse Spark); server-only. Unset → vision routes return 503 |
 | `META_MODEL_BASE_URL` | no | Default `https://api.meta.ai/v1` |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | no | Cloudflare R2 `tally-media` (token scoped to that bucket) for product crops under `tally/`; server-only. Unset → crops skipped |
 | `PORT` | no | Default `4100` |
-| `CORS_ORIGINS` | no | Comma-separated allowlist |
+| `CORS_ORIGINS` | no | Comma-separated allowlist. Staging and production must include `https://<EMBED_HOST>` for the Connect Tally iframe |
 
 ## Postman
 
@@ -56,7 +57,7 @@ Coolify app (staging):
 | Port mappings | `127.0.0.1:4100:4100` |
 | Health check | `/api/health` (also baked into the image) |
 
-Runtime env vars (values live in Coolify only): `NODE_ENV=production`, `PORT=4100`, `CORS_ORIGINS` (Tally web origins; empty = none in production), `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `SUPABASE_DB_URL`, `QORE_CATALOG_BASE_URL=https://api.qorecatalogue.com`, `QORE_CATALOG_API_KEY`, `META_MODEL_BASE_URL`, `META_MODEL_API_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET=tally-media`. The four Supabase/Catalog key vars are required to boot (see [Env](#env)); the rest degrade features when unset.
+Runtime env vars (values live in Coolify only): `NODE_ENV=production`, `PORT=4100`, `CORS_ORIGINS` (Tally web origins plus `https://<EMBED_HOST>`; empty = none in production), `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `SUPABASE_DB_URL`, `QORE_CATALOG_BASE_URL=https://api.qorecatalogue.com`, `QORE_CATALOG_API_KEY`, `META_MODEL_BASE_URL`, `META_MODEL_API_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET=tally-media`, `TALLY_CLIENT_JWT_SECRET`. The four Supabase/Catalog key vars and `TALLY_CLIENT_JWT_SECRET` are required to boot (see [Env](#env)); the rest degrade features when unset.
 
 - HTTPS is done by the server's nginx + certbot: the `tally-api.qorecatalogue.com` site forwards to `http://127.0.0.1:4100`. Coolify's proxy is not used.
 - The container does not run migrations. After a schema PR merges, apply it to staging with `pnpm db:migrate`; production is applied by the CTO.
@@ -99,6 +100,31 @@ node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs <runId or scanI
 node --env-file=apps/api/.env apps/api/scripts/vision-review.mjs --business "Superbox"   # its latest run
 ```
 
+## Connect Tally clients
+
+Partners self-serve their apps through `/api/clients/v1/apps` (see [Auth](../../docs/architecture/auth.md#connect-tally)). The CTO can also register one with `scripts/oauth-client-create.mjs`, which mints ids and secrets with the same `@tally/db` helpers; its apps have no owner. It writes a `tally.oauth_clients` row and prints the `client_id` and `client_secret` once. Only the secret's sha256 and its first 8 characters after `tcs_` are stored, so a lost secret means a new client. Clients are suspended, never deleted.
+
+```bash
+pnpm --filter @tally/db build
+node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --name "Partner App" \
+  --redirect-uri https://partner.example/callback --origin https://partner.example
+node --env-file=apps/api/.env apps/api/scripts/oauth-client-create.mjs --suspend <client_id>
+```
+
+- `--redirect-uri` (1–10, https, no `#fragment`) and `--origin` (https origins with no path; the iframe's `frame-ancestors`) can be repeated.
+- `--scope` can be repeated: `stocktake:write`, `stocktake:read`, `inventory:read`. Default: all three.
+- `--cap` (daily stock-takes, default 200) and `--concurrent` (runs at once, default 3) are abuse caps per client. When left out, the database defaults apply.
+
+The OAuth endpoints (consent data, codes, token, revoke, grants), `me`, `sessions` and `embed-config` live under `/api/clients/v1`. Routes open to client and embed tokens carry `@Scopes(...)`; see [docs/architecture/auth.md](../../docs/architecture/auth.md#connect-tally).
+
+## Billing: plans, subscriptions and usage
+
+Stock-takes and quick scans count against the business's plan; over a limit the vision routes answer 429 with `Retry-After`. Rules and response shapes: [usage limits](../../docs/architecture/stocktake-agent.md#usage-limits).
+
+- `GET /api/plans`: the plans, in display order (prices are display only).
+- `GET /api/businesses/:businessId/usage?days=30`: plan, today, this month, per day and by app (members).
+- `POST /api/businesses/:businessId/subscription` `{ "plan_code": "pro" }`: switch plan, simulated, no payment (owner).
+
 ## Layout
 
 ```
@@ -106,15 +132,17 @@ src/
   main.ts                     bootstrap: /api prefix, CORS, validation pipe, Swagger
   app.module.ts               ConfigModule, DrizzleModule, CatalogModule, feature modules, global guard
   config/                     env.validation.ts (class-validator) → configuration.ts (nested config)
-  common/guards/              SupabaseJwtGuard (HS256 + JWKS, aud=authenticated)
-  common/decorators/          @Public(), @CurrentUser()
+  common/guards/              AuthGuard (Supabase users; Connect Tally client/embed tokens), grant status cache, throttler
+  common/decorators/          @Public(), @CurrentUser(), @Scopes(), @RateLimit()
   drizzle/drizzle.module.ts   TALLY_DB provider from @tally/db
   modules/businesses/         businesses, membership, inventory, onboarding starter inventory
   modules/catalog/            CatalogService wrapping @tally/catalog-client
+  modules/clients/            Connect Tally OAuth: consent data, codes, token (PKCE, refresh rotation), revoke, grants
   modules/vision/             Camera recognition: shelf scan (Muse Spark, SAM 3.1, catalogue), confirm, identify, crops
   modules/vision/stocktake/   Stock-take agent: Muse Spark tool loop over a shelf photo (background runs + step trace)
   modules/vision/benchmark-score.ts  Scoring for scripts/vision-benchmark.mjs (not used by routes)
   modules/vision/shelf-sweep.ts      Experimental row-by-row shelf read (benchmark only, not used by routes)
+  modules/billing/            Plans, simulated subscriptions, usage counts and the limit check before every run or scan
   modules/media/              R2Storage: Tally's files in Cloudflare R2 (aws4fetch, server-only)
   modules/health/             GET /api/health
 ```
@@ -124,7 +152,7 @@ src/
 1. `src/modules/<name>/` with `<name>.module.ts`, controller, service.
 2. Inject the DB with `@Inject(TALLY_DB) private readonly db: TallyDb`; tables come from `schema` and query helpers (`eq`, `and`, `sql`, …) from `@tally/db`.
 3. Register the module in `app.module.ts`.
-4. Routes are protected by default; get the user with `@CurrentUser() user: AuthenticatedUser` (`user.sub` = `auth.users.id`).
+4. Routes are protected by default; get the user with `@CurrentUser() user: AuthenticatedUser` (`user.sub` = `auth.users.id`). Routes are user-only unless they carry `@Scopes(...)`, which opens them to Connect Tally tokens.
 5. Update [docs](../../docs/guides/documentation.md) in the same PR.
 
 See [docs/architecture/auth.md](../../docs/architecture/auth.md) and [docs/architecture/database.md](../../docs/architecture/database.md).

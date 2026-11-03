@@ -16,7 +16,7 @@ type Tone = "plain" | "accent" | "warn" | "ghost";
 
 const FACES: Record<Tone, { stroke: string; top: string; left: string; right: string }> = {
   plain: { stroke: "stroke-gray-800", top: "fill-surface", left: "fill-gray-100", right: "fill-surface" },
-  accent: { stroke: "stroke-primary", top: "fill-primary-light", left: "fill-primary/20", right: "fill-primary-light" },
+  accent: { stroke: "stroke-primary-ink", top: "fill-primary-light", left: "fill-primary/20", right: "fill-primary-light" },
   warn: { stroke: "stroke-amber-600", top: "fill-amber-50", left: "fill-amber-100", right: "fill-amber-50" },
   ghost: { stroke: "stroke-gray-300", top: "fill-transparent", left: "fill-transparent", right: "fill-transparent" },
 };
@@ -36,8 +36,8 @@ function Box({ p, x, y, z, w, d, h, tone = "plain" }: { p: Project; x: number; y
 function Dot({ at, warn = false, pulse = false }: { at: Pt; warn?: boolean; pulse?: boolean }) {
   return (
     <g>
-      <circle cx={at[0]} cy={at[1]} r={7} className={warn ? "fill-amber-500/20" : "fill-primary/15"} />
-      <circle cx={at[0]} cy={at[1]} r={3.5} className={`${warn ? "fill-amber-500" : "fill-primary"} ${pulse ? "ill-pulse" : ""}`} />
+      <circle cx={at[0]} cy={at[1]} r={7} className={warn ? "fill-amber-500/20" : "fill-primary/40"} />
+      <circle cx={at[0]} cy={at[1]} r={3.5} className={`${warn ? "fill-amber-500" : "fill-primary-ink"} ${pulse ? "ill-pulse" : ""}`} />
     </g>
   );
 }
@@ -77,7 +77,7 @@ const GLYPHS: Record<Glyph, ReactNode> = {
 
 /** A round node holding a small line glyph. */
 function Node({ at, glyph, label, tone = "plain" }: { at: Pt; glyph: Glyph; label?: string; tone?: "plain" | "accent" | "warn" }) {
-  const stroke = tone === "accent" ? "stroke-primary" : tone === "warn" ? "stroke-amber-600" : "stroke-gray-800";
+  const stroke = tone === "accent" ? "stroke-primary-ink" : tone === "warn" ? "stroke-amber-600" : "stroke-gray-800";
   return (
     <g>
       <circle cx={at[0]} cy={at[1]} r={24} className="fill-gray-100" />
@@ -239,8 +239,8 @@ function TypeLater() {
       {rowsY.slice(0, 3).map((y, r) =>
         cols.slice(0, r < 2 ? 4 : 2).map((x, c) => <rect key={`${r}-${c}`} x={x + 2} y={y + 7} width={c === 0 ? 40 : 22} height={6} rx={3} className="fill-gray-200" />),
       )}
-      <rect x={306} y={140} width={58} height={20} rx={4} strokeWidth={1.25} className="fill-primary-light stroke-primary" />
-      <rect x={314} y={145} width={1.6} height={10} className="ill-blink fill-primary" />
+      <rect x={306} y={140} width={58} height={20} rx={4} strokeWidth={1.25} className="fill-primary-light stroke-primary-ink" />
+      <rect x={314} y={145} width={1.6} height={10} className="ill-blink fill-primary-ink" />
     </svg>
   );
 }
@@ -268,16 +268,16 @@ function RarelyHappens() {
             height={cell}
             rx={4}
             strokeWidth={counted ? 1.25 : 1}
-            className={counted ? "fill-primary-light stroke-primary" : "fill-transparent stroke-gray-200"}
+            className={counted ? "fill-primary-light stroke-primary-ink" : "fill-transparent stroke-gray-200"}
           />
         );
       })}
-      <path d="M90 81 l3 3 6-6" fill="none" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="stroke-primary" />
+      <path d="M90 81 l3 3 6-6" fill="none" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="stroke-primary-ink" />
       <rect x={130} y={164} width={cell} height={cell} rx={4} strokeWidth={1.25} strokeDasharray="3 3" className="fill-transparent stroke-gray-400" />
 
       <path d="M246 196 H462 M246 40 V196" strokeWidth={1} className="stroke-gray-200" />
       <path d="M252 78 H456" fill="none" strokeWidth={1.4} strokeDasharray="5 5" className="stroke-gray-800" />
-      <path d="M252 78 C292 82 306 104 336 108 S384 134 410 150 S446 166 456 170" fill="none" strokeWidth={1.6} className="stroke-primary" />
+      <path d="M252 78 C292 82 306 104 336 108 S384 134 410 150 S446 166 456 170" fill="none" strokeWidth={1.6} className="stroke-primary-ink" />
       <path d="M462 80 V168" strokeWidth={1.25} className="stroke-amber-500" />
       <path d="M458 80 H466 M458 168 H466" strokeWidth={1.25} className="stroke-amber-500" />
       <Dot at={[252, 78]} />
@@ -285,7 +285,7 @@ function RarelyHappens() {
       <text x={300} y={68} fontSize={11} className="fill-gray-500">
         In your book
       </text>
-      <text x={300} y={134} fontSize={11} className="fill-primary">
+      <text x={300} y={134} fontSize={11} className="fill-primary-ink">
         On the shelf
       </text>
       <text x={454} y={128} fontSize={11} textAnchor="end" className="fill-amber-700">

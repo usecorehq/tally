@@ -168,7 +168,10 @@ export type ConfirmResult = {
   images?: { uploaded: number; skipped: number; failed: number };
 };
 
-export type ActionResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
+export type ActionResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string; limit?: PlanLimit };
+
+/** A 429 from the plan limits (embed calls only; mp's server actions never set it). */
+export type PlanLimit = { code: "plan_limit" | "client_cap" | "concurrent_runs"; retry_after_seconds: number };
 
 /** POST …/vision/photo-check: Muse Spark's verdict on a photo before scanning. Advice only. */
 export type PhotoCheck = {

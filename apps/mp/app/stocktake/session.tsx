@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, PageHeader, SolarIcon, Tray, TraySheet } from "@tally/ui";
-import { pollStocktake } from "./actions";
+import { useStocktakeApi, useStocktakeNav } from "./api-context";
 import { ConfirmedView } from "./confirmed-view";
 import { formatDateTime } from "./format";
 import { LoadFailed } from "./load-failed";
@@ -12,7 +12,6 @@ import { loadPhoto, runKey, scanKey } from "./photo-store";
 import { ReviewTable } from "./review-table";
 import { DiscardButton, RerunButton } from "./scan-actions";
 import { HistoryButton, Working, type Photo } from "./stocktake-flow";
-import { historyHref, newHref } from "./urls";
 import type { ScanView, StocktakeRun } from "./types";
 
 type Business = { id: string; name: string };
@@ -48,6 +47,7 @@ export function RunSession({ business, initial }: { business: Business; initial:
   const [pollError, setPollError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const photo = usePhoto(runKey(initial.run.id));
+  const { pollStocktake } = useStocktakeApi();
   const running = data.run.status === "running";
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export function RunSession({ business, initial }: { business: Business; initial:
     return () => {
       alive = false;
     };
-  }, [running, attempt, business.id, initial.run.id]);
+  }, [running, attempt, business.id, initial.run.id, pollStocktake]);
 
   if (photo === undefined) return null;
 
@@ -132,11 +132,11 @@ function ScanContent({
   fallback: boolean;
   photo: Photo | null;
 }) {
-  const router = useRouter();
-  const history = <HistoryButton href={historyHref(business.id)} />;
+  const nav = useStocktakeNav();
+  const history = <History businessId={business.id} />;
   // This browser's copy shows at once; otherwise the photo stored with the scan.
   const photoUrl = photo?.url ?? scan.photoUrl ?? null;
-  const rerun = scan.canRerun && <RerunButton businessId={business.id} scanId={scan.scanId} />;
+  const rerun = scan.canRerun && nav.agent && <RerunButton businessId={business.id} scanId={scan.scanId} />;
   if (scan.status !== "open") {
     return (
       <ConfirmedView
@@ -148,12 +148,7 @@ function ScanContent({
           <>
             {history}
             {rerun}
-            <Button asChild>
-              <Link href={newHref(business.id)}>
-                <SolarIcon name="Gallery-Add" iconStyle="Bold" size={16} />
-                Take new stock
-              </Link>
-            </Button>
+            <NewStockButton businessId={business.id} />
           </>
         }
       />
@@ -167,7 +162,7 @@ function ScanContent({
       fallback={fallback}
       photo={photo?.blob ?? null}
       photoUrl={photoUrl}
-      onRestart={() => router.push(newHref(business.id))}
+      onRestart={() => nav.restart(business.id)}
       actions={
         <>
           {history}
@@ -187,7 +182,7 @@ export function RunFailed({ business, startedAt, error }: { business: Business; 
         title="Stock-take failed"
         subtitle={`${business.name} · started ${formatDateTime(startedAt)}`}
         className="[&_h1]:whitespace-normal"
-        actions={<HistoryButton href={historyHref(business.id)} />}
+        actions={<History businessId={business.id} />}
       />
       <Tray>
         <TraySheet role="alert" className="flex flex-col items-center gap-2 px-6 py-12 text-center">
@@ -196,12 +191,7 @@ export function RunFailed({ business, startedAt, error }: { business: Business; 
           </span>
           <p className="font-medium tracking-tight text-gray-900">This stock-take stopped before it finished</p>
           <p className="max-w-sm break-words text-sm text-gray-500">{sentence(error ?? "Something went wrong on our side")} Nothing in your stock changed.</p>
-          <Button asChild className="mt-2" size="lg">
-            <Link href={newHref(business.id)}>
-              <SolarIcon name="Gallery-Add" iconStyle="Bold" size={16} />
-              Take new stock
-            </Link>
-          </Button>
+          <NewStockButton businessId={business.id} className="mt-2" size="lg" />
         </TraySheet>
       </Tray>
     </div>
@@ -215,7 +205,7 @@ export function SessionLoadFailed({ businessId, status, error }: { businessId: s
   const missing = status === 404 || status === 400;
   return (
     <div className="q-rise">
-      <PageHeader title="Stock-take" className="[&_h1]:whitespace-normal" actions={<HistoryButton href={historyHref(businessId)} />} />
+      <PageHeader title="Stock-take" className="[&_h1]:whitespace-normal" actions={<History businessId={businessId} />} />
       {missing ? (
         <Tray className="max-w-[760px]">
           <TraySheet className="flex flex-col items-center gap-2 px-6 py-12 text-center">
@@ -232,6 +222,32 @@ export function SessionLoadFailed({ businessId, status, error }: { businessId: s
         />
       )}
     </div>
+  );
+}
+
+/** History, where the host has one. */
+function History({ businessId }: { businessId: string }) {
+  const href = useStocktakeNav().historyHref(businessId);
+  return href ? <HistoryButton href={href} /> : null;
+}
+
+/** A link in mp; in the embed, a button that starts over in place. */
+function NewStockButton({ businessId, className, size }: { businessId: string; className?: string; size?: "lg" }) {
+  const nav = useStocktakeNav();
+  const label = (
+    <>
+      <SolarIcon name="Gallery-Add" iconStyle="Bold" size={16} />
+      Take new stock
+    </>
+  );
+  return nav.newHref ? (
+    <Button asChild className={className} size={size}>
+      <Link href={nav.newHref(businessId)}>{label}</Link>
+    </Button>
+  ) : (
+    <Button className={className} size={size} onClick={() => nav.restart(businessId)}>
+      {label}
+    </Button>
   );
 }
 

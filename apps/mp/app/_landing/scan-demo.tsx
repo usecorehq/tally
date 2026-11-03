@@ -178,7 +178,7 @@ function ReviewCard({ pressing }: { pressing: boolean }) {
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-gray-500">Count</span>
             <span className="inline-flex items-center rounded-lg bg-gray-100 text-[12px] font-semibold tabular-nums text-gray-900">
-              <span className="px-2.5 py-1 text-gray-500">−</span>4<span className="px-2.5 py-1 text-primary">+</span>
+              <span className="px-2.5 py-1 text-gray-500">−</span>4<span className="px-2.5 py-1 text-primary-ink">+</span>
             </span>
           </div>
         </div>
@@ -186,7 +186,7 @@ function ReviewCard({ pressing }: { pressing: boolean }) {
       <div className="flex gap-2">
         <span className="flex h-9 flex-1 items-center justify-center rounded-xl bg-gray-100 text-[12px] font-medium text-gray-900">Skip</span>
         <span
-          className={`flex h-9 flex-[2] items-center justify-center rounded-xl bg-primary text-[12px] font-medium text-white transition-transform duration-150 ${pressing ? "scale-95" : ""}`}
+          className={`flex h-9 flex-[2] items-center justify-center rounded-xl bg-primary text-[12px] font-medium text-primary-foreground transition-transform duration-150 ${pressing ? "scale-95" : ""}`}
         >
           Restock
         </span>

@@ -15,7 +15,7 @@ function ReadsArt() {
     <div className="flex h-full items-center justify-center gap-4 px-5">
       <div className="relative w-[34%] shrink-0 -rotate-3 overflow-hidden rounded-[14px] bg-white p-1 shadow-[0_14px_30px_-14px_rgba(0,0,0,0.45)]">
         <img src="/landing/how/nutrova.jpg" alt="" className="block aspect-square w-full rounded-[10px] object-cover" />
-        <span aria-hidden style={{ "--scan-travel": "96px" } as React.CSSProperties} className="ill-scan absolute inset-x-1 top-1 h-0.5 rounded-full bg-primary shadow-[0_0_12px_2px_rgba(120,86,255,0.6)]" />
+        <span aria-hidden style={{ "--scan-travel": "96px" } as React.CSSProperties} className="ill-scan absolute inset-x-1 top-1 h-0.5 rounded-full bg-primary shadow-[0_0_12px_2px_rgba(249,214,68,0.8)]" />
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
         {fields.map((f, i) => (
@@ -48,7 +48,7 @@ function CountsArt() {
       <div className="space-y-1.5">
         <p className="font-display text-4xl tabular-nums tracking-tight text-gray-900">{SHELF_BOXES.length}</p>
         <p className="text-[12px] text-gray-500">units outlined</p>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-light px-2 py-0.5 text-[11px] font-medium text-primary">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-light px-2 py-0.5 text-[11px] font-medium text-primary-ink">
           <span className="size-1.5 rounded-[2px] bg-primary" />
           Toothpaste ×4
         </span>
@@ -69,7 +69,7 @@ function MatchesArt() {
       {rows.map((r, i) => (
         <div
           key={r.name}
-          className={`q-rise flex items-center gap-2 rounded-[10px] px-3 py-2 ring-1 ${r.on ? "bg-primary-light ring-primary/20" : "bg-surface ring-hairline/[0.06]"}`}
+          className={`q-rise flex items-center gap-2 rounded-[10px] px-3 py-2 ring-1 ${r.on ? "bg-primary-light ring-primary-ink/20" : "bg-surface ring-hairline/[0.06]"}`}
           style={{ animationDelay: `${i * 120}ms` }}
         >
           <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900">{r.name}</span>
@@ -99,7 +99,7 @@ const ENGINES: { name: string; role: string; by: ReactNode; body: string; art: R
   {
     name: "Qore Catalog",
     role: "Matches",
-    by: <SolarIcon name="Box" iconStyle="Fill" size={14} className="text-primary" />,
+    by: <SolarIcon name="Box" iconStyle="Fill" size={14} className="text-primary-ink" />,
     body: "206,000+ Nigerian products with indicative ₦ shelf prices to match each one to.",
     art: <MatchesArt />,
   },

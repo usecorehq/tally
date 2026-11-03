@@ -3,28 +3,19 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, EmptyState, FilterChip, IconTile, NativeSelect, PageHeader, Pill, SearchWell, SheetTable, SolarIcon } from "@tally/ui";
+import { Button, EmptyState, FilterChip, IconTile, PageHeader, Pill, SearchWell, SheetTable, SolarIcon } from "@tally/ui";
 import { formatNaira, formatQuantity, sumQuantities } from "@/lib/format";
 import { InventoryTiles, ScanCard } from "./inventory-parts";
-import { isLowStock, type BusinessOption, type InventoryItem } from "./types";
+import { isLowStock, type InventoryItem } from "./types";
 
 /**
  * The web Inventory page, mirroring the mobile tab: shelf capture, stat tiles, search and the stock list.
  * `items` is null when the read failed.
  */
-export function InventoryView({
-  businesses,
-  businessId,
-  items,
-}: {
-  businesses: BusinessOption[];
-  businessId: string | null;
-  items: InventoryItem[] | null;
-}) {
+export function InventoryView({ businessId, items }: { businessId: string | null; items: InventoryItem[] | null }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
-  const business = businesses.find((b) => b.id === businessId);
   const failed = items === null;
 
   const lowCount = items?.filter(isLowStock).length ?? 0;
@@ -35,29 +26,7 @@ export function InventoryView({
 
   return (
     <>
-      <PageHeader
-        // With a picker the business name is already on screen; the eyebrow would repeat it.
-        eyebrow={businesses.length > 1 ? undefined : business?.name}
-        title="Inventory"
-        actions={
-          businesses.length > 1 ? (
-            <div className="w-full sm:w-64">
-              <NativeSelect
-                aria-label="Business"
-                className="h-11 sm:h-10"
-                value={businessId ?? ""}
-                onChange={(e) => router.push(`/inventory?business=${e.target.value}`)}
-              >
-                {businesses.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-          ) : undefined
-        }
-      />
+      <PageHeader title="Inventory" />
 
       <ScanCard businessId={businessId} className="mb-6" />
 

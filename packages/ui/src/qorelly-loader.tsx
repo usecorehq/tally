@@ -1,5 +1,5 @@
 // Qorelly-branded loader: the mark rotated with SVG SMIL (no JS, no CSS dependency).
-// currentColor, so text-* sets it; defaults to text-primary.
+// currentColor, so text-* sets it; defaults to text-primary-ink.
 import { cn } from "./lib/cn";
 
 interface QorellyLoaderProps {
@@ -23,7 +23,7 @@ export function QorellyLoader({
       viewBox="0 0 34 34"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn('text-primary inline-block shrink-0', className)}
+      className={cn('text-primary-ink inline-block shrink-0', className)}
       role="status"
       aria-label="Loading"
     >

@@ -1,8 +1,8 @@
 # Vision schema
 
-> Diagram: [vision tables (ERD)](../diagrams/images/vision-schema-erd.svg). Part of [vision recognition](vision-recognition.md) and the [stock-take agent](stocktake-agent.md). The whole schema: [database](database.md).
+> Part of [vision recognition](vision-recognition.md) and the [stock-take agent](stocktake-agent.md). The whole schema: [database](database.md).
 
-How the camera tables in the `tally` schema relate, who writes each row, and which links are foreign keys versus plain values. Migrations `0004_add_vision_scans`, `0005_add_vision_decisions`, `0006_add_stocktake_agent`, `0007_add_detection_review` and `0008_add_stocktake_rerun_discard`; source of truth is `packages/db/src/schema.ts`.
+How the camera tables in the `tally` schema relate, who writes each row, and which links are foreign keys versus plain values. Migrations `0004_add_vision_scans`, `0005_add_vision_decisions`, `0006_add_stocktake_agent`, `0007_add_detection_review`, `0008_add_stocktake_rerun_discard` and `0009_add_catalog_resolutions`; source of truth is `packages/db/src/schema.ts`.
 
 ## The shape in one paragraph
 
@@ -34,6 +34,7 @@ Identify calls (identify one product) write nothing until the merchant confirms,
 | `vision_agent_runs.business_id` | `businesses` | many → one | cascade | The shop the stock-take is for |
 | `vision_agent_runs (business_id, scan_id)` | `vision_scans` | zero or one → zero or one | no action | The run's result. Null while running and for a failed run; set on `done` and on `fallback` (the quick scan) |
 | `vision_agent_runs (business_id, rerun_of_scan_id)` | `vision_scans` | many → zero or one | no action | **Rerun of:** the group's root, the first scan of the photo (never a rerun's own scan). Null for a new stock-take. Indexed for history |
+| `vision_scans.client_id`, `vision_agent_runs.client_id` | `oauth_clients` | many → zero or one | restrict | The partner app that ran it through [Connect Tally](database.md#oauth-clients-connect-tally). Null = Tally's own apps. Clients are suspended, never deleted |
 
 ### Groups: one photo, several runs
 
@@ -51,7 +52,7 @@ A photo's first scan (a quick scan or an agent run's) is the **root**. Each reru
 | `<scan_id>:<position>` | The detection, as Qore Catalog's feedback `clientRef` | Sent to `/v1/feedback` and `/v1/images` so retries dedupe on the catalogue side |
 | `tally/crops/<scan_id>/<position>.webp` | The detection's crop in R2 | Object storage; the key is derived, not stored. See [product crops](vision-recognition.md#product-crops) |
 | `tally/scans/<scan_id>.jpg` | The scan's shelf photo in R2 | Object storage, kept for good as the audit record; the key is derived from the scan id. `vision_scans.image_sha256` is the hash of the uploaded bytes |
-| `created_by`, `started_by`, `decided_by` | `auth.users` | Audit columns only. Membership is checked by the API on every call; only `businesses` and `business_members` carry the cross-schema key to `auth.users` |
+| `created_by`, `started_by`, `decided_by` | `auth.users` | Audit columns only. Membership is checked by the API on every call; only `businesses`, `business_members`, `oauth_codes` and `oauth_grants` carry the cross-schema key to `auth.users` |
 
 ## Tenancy: every child carries `business_id`
 
@@ -88,6 +89,10 @@ discard       POST shelf-scans/:scanId/discard → vision_scans discarded (open 
 
 identify      POST identify/confirm → inventory_item_readings upsert (with a brand)
 
+resolutions   every 15 min: GET /v1/feedback/resolutions since max(catalog_resolved_at)
+              per scan line, once: vision_detections catalog_resolution + catalog_resolved_at
+              created | linked → inventory_items.core_qid on the line's item (name and price unchanged)
+
 history       GET stocktakes → vision_agent_runs ∪ vision_scans no run points at, newest first,
               with detection counts by action (reads only)
 ```
@@ -100,6 +105,7 @@ The next scan checks the store before the catalogue: first `inventory_item_readi
 - **Detection:** `position >= 0` and unique per scan. `confidence` is `high`, `medium` or `low`. `count_source` is `sam` or `spark`. Counts are not negative. The name is 1 to 200 characters, and `review`, when set, 1 to 500.
 - **Match:** `inventory_item_id` and `inventory_match` are both set or both null.
 - **Decision:** `action`, `outcome`, `decided_by` and `decided_at` are all set or all null. `skip` ⇔ `removed`. Every decision except `skip` has an `item_id`. `confirmed_qid` matches the Qore ID format.
+- **Catalogue resolution:** `catalog_resolution` (`created`, `linked`, `dismissed`) and `catalog_resolved_at` are both set or both null.
 - **Run:** status is `running`, `done`, `fallback` or `failed`, and `finished_at` is null exactly while running. Turns and tokens are not negative.
 - **Step:** `tool` is set exactly when `kind = 'tool'`. The check also allows `result`, which nothing writes today.
 - **Reading:** the key is 3 to 400 characters and unique per business.

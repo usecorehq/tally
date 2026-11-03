@@ -80,12 +80,12 @@ function ProvisionCard() {
     <div className={CARD}>
       <p className="text-[11px] tabular-nums text-gray-500">Today 09:15 · Shelf 3</p>
       <p className="mt-1 text-[15px] font-semibold tracking-tight text-gray-900">Provision shelf</p>
-      <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-primary-light px-2.5 py-1 text-[11px] font-medium text-primary">
+      <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-primary-light px-2.5 py-1 text-[11px] font-medium text-primary-ink">
         <SolarIcon name="Stars" size={13} />
         Quick scan
       </span>
       <div className="mt-4 flex gap-4 border-b border-gray-100 text-[12px]">
-        <span className="-mb-px border-b-2 border-primary pb-2 font-medium text-gray-900">Products</span>
+        <span className="-mb-px border-b-2 border-primary-ink pb-2 font-medium text-gray-900">Products</span>
         <span className="pb-2 text-gray-500">Counts</span>
         <span className="pb-2 text-gray-500">Unsure</span>
       </div>
@@ -117,7 +117,7 @@ function PharmacyCard({ still }: { still: boolean }) {
     <div className={CARD}>
       <div className="flex items-center justify-between">
         <p className="text-[14px] font-semibold tracking-tight text-gray-900">Stock-take agent</p>
-        <span className="rounded-full bg-primary-light px-2 py-0.5 text-[10px] font-medium text-primary">Running</span>
+        <span className="rounded-full bg-primary-light px-2 py-0.5 text-[10px] font-medium text-primary-ink">Running</span>
       </div>
       <div className="mt-3 rounded-[12px] bg-gray-50 p-3 ring-1 ring-hairline/[0.05]">
         <p className="text-[10px] text-gray-500">Goal</p>
@@ -134,13 +134,13 @@ function PharmacyCard({ still }: { still: boolean }) {
             >
               <span
                 className={`flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                  done ? "border-emerald-500 text-emerald-600" : now ? "border-primary" : "border-gray-300"
+                  done ? "border-emerald-500 text-emerald-600" : now ? "border-primary-ink" : "border-gray-300"
                 }`}
               >
                 {done && <SolarIcon name="Check-Circle" size={16} />}
                 {now && <span className="size-1.5 animate-pulse rounded-full bg-primary" />}
               </span>
-              <span className={done ? "text-gray-400 line-through" : now ? "font-medium text-primary" : "text-gray-500"}>{s}</span>
+              <span className={done ? "text-gray-400 line-through" : now ? "font-medium text-primary-ink" : "text-gray-500"}>{s}</span>
             </li>
           );
         })}
@@ -220,7 +220,7 @@ function AisleCard() {
       <p className="mt-3 text-[11px] text-gray-500">Mixed brands and sizes. Anything unsure waits for you to pick.</p>
       <div className="mt-3 flex gap-2">
         <span className="flex h-9 flex-1 items-center justify-center rounded-xl bg-gray-100 text-[12px] font-medium text-gray-900">Review later</span>
-        <span className="flex h-9 flex-[1.4] items-center justify-center rounded-xl bg-primary text-[12px] font-medium text-white">Stock 9 items</span>
+        <span className="flex h-9 flex-[1.4] items-center justify-center rounded-xl bg-primary text-[12px] font-medium text-primary-foreground">Stock 9 items</span>
       </div>
     </div>
   );
@@ -295,7 +295,7 @@ export function WorksOn() {
               on ? "font-medium text-gray-900" : "text-gray-500 hover:text-gray-900"
             }`}
           >
-            <SolarIcon name={s.icon} iconStyle={on ? "Fill" : "Outline"} size={20} className={on ? "text-primary" : ""} />
+            <SolarIcon name={s.icon} iconStyle={on ? "Fill" : "Outline"} size={20} className={on ? "text-primary-ink" : ""} />
             {s.title}
           </button>
         );

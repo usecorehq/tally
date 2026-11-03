@@ -90,7 +90,7 @@ function CountPanel() {
       ].map((b) => (
         <span
           key={b.n}
-          className={`absolute rounded-full bg-primary px-2.5 py-1 text-[12px] font-semibold tabular-nums text-white shadow-lg transition-[opacity,transform] duration-300 ${b.c}`}
+          className={`absolute rounded-full bg-primary px-2.5 py-1 text-[12px] font-semibold tabular-nums text-primary-foreground shadow-lg transition-[opacity,transform] duration-300 ${b.c}`}
           style={{ opacity: found ? 1 : 0, transform: `scale(${found ? 1 : 0.5})`, transitionDelay: found ? `${b.d}ms` : "0ms" }}
         >
           {b.n}
@@ -148,7 +148,7 @@ function MatchPanel() {
                   <span className="flex-1 truncate text-[13px] font-medium text-gray-900">{m.name}</span>
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${m.tone}`}>{m.score}</span>
                   <span
-                    className={`flex size-5 items-center justify-center rounded-full border transition-colors ${on ? "border-primary bg-primary text-white" : "border-gray-300"}`}
+                    className={`flex size-5 items-center justify-center rounded-full border transition-colors ${on ? "border-primary-ink bg-primary text-primary-foreground" : "border-gray-300"}`}
                   >
                     {on && <Tick />}
                   </span>
@@ -175,7 +175,7 @@ function ConfirmPanel() {
           <span className="font-medium tabular-nums">6 selected</span>
           <span className="text-gray-400">·</span>
           <span className="flex-1 tabular-nums text-gray-600">142 units</span>
-          <span className={`rounded-full px-3 py-1 text-[12px] font-medium text-white transition-colors ${printed ? "bg-emerald-600" : "bg-primary"}`}>
+          <span className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${printed ? "bg-emerald-600 text-white" : "bg-primary text-primary-foreground"}`}>
             {printed ? "Stocked" : "Stock"}
           </span>
         </div>
@@ -338,7 +338,7 @@ export function HowShowcase() {
                 {r.panel}
                 <div className="lg:pt-2">
                   <p className="text-[15px] leading-relaxed text-gray-600">{r.body}</p>
-                  <a href={r.link.href} className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-primary">
+                  <a href={r.link.href} className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-primary-ink">
                     {r.link.label}
                     <SolarIcon name="Arrow-Right" size={16} />
                   </a>

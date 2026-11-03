@@ -1,7 +1,11 @@
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 import { InsetPanel, SolarIcon, cn } from "@tally/ui";
+import { BUSINESS_COOKIE } from "@/lib/business-cookie";
+import { listBusinesses } from "@/lib/businesses";
 import { StocktakeRecents } from "../stocktake/recents";
 import { auth, signOut } from "@/auth";
+import { BusinessSwitcher } from "./business-switcher";
 import { MobileNav, SidebarNav } from "./nav-links";
 import { FOCUS } from "./segment";
 import { ThemeToggle } from "./theme-toggle";
@@ -19,8 +23,16 @@ async function signOutAction() {
  * Pages render their own PageHeader; `width` caps the content column.
  */
 export async function AppShell({ children, width = "default" }: { children: React.ReactNode; width?: "default" | "wide" | "narrow" }) {
-  const session = await auth();
+  const [session, businesses, jar] = await Promise.all([auth(), listBusinesses(), cookies()]);
   const email = session?.user?.email ?? "";
+  // It reads ?business=, hence the boundary; the fallback holds the same height.
+  const switcher = (className?: string) =>
+    businesses?.length ? (
+      <Suspense fallback={<div className={cn("h-11", className)} />}>
+        <BusinessSwitcher businesses={businesses} savedId={jar.get(BUSINESS_COOKIE)?.value} className={className} />
+      </Suspense>
+    ) : null;
+  const column = width === "wide" ? "max-w-[1200px]" : width === "narrow" ? "max-w-[720px]" : "max-w-[960px]";
   return (
     <div className="flex min-h-dvh bg-gray-100 lg:p-2">
       <aside className="sticky top-2 hidden h-[calc(100dvh-1rem)] w-60 shrink-0 flex-col px-3 py-3 lg:flex">
@@ -61,7 +73,7 @@ export async function AppShell({ children, width = "default" }: { children: Reac
         <header className="flex flex-col gap-3 px-4 pb-4 pt-3 lg:hidden">
           <div className="flex h-11 items-center gap-2">
             <TallyMark className="h-8 w-8" />
-            <span className="flex-1 text-[17px] font-semibold tracking-tight text-gray-900">Tally</span>
+            {switcher("flex-1") ?? <span className="flex-1 text-[17px] font-semibold tracking-tight text-gray-900">Tally</span>}
             <ThemeToggle compact />
             <form action={signOutAction}>
               <button
@@ -77,12 +89,9 @@ export async function AppShell({ children, width = "default" }: { children: Reac
           <MobileNav />
         </header>
         <InsetPanel className="max-lg:rounded-b-none max-lg:ring-0 lg:min-h-[calc(100dvh-1rem)]">
-          <main
-            className={cn(
-              "q-rise mx-auto w-full flex-1 px-4 pb-28 pt-6 sm:px-8 lg:pt-10",
-              width === "wide" ? "max-w-[1200px]" : width === "narrow" ? "max-w-[720px]" : "max-w-[960px]",
-            )}
-          >
+          {/* Desktop top bar: the business switcher, as in Qorelly's dashboard header. */}
+          <div className={cn("mx-auto hidden w-full px-6 pt-4 lg:block", column)}>{switcher("-ml-2 w-fit")}</div>
+          <main className={cn("q-rise mx-auto w-full flex-1 px-4 pb-28 pt-6 sm:px-8 lg:pt-6", column)}>
             {children}
           </main>
         </InsetPanel>
