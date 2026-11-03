@@ -2,8 +2,8 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 import { auth } from "@/auth";
 import { EMBED_CONFIG_HEADER, frameAncestors, lookupEmbedClient } from "@/app/embed/config";
 
-// Everything except the login page, NextAuth's own routes, the icons, the mark and the share image needs a session.
-// /design (the V2 kit and page previews, fixture data only) is open outside production.
+// Everything except the login page, NextAuth's own routes, the icons, the mark, the share image and the
+// landing page (/ and its assets) needs a session. /design (kit previews, fixture data) is open outside production.
 const withSession = auth((req) => {
   const { pathname } = req.nextUrl;
   if (process.env.NODE_ENV !== "production" && pathname.startsWith("/design")) return;
@@ -16,7 +16,7 @@ const withSession = auth((req) => {
 });
 
 /** Skipped by the matcher before the embed host needed them: still no NextAuth on the main host. */
-const PUBLIC = /^\/(login|api\/auth|og\.png|tally-mark\.svg)/;
+const PUBLIC = /^\/(login|api\/auth|og\.png|tally-mark\.svg|landing\/)/;
 const EMBED = /^\/embed(\/|$)/;
 // The 404 page's own mark, the only public asset the embed host serves outside /embed/*.
 const ASSET = /^\/tally-mark\.svg$/;
@@ -31,6 +31,8 @@ export default async function proxy(req: NextRequest, event: NextFetchEvent) {
   if (onEmbedHost) return isEmbed ? embed(req) : ASSET.test(req.nextUrl.pathname) ? NextResponse.next() : notFound(req);
   if (isEmbed) return embedHost ? notFound(req) : embed(req);
   if (PUBLIC.test(req.nextUrl.pathname)) return NextResponse.next();
+  // Signed out, / is the landing page; the page itself checks the session.
+  if (req.nextUrl.pathname === "/") return NextResponse.next();
   return withSession(req as Parameters<typeof withSession>[0], event as never);
 }
 

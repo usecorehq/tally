@@ -6,7 +6,7 @@
 | Owner | Core Technologies LTD |
 | Status | Draft v0.4 — 2026-10-28 (aligned with [vision-recognition.md](architecture/vision-recognition.md)) |
 | Context | Hackathon build on Meta Muse Spark (Meta Model API) |
-| Surfaces | `apps/mobile` (Flutter, `qore_tally`), `apps/api` (NestJS), `apps/landing` (Vite) |
+| Surfaces | `apps/mobile` (Flutter, `qore_tally`), `apps/api` (NestJS), `apps/mp` (Next.js: portal, and the landing page at `/` when signed out) |
 
 > **Status: planned.** Nothing in this PRD is built yet except what §0 lists as existing.
 >
@@ -252,9 +252,9 @@ merchant confirms. Nothing here feeds revenue reporting.
 Config and secrets: `META_MODEL_API_KEY` (server-only, new); `QORE_CATALOG_API_KEY` (server-only, built);
 `QORE_CATALOG_BASE_URL` on staging = `https://api.qorecatalogue.com`.
 
-## 9. Landing page (`apps/landing`)
+## 9. Landing page (`apps/mp`, `/` when signed out)
 
-- Vite + React + TypeScript + Tailwind, static build, new workspace package.
+- Part of the merchant portal: signed-out visitors see it at `/`, signed-in merchants get their businesses.
 - Sections: hero ("Snap a shelf. Get your stock count.") with app screenshot/mock, how it works in
   three steps (Snap → Muse counts and matches → Confirm), what it works on (Nigerian shelf photo
   examples), powered by Muse + Qore Catalog, CTA (app download / waitlist), footer (Core Technologies LTD).
@@ -295,7 +295,7 @@ Each slice starts with a read-only audit and stops on contradictions. Testing is
 | 6 | **Mobile: capture → processing → confirm (S2–S5)** — built on `feat/photo-to-inventory`: agent and quick scan both offered (default still open); S5 lists the scan's plausible matches, whole-catalogue search not yet. | Screen recording of a real scan on staging |
 | 7 | **Identify one product**: `identify` endpoint + S10. | Latency measured on staging, screenshots |
 | 8 | **Ask your stock** (§6.3) + S6. | Test prompts pass, screenshots |
-| 9 | **Landing page** `apps/landing` (Vite). | Deployed preview + mobile/desktop screenshots |
+| 9 | **Landing page** in `apps/mp` at `/` (signed out) — first draft built: hero, the problem, how it works, what it reads, powered by, waitlist (no link until Q7 is settled). | Deployed preview + mobile/desktop screenshots |
 | 10 | **Demo polish**: scan history (S8), item detail (S7), demo script. | Dry run under 2 minutes |
 | 11 | Stretch: count mode, voice (§6.4). | — |
 

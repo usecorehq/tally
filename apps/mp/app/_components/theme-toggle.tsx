@@ -13,6 +13,15 @@ const KEY = "tally-theme";
  */
 export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("${KEY}")||"system";var d=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d)}catch(e){}})()`;
 
+/** Re-applies the saved choice, for pages that override it while open (the light-only landing page). */
+export function applyStoredTheme() {
+  try {
+    apply((localStorage.getItem(KEY) as ThemeChoice | null) ?? "system");
+  } catch {
+    apply("system");
+  }
+}
+
 function apply(choice: ThemeChoice) {
   const dark = choice === "dark" || (choice === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);

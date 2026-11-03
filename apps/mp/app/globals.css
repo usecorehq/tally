@@ -1,3 +1,13 @@
 @import "tailwindcss";
 @import "@tally/ui/theme.css";
 @source "../../../packages/ui/src";
+
+/* Landing page headings only (app/_landing); never in the dashboard. */
+@font-face {
+  font-family: "Ciscela";
+  src: url("/landing/fonts/Ciscela-Regular.woff2") format("woff2");
+  font-display: swap;
+}
+@theme {
+  --font-display: "Ciscela", Georgia, serif;
+}

@@ -1,6 +1,6 @@
 # @tally/mp
 
-Merchant portal — merchant signup, onboarding, stock-take from a shelf photo and inventory. It also serves the stock-take as an iframe for connected partner apps ([Embedded stock-take](../../docs/architecture/embed.md)).
+Merchant portal — the public landing page (`/` signed out), merchant signup, onboarding, stock-take from a shelf photo and inventory. It also serves the stock-take as an iframe for connected partner apps ([Embedded stock-take](../../docs/architecture/embed.md)).
 
 Next.js 16 (App Router), Tailwind 4, NextAuth v5 over the shared Qorelly Supabase Auth.
 
@@ -24,14 +24,15 @@ pnpm --filter @tally/mp dev            # http://localhost:3001
 
 ```
 auth.ts                          createTallyAuth() from @tally/auth → handlers, auth, signIn, signOut
-proxy.ts                         redirects to /login without a session, keeping the query string in callbackUrl (/design is open outside production);
-                                 host-gates EMBED_HOST and sets the embed's frame-ancestors
+proxy.ts                         redirects to /login without a session, keeping the query string in callbackUrl (/ and public/landing/ are open;
+                                 /design is open outside production); host-gates EMBED_HOST and sets the embed's frame-ancestors
 app/loading.tsx                  the Tally mark while a fresh load waits for a page's own skeleton
 app/login/page.tsx               email + password server action
 app/api/auth/[...nextauth]/      NextAuth route handlers
 app/_components/                 AppShell (V2 frame: sidebar nav, business switcher in the top bar, stock-take recents on /stocktake pages, white inset panel), TallyMark
 lib/businesses.ts                the user's businesses and the current one: ?business=, then the tally-business cookie, then the first
-app/(home)/page.tsx              home: onboarding when there's no business yet, else the current business's inventory
+app/(home)/page.tsx              / : signed out, the landing page; signed in, onboarding when there's no business yet, else the current business's inventory
+app/_landing/                    the landing page (light only, whatever the portal theme): see Landing page below
 app/inventory/                   inventory (?business=<id>): scan card, search, Items / Units / Low stock tiles, stock list
 app/onboarding/                  first-time setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish; home once a business exists
   [businessId]/items/            starter items for a business that already exists
@@ -70,3 +71,23 @@ The stock-take page is the web version of the shelf scan: see [Web stock-take](.
 Calling the API from server code: `const session = await auth()` then send `Authorization: Bearer ${session.accessToken}`.
 
 See [docs/architecture/auth.md](../../docs/architecture/auth.md).
+
+## Landing page
+
+Signed-out visitors get it at `/`; it forces the light theme while open and restores the saved one when you leave. Assets live in `public/landing/` so the proxy can serve them without a session. Ciscela (`font-display`, in `globals.css`) is for its headings only, never the dashboard.
+
+- `landing.tsx` sections and header, the light-only hook; `landing.css` its keyframes and scroll reveals
+- `scan-demo.tsx` the hero's looping phone demo (holds on the review under reduced motion)
+- `scroll-reveal.tsx` the pinned problem paragraph that lights up word by word
+- `hand-count.tsx` where a hand count goes wrong, as inline SVG line illustrations
+- `how-showcase.tsx` How it works: sticky rows that stack, each with a looping photo panel
+- `works-on.tsx` a notched photo panel whose tabs swap the shop photo (`public/landing/works/`) and the card of what Tally found
+- `powered.tsx` Muse Spark, SAM 3.1 and Qore Catalog, then you confirm
+- `meta-mark.tsx` Meta's symbol (path from Simple Icons); swap in the official file from Meta's brand resources before launch
+- `reveal.ts` scroll reveals: mark an element `data-reveal`, stagger it with `delay(ms)`; opacity only under reduced motion
+
+The waitlist has no link yet (PRD Q7): the page says it opens soon and shows no dead button. Re-encode the hero video from a new source with:
+
+```sh
+ffmpeg -i source.mov -an -vf "scale=1280:-2,fps=25" -c:v libx264 -profile:v high -pix_fmt yuv420p -crf 27 -preset slow -movflags +faststart public/landing/hero/shop.mp4
+```
