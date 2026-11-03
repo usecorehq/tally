@@ -40,6 +40,10 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # The Tally logo, 1x-3x (rendered from the brand SVG).
+  assets:
+    - assets/brand/
+
   fonts:
     # Design 1.5 icons (Phosphor, MIT: assets/fonts/phosphor/LICENSE), drawn
     # through lib/core/design/tally_icons.dart.
