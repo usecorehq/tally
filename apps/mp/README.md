@@ -1,6 +1,6 @@
 # @tally/mp
 
-Merchant portal — merchant signup, onboarding, stock-take from a shelf photo and inventory.
+Merchant portal — the public landing page, merchant signup, onboarding, stock-take from a shelf photo and inventory.
 
 Next.js 16 (App Router), Tailwind 4, NextAuth v5 over the shared Qorelly Supabase Auth.
 
@@ -23,11 +23,12 @@ pnpm --filter @tally/mp dev            # http://localhost:3001
 
 ```
 auth.ts                          createTallyAuth() from @tally/auth → handlers, auth, signIn, signOut
-proxy.ts                         redirects to /login without a session (/design is open outside production)
+proxy.ts                         redirects to /login without a session (/ and public/landing/ are open; /design is open outside production)
 app/login/page.tsx               email + password server action
 app/api/auth/[...nextauth]/      NextAuth route handlers
-app/_components/                 AppShell (V2 frame: sidebar nav, stock-take recents on /stocktake pages, white inset panel), TallyMark
-app/(home)/page.tsx              home (route group, so its loading.tsx covers home only): the user's businesses (name → inventory, Stock-take action)
+app/_components/                 AppShell (V2 frame: sidebar nav, stock-take recents on /stocktake pages, white inset panel), TallyMark (the logo, inline SVG; `app/icon.svg` is the favicon)
+app/(home)/page.tsx              / : signed out, the landing page; signed in, the user's businesses (name → inventory, Stock-take action)
+app/_landing/                    the landing page (light only, whatever the portal theme): see Landing page below
 app/inventory/                   inventory (?business=<id>): scan card, search, Items / Units / Low stock tiles, stock list
 app/onboarding/                  setup wizard (Qorelly /setup port): business type → details → starter items; saves at Finish
   [businessId]/items/            starter items for a business that already exists
@@ -57,3 +58,23 @@ The stock-take page is the web version of the shelf scan: see [Web stock-take](.
 Calling the API from server code: `const session = await auth()` then send `Authorization: Bearer ${session.accessToken}`.
 
 See [docs/architecture/auth.md](../../docs/architecture/auth.md).
+
+## Landing page
+
+Signed-out visitors get it at `/`; it forces the light theme while open and restores the saved one when you leave. Assets live in `public/landing/` so the proxy can serve them without a session. Ciscela (`font-display`, in `globals.css`) is for its headings only, never the dashboard.
+
+- `landing.tsx` sections and header, the light-only hook; `landing.css` its keyframes and scroll reveals
+- `scan-demo.tsx` the hero's looping phone demo (holds on the review under reduced motion)
+- `scroll-reveal.tsx` the pinned problem paragraph that lights up word by word
+- `hand-count.tsx` where a hand count goes wrong, as inline SVG line illustrations
+- `how-showcase.tsx` How it works: sticky rows that stack, each with a looping photo panel
+- `works-on.tsx` a notched photo panel whose tabs swap the shop photo (`public/landing/works/`) and the card of what Tally found
+- `powered.tsx` Muse Spark, SAM 3.1 and Qore Catalog, then you confirm
+- `meta-mark.tsx` Meta's symbol (path from Simple Icons); swap in the official file from Meta's brand resources before launch
+- `reveal.ts` scroll reveals: mark an element `data-reveal`, stagger it with `delay(ms)`; opacity only under reduced motion
+
+The waitlist has no link yet (PRD Q7): the page says it opens soon and shows no dead button. Re-encode the hero video from a new source with:
+
+```sh
+ffmpeg -i source.mov -an -vf "scale=1280:-2,fps=25" -c:v libx264 -profile:v high -pix_fmt yuv420p -crf 27 -preset slow -movflags +faststart public/landing/hero/shop.mp4
+```
